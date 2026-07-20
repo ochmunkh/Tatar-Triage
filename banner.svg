@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="1200" height="420" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#0891b2"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.45" r="0.6">
+      <stop offset="0" stop-color="#0e7490" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#0b0f14" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="lens"><circle cx="250" cy="180" r="92"/></clipPath>
+  </defs>
+
+  <!-- background -->
+  <rect width="1200" height="420" fill="#0b0f14"/>
+  <rect width="1200" height="420" fill="url(#glow)"/>
+  <rect x="6" y="6" width="1188" height="408" rx="14" fill="none" stroke="#1f2b38" stroke-width="2"/>
+
+  <!-- faint binary texture -->
+  <g fill="#16303a" font-size="16" font-family="Consolas, monospace" opacity="0.5">
+    <text x="70" y="360">01001101 01000001 01000010  01010100 01000001 01010100 01000001 01010010</text>
+    <text x="70" y="386">0x4D 0x46 0x54  ::  read-only  ::  order-of-volatility  ::  sha256</text>
+  </g>
+
+  <!-- magnifying glass + fingerprint -->
+  <g>
+    <line x1="316" y1="246" x2="384" y2="322" stroke="url(#teal)" stroke-width="30" stroke-linecap="round"/>
+    <circle cx="250" cy="180" r="92" fill="#0d1a20" stroke="url(#teal)" stroke-width="12"/>
+    <g clip-path="url(#lens)" fill="none" stroke="url(#teal)" stroke-width="3" opacity="0.9">
+      <ellipse cx="250" cy="185" rx="20" ry="16"/>
+      <ellipse cx="250" cy="183" rx="36" ry="30"/>
+      <ellipse cx="250" cy="181" rx="52" ry="45"/>
+      <ellipse cx="250" cy="179" rx="68" ry="60"/>
+      <ellipse cx="250" cy="177" rx="84" ry="75"/>
+      <rect x="150" y="150" width="200" height="16" fill="#0d1a20" stroke="none"/>
+      <rect x="150" y="205" width="200" height="14" fill="#0d1a20" stroke="none"/>
+    </g>
+  </g>
+
+  <!-- wordmark -->
+  <text x="430" y="170" font-size="104" font-weight="800" fill="#e6edf3" letter-spacing="4">TATAR</text>
+  <text x="434" y="230" font-size="46" font-weight="700" fill="#5eead4" letter-spacing="8">TRIAGE TOOLKIT</text>
+  <text x="436" y="272" font-size="23" fill="#9aa7b4">Cross-platform DFIR triage &#183; artifact collector</text>
+  <text x="436" y="304" font-size="18" fill="#5b6b78" font-family="Consolas, monospace">Windows + Linux &#183; unified summary.json &#183; read-only-first &#183; chain-of-custody</text>
+</svg>

@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ochmunkh/Tatar-scripts/blob/main/schema/summary.schema.json",
+  "title": "TATAR unified triage summary",
+  "description": "Shared summary.json contract emitted by every TATAR collector (Windows Tatar.ps1, Linux tatar-linux.sh, and future macOS/Android editions). One parser / dashboard ingests all platforms.",
+  "type": "object",
+  "required": ["tool", "version", "schemaVersion", "platform", "host", "started", "finished", "modulesRun", "findings"],
+  "properties": {
+    "tool": { "type": "string", "description": "Human tool name, e.g. 'TATAR Triage Toolkit'." },
+    "version": { "type": "string", "description": "Collector (tool) version, independent per platform." },
+    "schemaVersion": { "type": "string", "const": "1.1", "description": "Version of THIS shared schema. Consumers key off this." },
+    "platform": { "type": "string", "enum": ["windows", "linux", "macos", "android"] },
+    "host": { "type": "string" },
+    "os": { "type": "string" },
+    "osVersion": { "type": "string" },
+    "user": { "type": "string" },
+    "privileged": { "type": "boolean", "description": "Ran with elevated rights (Administrator on Windows, root on Unix)." },
+    "caseId": { "type": "string" },
+    "examiner": { "type": "string" },
+    "started": { "type": "string", "description": "ISO-8601 start time." },
+    "finished": { "type": "string", "description": "ISO-8601 finish time." },
+    "durationSeconds": { "type": "number", "description": "Wall-clock collection duration in seconds (unified across platforms)." },
+    "environment": {
+      "type": "object",
+      "description": "Execution context of the collected host. All fields best-effort; 'unknown'/'none' when undetermined.",
+      "properties": {
+        "virtualization": { "type": "string", "description": "e.g. kvm, vmware, hyperv, xen, none, unknown." },
+        "container": { "type": "boolean" },
+        "containerRuntime": { "type": "string", "description": "docker, kubernetes, podman, lxc, none." },
+        "securityModule": { "type": "string", "description": "Linux: selinux-enforcing/permissive, apparmor, none. Windows: defender or none." }
+      }
+    },
+    "errorsLogged": { "type": "integer", "minimum": 0 },
+    "modulesRun": { "type": "array", "items": { "type": "string" } },
+    "stats": {
+      "type": "object",
+      "description": "Free-form key/value counters (process count, listening ports, etc.). Values are strings or numbers.",
+      "additionalProperties": { "type": ["string", "number"] }
+    },
+    "findingsCount": { "type": "integer", "minimum": 0 },
+    "findings": {
+      "type": "array",
+      "description": "Automated triage leads (NOT verdicts). Each maps to zero or more MITRE ATT&CK techniques.",
+      "items": {
+        "type": "object",
+        "required": ["severity", "category", "message"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["High", "Review", "Info"] },
+          "category": { "type": "string", "description": "Emitting module/collector, e.g. process, users, persistence." },
+          "technique": {
+            "type": "array",
+            "description": "Suggested MITRE ATT&CK technique IDs. Empty when unmapped.",
+            "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" }
+          },
+          "message": { "type": "string", "description": "One-line lead for the analyst." },
+          "detail": { "type": "string", "description": "Where to look / why it matters." }
+        }
+      }
+    }
+  }
+}
