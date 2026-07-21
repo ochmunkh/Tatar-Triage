@@ -640,6 +640,31 @@ write_summary() {
         printf ']\n'
         printf '}\n'
     } > "$J"
+
+    # findings-only file for SOAR / SIEM ingestion (parity with the Windows edition)
+    local JF="$OUTDIR/findings.json"
+    {
+        printf '{\n'
+        printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
+        printf '  "schemaVersion": "1.1",\n'
+        printf '  "platform": "linux",\n'
+        printf '  "host": "%s",\n' "$(json_escape "$hn")"
+        printf '  "caseId": "%s",\n' "$(json_escape "$CASE_ID")"
+        printf '  "generated": "%s",\n' "$end_iso"
+        printf '  "findingsCount": %s,\n' "$fcount"
+        printf '  "findings": ['
+        if [ -s "$FINDINGS_FILE" ]; then
+            first=1
+            while IFS="$TAB" read -r fs fc fm fd ft; do
+                [ $first -eq 1 ] && first=0 || printf ','
+                if [ -n "$ft" ]; then techjson=$(printf '%s' "$ft" | awk '{printf "[";for(i=1;i<=NF;i++)printf "%s\"%s\"",(i>1?",":""),$i;printf "]"}'); else techjson="[]"; fi
+                printf '{"severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s"}' \
+                    "$(json_escape "$fs")" "$(json_escape "$fc")" "$techjson" "$(json_escape "$fm")" "$(json_escape "$fd")"
+            done < "$FINDINGS_FILE"
+        fi
+        printf ']\n'
+        printf '}\n'
+    } > "$JF"
 }
 
 # ---------------------------------------------------------------------------

@@ -88,6 +88,7 @@ Coverage: system/kernel info, network sockets & routing & DNS, process tree with
 ├─ TATAR_Report_<host>_<stamp>.txt   # consolidated human-readable report
 ├─ summary.txt                       # analyst-first triage summary + findings
 ├─ summary.json                      # machine-readable (unified schema, SIEM/automation)
+├─ findings.json                     # findings-only feed for SOAR / SIEM
 ├─ tatar.log                         # execution log: START/OK/WARN/FAILED (excluded from manifest)
 ├─ chain_of_custody.txt              # case / examiner / times / script SHA-256
 ├─ manifest_sha256.txt               # SHA-256 of every collected file
