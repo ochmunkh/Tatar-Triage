@@ -197,6 +197,7 @@ C:\Forensic\<HOST>_<YYYY-MM-DD_HH-mm-ss>\
 ├─ TATAR_Report_<HOST>_<stamp>.txt   # consolidated human-readable report
 ├─ summary.txt                       # analyst-first triage summary + findings  (NEW v1.1)
 ├─ summary.json                      # same, machine-readable (SIEM/automation) (NEW v1.1)
+├─ findings.json                     # findings-only feed for SOAR / SIEM              (NEW)
 ├─ Tatar.log                         # execution log: START/OK/WARN/FAILED      (NEW v1.1)
 ├─ chain_of_custody.txt              # case/examiner/times/script hash
 ├─ manifest_sha256.csv               # SHA-256 of every collected file (Tatar.log excluded)
@@ -226,7 +227,7 @@ This tool is intentionally **transparent** (no obfuscation / AMSI bypass). To ru
 2. **Publish its SHA-256** so responders can verify and allow-list it.
 3. On the forensic host, add a **scoped Defender/EDR exclusion** for the tool, and remove it afterward.
 
-`SHA-256 (Tatar.ps1): 92329EC66528FBB56C6D1DF9CD907981F1B9AC761B8909DED93EEAC9976B68BC`
+`SHA-256 (Tatar.ps1): A69F953AFCE102190DA9928869D380528F6E2BB7E203C66CF46E97187709219B`
 
 ---
 
@@ -249,6 +250,15 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 ---
 
 ## Changelog
+
+### Tier 1 hardening (current)
+- **Persistence ASEPs**: IFEO Debugger hijack, AppInit_DLLs, AppCertDlls, Winlogon Shell/Userinit, LSA packages, Print monitors (read-only registry).
+- **Process genealogy**: parent -> child tree + suspicious-lineage findings (Office/script host spawning a shell).
+- **More event IDs**: 4698/4699 (task), 4719 (audit policy), 4648 (explicit creds), 4768/4769/4776 (Kerberos/NTLM), 5140 (share), 4627.
+- **`findings.json`** findings-only output for SOAR/SIEM.
+- **MITRE sub-techniques** in the mapper (e.g. T1059.001 vs T1059.003, T1218.x LOLBINs, T1546.x ASEPs).
+- **Robustness**: winpmem HVCI/empty-image detection; manifest hashing tolerates locked files (`-ErrorAction SilentlyContinue`).
+- **Exit-code accuracy**: expected live-system locks (Amcache.hve, active NTUSER.DAT) are now logged as NOTE/WARN (not errors), so a clean run returns exit 0 instead of 2.
 
 ### Schema 1.1 — cross-platform (current)
 - **Unified `summary.json` schema** ([`schema/summary.schema.json`](schema/summary.schema.json)) now shared with the Linux edition; consumers key off `schemaVersion`.

@@ -141,7 +141,17 @@ function Get-Technique {
     # Centralized MITRE ATT&CK mapping - all technique logic lives here.
     param([string]$Category, [string]$Message)
     switch ($Category) {
-        'process'    { return @('T1059') }
+        'process'    {
+            if ($Message -match 'powershell') { return @('T1059.001') }
+            elseif ($Message -match 'parent') { return @('T1059','T1055') }
+            elseif ($Message -match 'cmd')    { return @('T1059.003') }
+            elseif ($Message -match 'wscript|cscript') { return @('T1059.005','T1059.007') }
+            elseif ($Message -match 'mshta')  { return @('T1218.005') }
+            elseif ($Message -match 'rundll32') { return @('T1218.011') }
+            elseif ($Message -match 'regsvr32') { return @('T1218.010') }
+            elseif ($Message -match 'certutil|bitsadmin') { return @('T1105','T1140') }
+            else { return @('T1059') }
+        }
         'sessions'   { return @('T1110') }
         'obfscan'    { return @('T1027','T1140') }
         'lateral'    {
@@ -154,6 +164,15 @@ function Get-Technique {
             elseif ($Message -match 'user-writable') { return @('T1574.010') }
             elseif ($Message -match 'AlwaysInstallElevated') { return @('T1548.002') }
             else { return @('T1068') }
+        }
+        'persistence' {
+            if ($Message -match 'IFEO|Image File Execution') { return @('T1546.012') }
+            elseif ($Message -match 'AppInit')  { return @('T1546.010') }
+            elseif ($Message -match 'AppCert')  { return @('T1546.009') }
+            elseif ($Message -match 'Winlogon') { return @('T1547.004') }
+            elseif ($Message -match 'LSA')      { return @('T1547.005','T1556.002') }
+            elseif ($Message -match 'Print')    { return @('T1547.012') }
+            else { return @('T1547.001') }
         }
         'eventlogs'  { return @('T1070.001') }
         'indicators' {
@@ -262,6 +281,23 @@ function Copy-Safe {
     try { if (Test-PathSafe $Src) { Copy-Item -LiteralPath $Src -Destination $Dst -Recurse -Force -ErrorAction SilentlyContinue } } catch { Add-Err "Copy $Src failed: $_" }
 }
 
+# Note = expected/benign condition. Logged as WARN; does NOT count as an error or change exit code.
+function Add-Note {
+    param([string]$Msg)
+    $t = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    "[$t] NOTE: $Msg" | Out-File -FilePath $script:ReportFile -Append -Encoding UTF8
+    Write-ExecLog 'WARN' $Msg
+}
+
+# Best-effort copy for files commonly locked on a live host (Amcache.hve, NTUSER.DAT...).
+# A failure here is EXPECTED, not a collection error -> logged as a NOTE (exit code stays 0).
+function Copy-BestEffort {
+    param([string]$Src, [string]$Dst, [string]$Hint = 'locked by the OS on a live system; acquire via VSS / RawCopy / offline')
+    if (-not (Test-PathSafe $Src)) { return }
+    try { Copy-Item -LiteralPath $Src -Destination $Dst -Force -ErrorAction Stop }
+    catch { Add-Note ("Could not copy {0} - {1}." -f $Src, $Hint) }
+}
+
 # =====================================================================
 #  Collector modules
 # =====================================================================
@@ -273,7 +309,12 @@ function Collect-Memory {
     if (-not (Test-PathSafe $tool)) { Add-Report 'winpmem.exe not in tools\. Skipping.'; return }
     $img = Join-Path $script:OutDir 'memory.raw'
     Invoke-Ext -File $tool -Arguments @('--output', $img, '--format', 'raw') -OutFile (Join-Path $script:OutDir 'winpmem_log.txt')
-    if (Test-PathSafe $img) { (Get-FileHash $img -Algorithm SHA256).Hash | Out-File (Join-Path $script:OutDir 'memory.raw.sha256.txt') -Encoding UTF8 }
+    if ((Test-PathSafe $img) -and ((Get-Item $img -ErrorAction SilentlyContinue).Length -gt 0)) {
+        (Get-FileHash $img -Algorithm SHA256).Hash | Out-File (Join-Path $script:OutDir 'memory.raw.sha256.txt') -Encoding UTF8
+        Add-Report ("Memory image captured: {0:N0} bytes." -f (Get-Item $img).Length)
+    } else {
+        Add-Err 'winpmem produced no/empty image - on Win10/11 with HVCI / Core Isolation / Memory Integrity the driver is commonly blocked. Check winpmem_log.txt; use a signed acquisition tool or disable VBS on the forensic host.'
+    }
 }
 
 function Collect-Network {
@@ -318,6 +359,28 @@ function Collect-Process {
                         Add-Finding -Category 'process' -Message ("Suspicious command-line pattern '{0}' in {1} (PID {2})" -f $s, $p.Name, $p.ProcessId) -Detail $cl
                         break
                     }
+                }
+            }
+        }
+        # -- Process genealogy (parent -> child tree) --
+        Add-Report "`n-- Process tree (parent -> child) --"
+        $script:pcById = @{}; foreach ($xp in $procs) { $script:pcById[[int]$xp.ProcessId] = $xp }
+        $script:pcChild = @{}
+        foreach ($xp in $procs) { $xpid=[int]$xp.ParentProcessId; if (-not $script:pcChild.ContainsKey($xpid)) { $script:pcChild[$xpid]=@() }; $script:pcChild[$xpid]+=$xp }
+        function Write-ProcTree { param($proc,$depth)
+            ("{0}{1} (PID {2})" -f ('  '*$depth), $proc.Name, $proc.ProcessId) | Out-File $script:ReportFile -Append -Encoding UTF8
+            if ($depth -lt 12) { foreach ($ch in @($script:pcChild[[int]$proc.ProcessId])) { if ($ch -and [int]$ch.ProcessId -ne [int]$proc.ProcessId) { Write-ProcTree -proc $ch -depth ($depth+1) } } }
+        }
+        foreach ($xp in $procs) { if (-not $script:pcById.ContainsKey([int]$xp.ParentProcessId)) { Write-ProcTree -proc $xp -depth 0 } }
+        # -- Suspicious parent-child lineage (office/script host spawning a shell) --
+        $parProc = 'winword','excel','powerpnt','outlook','msaccess','mspub','onenote','acrobat','acrord32','wscript','cscript','mshta','wmiprvse'
+        $shProc  = 'powershell','pwsh','cmd','wscript','cscript','mshta','rundll32','regsvr32','bitsadmin','certutil','curl'
+        foreach ($xp in $procs) {
+            $par = $script:pcById[[int]$xp.ParentProcessId]
+            if ($par) {
+                $pn = ($par.Name -replace '\.exe$',''); $cn = ($xp.Name -replace '\.exe$','')
+                if (($parProc -contains $pn.ToLower()) -and ($shProc -contains $cn.ToLower())) {
+                    Add-Finding -Severity 'High' -Category 'process' -Message ("Suspicious parent-child: {0} -> {1} (PID {2})" -f $par.Name, $xp.Name, $xp.ProcessId) -Detail ("Office/script host spawning a shell = common macro/phishing execution chain. Cmd: " + ([string]$xp.CommandLine))
                 }
             }
         }
@@ -390,6 +453,41 @@ function Collect-Persistence {
         Add-Report "`n-- Scheduled tasks (non-Microsoft) --"
         Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Microsoft\*' } |
             Select-Object TaskName, TaskPath, State | Format-Table -AutoSize | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
+        # -- Additional autostart/execution points (ASEPs) --
+        Add-Report "`n-- Additional ASEPs (IFEO / AppInit / AppCert / Winlogon / LSA / Print) --"
+        $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'
+        if (Test-PathSafe $ifeo) {
+            Get-ChildItem $ifeo -ErrorAction SilentlyContinue | ForEach-Object {
+                $dbg = (Get-ItemProperty $_.PSPath -Name Debugger -ErrorAction SilentlyContinue).Debugger
+                if ($dbg) { Add-Report ("[IFEO] {0} Debugger = {1}" -f $_.PSChildName, $dbg); Add-Finding -Severity 'High' -Category 'persistence' -Message ("IFEO Debugger hijack on {0}" -f $_.PSChildName) -Detail ("Debugger = $dbg  (launches attacker binary when target runs)") }
+            }
+        }
+        foreach ($k in 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows','HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows NT\CurrentVersion\Windows') {
+            $ai = (Get-ItemProperty $k -Name AppInit_DLLs -ErrorAction SilentlyContinue).AppInit_DLLs
+            if ($ai) { Add-Report "[AppInit_DLLs] $k = $ai"; Add-Finding -Category 'persistence' -Message 'AppInit_DLLs is set (DLL loaded into most user processes)' -Detail "$k AppInit_DLLs = $ai" }
+        }
+        $ac = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls'
+        if (Test-PathSafe $ac) {
+            $acp = Get-ItemProperty $ac -ErrorAction SilentlyContinue
+            $acn = @($acp.PSObject.Properties.Name | Where-Object { $_ -notmatch '^PS' })
+            if ($acn.Count -gt 0) { Add-Report '[AppCertDlls] present'; ($acp | Out-String) | Out-File $script:ReportFile -Append -Encoding UTF8; Add-Finding -Category 'persistence' -Message 'AppCertDlls registered (loads into CreateProcess callers)' -Detail 'HKLM\...\Session Manager\AppCertDlls' }
+        }
+        $wl = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+        if (Test-PathSafe $wl) {
+            $wlp = Get-ItemProperty $wl -ErrorAction SilentlyContinue
+            Add-Report ("[Winlogon] Shell='{0}'  Userinit='{1}'" -f $wlp.Shell, $wlp.Userinit)
+            if ($wlp.Shell -and $wlp.Shell -notmatch '^explorer\.exe,?\s*$') { Add-Finding -Severity 'High' -Category 'persistence' -Message 'Winlogon Shell is non-default' -Detail ("Shell = $($wlp.Shell) (expected explorer.exe)") }
+            if ($wlp.Userinit -and $wlp.Userinit -notmatch '(?i)^C:\\Windows\\system32\\userinit\.exe,?\s*$') { Add-Finding -Severity 'High' -Category 'persistence' -Message 'Winlogon Userinit is non-default' -Detail ("Userinit = $($wlp.Userinit)") }
+        }
+        $lsa = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'
+        if (Test-PathSafe $lsa) {
+            $lsap = Get-ItemProperty $lsa -ErrorAction SilentlyContinue
+            foreach ($vn in 'Security Packages','Authentication Packages','Notification Packages') {
+                if ($lsap.$vn) { Add-Report ("[LSA] {0} = {1}" -f $vn, ($lsap.$vn -join ', ')) }
+            }
+        }
+        $pmon = 'HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors'
+        if (Test-PathSafe $pmon) { Get-ChildItem $pmon -ErrorAction SilentlyContinue | ForEach-Object { $drv=(Get-ItemProperty $_.PSPath -Name Driver -ErrorAction SilentlyContinue).Driver; if ($drv) { Add-Report ("[PrintMonitor] {0} Driver={1}" -f $_.PSChildName,$drv) } } }
     } catch { Add-Err "Persistence failed: $_" }
 }
 
@@ -602,7 +700,7 @@ function Collect-FsArtifacts {
     try {
         $fs = New-SubDir 'FsArtifacts'
         Copy-Safe "$env:APPDATA\Microsoft\Windows\Recent" (Join-Path $fs 'Recent')
-        Copy-Safe 'C:\Windows\AppCompat\Programs\Amcache.hve' (Join-Path $fs 'Amcache.hve')
+        Copy-BestEffort 'C:\Windows\AppCompat\Programs\Amcache.hve' (Join-Path $fs 'Amcache.hve') 'Amcache.hve is locked on a live host; acquire via VSS / RawCopy for offline parsing'
         try { fsutil usn queryjournal C: 2>$null | Out-File (Join-Path $fs 'usn_queryjournal.txt') -Encoding UTF8 } catch {}
         Get-Volume -ErrorAction SilentlyContinue | Out-File (Join-Path $fs 'volumes.txt') -Encoding UTF8
         Get-Disk   -ErrorAction SilentlyContinue | Out-File (Join-Path $fs 'disks.txt')   -Encoding UTF8
@@ -639,7 +737,7 @@ function Collect-EventLogs {
     Add-Section '25 Key event summary (+ optional EVTX export)'
     try {
         $ev = New-SubDir 'EventLogs'
-        $map = @{ '4688'='Process creation'; '7045'='Service install'; '4720'='User created'; '4672'='Special privileges'; '1102'='Security log cleared'; '4104'='PS scriptblock' }
+        $map = @{ '4688'='Process creation'; '7045'='Service install'; '4720'='User created'; '4672'='Special privileges'; '1102'='Security log cleared'; '4104'='PS scriptblock'; '4698'='Scheduled task created'; '4699'='Scheduled task deleted'; '4719'='Audit policy changed'; '4648'='Logon w/ explicit creds'; '4768'='Kerberos TGT'; '4769'='Kerberos svc ticket'; '4776'='NTLM auth'; '5140'='Net share access'; '4627'='Group membership' }
         foreach ($id in $map.Keys) {
             $log = if ($id -eq '4104') { 'Microsoft-Windows-PowerShell/Operational' } else { 'Security' }
             try {
@@ -673,7 +771,7 @@ function Collect-Hives {
         }
         Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue | ForEach-Object {
             $nt = Join-Path $_.FullName 'NTUSER.DAT'
-            if (Test-PathSafe $nt) { Copy-Safe $nt (Join-Path $hd ("NTUSER_" + $_.Name + ".dat")) }
+            if (Test-PathSafe $nt) { Copy-BestEffort $nt (Join-Path $hd ("NTUSER_" + $_.Name + ".dat")) 'NTUSER.DAT of an active profile is locked; acquire offline / via VSS' }
         }
         Add-Report 'NOTE: hives contain credential material - encrypt output and handle per policy.'
     } catch { Add-Err "Hives failed: $_" }
@@ -840,6 +938,19 @@ function Write-Summary {
         findings        = $sorted
     }
     $jsonObj | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $script:OutDir 'summary.json') -Encoding UTF8
+
+    # findings-only file for SOAR / SIEM ingestion
+    $findObj = [pscustomobject]@{
+        tool          = 'TATAR Triage Toolkit'
+        schemaVersion = '1.1'
+        platform      = 'windows'
+        host          = $hn
+        caseId        = $CaseId
+        generated     = $End.ToString('o')
+        findingsCount = $sorted.Count
+        findings      = $sorted
+    }
+    $findObj | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $script:OutDir 'findings.json') -Encoding UTF8
 }
 
 # =====================================================================
@@ -990,8 +1101,8 @@ try { Write-Summary -Start $start -End $end -ModulesRun $toRun -IsAdmin $isAdmin
 try {
     $manifest = Join-Path $script:OutDir 'manifest_sha256.csv'
     $exclude  = @($manifest, $script:ExecLog)   # Tatar.log keeps growing after hashing, so it is excluded
-    Get-ChildItem -Path $script:OutDir -Recurse -File | Where-Object { $exclude -notcontains $_.FullName } |
-        Get-FileHash -Algorithm SHA256 | Select-Object Hash, Path | Export-Csv -Path $manifest -NoTypeInformation -Encoding UTF8
+    Get-ChildItem -Path $script:OutDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $exclude -notcontains $_.FullName } |
+        Get-FileHash -Algorithm SHA256 -ErrorAction SilentlyContinue | Select-Object Hash, Path | Export-Csv -Path $manifest -NoTypeInformation -Encoding UTF8
     Write-ExecLog 'INFO' "Manifest written: $manifest"
 } catch { Add-Err "Manifest failed: $_" }
 
