@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/ochmunkh/Tatar-scripts/blob/main/schema/summary.schema.json",
+  "$id": "https://github.com/ochmunkh/Tatar-Triage/blob/main/schema/summary.schema.json",
   "title": "TATAR unified triage summary",
   "description": "Shared summary.json contract emitted by every TATAR collector (Windows Tatar.ps1, Linux tatar-linux.sh, and future macOS/Android editions). One parser / dashboard ingests all platforms.",
   "type": "object",

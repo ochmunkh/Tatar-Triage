@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  linux:
+    name: Linux (bash-n / shellcheck / run / schema)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash syntax check
+        run: bash -n linux/tatar-linux.sh
+
+      - name: ShellCheck (errors only)
+        run: shellcheck --severity=error linux/tatar-linux.sh
+
+      - name: Smoke run + summary.json schema validation
+        run: |
+          chmod +x linux/tatar-linux.sh
+          ./linux/tatar-linux.sh --all --silent --caseid CI --output /tmp/tt || true
+          d="$(find /tmp/tt -mindepth 1 -maxdepth 1 -type d | head -n1)"
+          echo "Output dir: $d"
+          test -s "$d/summary.json"   || { echo "summary.json missing"; exit 1; }
+          test -s "$d/findings.json"  || { echo "findings.json missing"; exit 1; }
+          python3 -m pip install --quiet jsonschema
+          python3 - "$d/summary.json" schema/summary.schema.json <<'PY'
+          import json, sys
+          from jsonschema import validate
+          inst   = json.load(open(sys.argv[1], encoding="utf-8"))
+          schema = json.load(open(sys.argv[2], encoding="utf-8"))
+          validate(instance=inst, schema=schema)
+          print("OK: summary.json validates against schema 1.1")
+          PY
+          python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8')); print('OK: findings.json is valid JSON')" "$d/findings.json"
+
+  windows:
+    name: Windows (parse / PSScriptAnalyzer / run)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse check (0 syntax errors)
+        shell: pwsh
+        run: |
+          $e = $null
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content ./Tatar.ps1 -Raw), [ref]$e) | Out-Null
+          if ($e.Count -gt 0) { $e | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          "Parse OK: 0 syntax errors"
+
+      - name: PSScriptAnalyzer (fail on Error severity)
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck
+          $r = Invoke-ScriptAnalyzer -Path ./Tatar.ps1 -Settings ./PSScriptAnalyzerSettings.psd1
+          $r | Sort-Object Severity -Descending | Format-Table -AutoSize | Out-String | Write-Host
+          $errs = @($r | Where-Object { $_.Severity -eq 'Error' })
+          if ($errs.Count -gt 0) { Write-Error "PSScriptAnalyzer found $($errs.Count) error(s)"; exit 1 }
+          "PSScriptAnalyzer OK (0 errors)"
+
+      - name: Smoke run + JSON validation
+        shell: pwsh
+        run: |
+          pwsh -File ./Tatar.ps1 -Modules sysinfo,users,process,persistence -Silent -OutputPath "$env:TEMP\tt"
+          "Collector exit code: $LASTEXITCODE"
+          $d = (Get-ChildItem "$env:TEMP\tt" -Directory | Select-Object -First 1).FullName
+          foreach ($f in 'summary.json','findings.json') {
+            $fp = Join-Path $d $f
+            if (-not (Test-Path $fp)) { throw "$f missing" }
+            Get-Content $fp -Raw | ConvertFrom-Json | Out-Null
+            "OK: $f is valid JSON"
+          }
