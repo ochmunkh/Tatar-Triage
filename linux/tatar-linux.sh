@@ -29,12 +29,17 @@ set -o pipefail 2>/dev/null || true
 VERSION="1.1"
 TOOL="TATAR Triage Toolkit (Linux)"
 
+# Field separator for the findings pipeline. MUST be non-whitespace: bash 'read'
+# collapses consecutive whitespace-IFS delimiters, which would drop empty fields
+# (empty detail/technique/suppressReason) and shift every column after them.
+FSEP="$(printf '\037')"   # ASCII Unit Separator (0x1F)
+
 # ---------------------------------------------------------------------------
 # Argument parsing  (-flag / --flag, case-insensitive-ish)
 # ---------------------------------------------------------------------------
 ALL=0; LIST=0; HELP=0; COMPRESS=0; SILENT=0; DUMP_DELETED=0
 OUTPUT_BASE="/tmp/forensic"; CASE_ID=""; EXAMINER=""
-MODULES=""; UNKNOWN=""; ALLOWLIST=""
+MODULES=""; UNKNOWN=""; ALLOWLIST=""; IOCFILE=""
 
 while [ $# -gt 0 ]; do
     raw="$1"
@@ -51,6 +56,7 @@ while [ $# -gt 0 ]; do
         caseid|case) shift; CASE_ID="$1" ;;
         examiner)    shift; EXAMINER="$1" ;;
         allowlist|allow) shift; ALLOWLIST="$1" ;;
+        ioc|iocfile|iocs) shift; IOCFILE="$1" ;;
         *)           UNKNOWN="$UNKNOWN $raw" ;;
     esac
     shift
@@ -119,8 +125,8 @@ add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
     local id conf
     id=$(printf 'TTR-F-%03d' "$FIND_SEQ")
     case "$sev" in High) conf=0.7 ;; Review) conf=0.4 ;; *) conf=0.3 ;; esac
-    # columns: id \t sev \t cat \t msg \t det \t tech \t conf
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$sev" "$cat" "$msg" "$det" "$tech" "$conf" >> "$FINDINGS_FILE"
+    # columns (FSEP-delimited): id | sev | cat | msg | det | tech | conf
+    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\n' "$id" "$sev" "$cat" "$msg" "$det" "$tech" "$conf" >> "$FINDINGS_FILE"
 }
 
 # --- Allowlist helpers (Linux trust signals: path glob, sha256, package owner) ---
@@ -152,6 +158,22 @@ pkg_owns() {  # $1=path -> 0 if the file belongs to an installed system package
 
 al_path_of() {  # $1=msg $2=detail -> first absolute path token found
     printf '%s %s' "$1" "$2" | grep -oE '/[A-Za-z0-9_.+-][A-Za-z0-9_./+-]*' | head -n1
+}
+
+json_array_items() {  # $1=file $2=key -> newline-separated array values
+    [ -n "$1" ] && [ -r "$1" ] || return 0
+    if have python3; then
+        python3 -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    for x in d.get(sys.argv[2],[]):
+        print(x)
+except Exception:
+    pass' "$1" "$2" 2>/dev/null
+    else
+        sed -n "/\"$2\"[[:space:]]*:[[:space:]]*\[/,/]/p" "$1" 2>/dev/null \
+          | grep -oE '"[^"]*"' | sed 's/^"//; s/"$//' | grep -vx "$2"
+    fi
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -215,6 +237,7 @@ OPTIONS:
   --compress        tar.gz + SHA-256 the output at the end
   --silent|--quiet  No console output (for SSH/cron/remote runs)
   --allowlist <json> Suppress known-good findings (paths[], hashes[], packageOwned)
+  --ioc <json>      Match findings/evidence vs IOCs (hashes[], ips[], domains[], filenames[])
   --dump-deleted    Recover deleted running binaries via /proc/PID/exe (opt-in; off by default)
 
 OUTPUT (always written):
@@ -597,7 +620,7 @@ except Exception: print(1)' "$ALLOWLIST" 2>/dev/null || echo 1)"
     fi
     if [ -s "$FINDINGS_FILE" ]; then
         local fid fs fc fm fd ft fconf supp reason path h g
-        while IFS="$TAB" read -r fid fs fc fm fd ft fconf; do
+        while IFS="$FSEP" read -r fid fs fc fm fd ft fconf; do
             supp=false; reason=""
             if [ -n "$ALLOWLIST" ] && [ -r "$ALLOWLIST" ]; then
                 path="$(al_path_of "$fm" "$fd")"
@@ -624,12 +647,81 @@ EOF
                 fi
             fi
             [ "$supp" = true ] && sup_count=$((sup_count+1))
-            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-                "$fid" "$fs" "$fc" "$fm" "$fd" "$ft" "$fconf" "$supp" "$reason" >> "$F2"
+            # 10th column: iocMatch (default false; set by the IOC pass below)
+            printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+                "$fid" "$fs" "$fc" "$fm" "$fd" "$ft" "$fconf" "$supp" "$reason" "false" >> "$F2"
         done < "$FINDINGS_FILE"
     fi
+
+    # ---- IOC matching -----------------------------------------------------
+    # Known-bad wins over allowlist: an IOC hit forces High + un-suppresses.
+    local ioc_hits=0
+    if [ -n "$IOCFILE" ] && [ -r "$IOCFILE" ]; then
+        local IOC_HASHES IOC_STR
+        IOC_HASHES="$(json_array_items "$IOCFILE" hashes | tr 'A-F' 'a-f' | grep -E '.')"
+        # ips + domains + filenames matched as case-insensitive substrings
+        IOC_STR="$( { json_array_items "$IOCFILE" ips; json_array_items "$IOCFILE" domains; json_array_items "$IOCFILE" filenames; } | grep -E '.' )"
+
+        # Pass A: annotate/override existing findings
+        local F2b IOC_HIT; F2b="$(mktemp)"; IOC_HIT="$(mktemp)"
+        local xid xs xc xm xd xt xconf xsup xreason xioc hit path h ind
+        while IFS="$FSEP" read -r xid xs xc xm xd xt xconf xsup xreason xioc; do
+            hit=""
+            # string IOCs (ip/domain/filename) in message or detail
+            if [ -n "$IOC_STR" ]; then
+                while IFS= read -r ind; do
+                    [ -n "$ind" ] || continue
+                    if printf '%s %s' "$xm" "$xd" | grep -qiF -- "$ind"; then hit="$ind"; break; fi
+                done <<EOF
+$IOC_STR
+EOF
+            fi
+            # hash IOC: sha256 of the referenced binary
+            if [ -z "$hit" ] && [ -n "$IOC_HASHES" ]; then
+                path="$(al_path_of "$xm" "$xd")"
+                if [ -n "$path" ] && [ -r "$path" ]; then
+                    h="$(sha256sum "$path" 2>/dev/null | awk '{print $1}')"
+                    if [ -n "$h" ] && printf '%s\n' "$IOC_HASHES" | grep -qix "$h"; then hit="$h"; fi
+                fi
+            fi
+            if [ -n "$hit" ]; then
+                ioc_hits=$((ioc_hits+1))
+                printf '%s\n' "$hit" >> "$IOC_HIT"
+                # IOC beats allowlist: re-activate, escalate
+                [ "$xsup" = true ] && sup_count=$((sup_count-1))
+                xs="High"; xconf="0.95"; xsup="false"; xreason=""; xioc="true"
+                xd="IOC match: $hit | $xd"
+            fi
+            printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+                "$xid" "$xs" "$xc" "$xm" "$xd" "$xt" "$xconf" "$xsup" "$xreason" "$xioc" >> "$F2b"
+        done < "$F2"
+        mv "$F2b" "$F2"
+
+        # Pass B: raise NEW findings for IOCs seen anywhere in the collected report
+        local val ln
+        if [ -r "$REPORT" ]; then
+            { printf '%s\n' "$IOC_STR"; printf '%s\n' "$IOC_HASHES"; } | while IFS= read -r val; do
+                [ -n "$val" ] || continue
+                # skip IOCs already tied to a specific finding in Pass A
+                grep -qxF -- "$val" "$IOC_HIT" 2>/dev/null && continue
+                ln="$(grep -iF -- "$val" "$REPORT" 2>/dev/null | grep -viE 'IOC match' | head -n1)"
+                if [ -n "$ln" ]; then
+                    FIND_SEQ=$((FIND_SEQ+1))
+                    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+                        "$(printf 'TTR-F-%03d' "$FIND_SEQ")" "High" "ioc" \
+                        "IOC observed in collected evidence: $val" \
+                        "$(printf '%s' "$ln" | tr '\t\037' '  ' | cut -c1-160)" \
+                        "T1071" "0.95" "false" "" "true" >> "$F2"
+                fi
+            done
+        fi
+        rm -f "$IOC_HIT" 2>/dev/null
+    fi
+
+    fcount=$( [ -s "$F2" ] && wc -l < "$F2" || echo 0 )
     local active_count=$(( fcount - sup_count ))
-    execlog "INFO" "Allowlist: $sup_count/$fcount findings suppressed ($active_count active)"
+    [ "$active_count" -lt 0 ] && active_count=0
+    execlog "INFO" "Allowlist: $sup_count suppressed | IOC hits: $ioc_hits | active: $active_count / $fcount"
 
     local S="$OUTDIR/summary.txt"
     {
@@ -659,11 +751,12 @@ EOF
         echo "---------- SUSPICIOUS FINDINGS: $active_count active, $sup_count allowlisted (leads, NOT verdicts) ----------"
         if [ -s "$F2" ] && [ "$active_count" -gt 0 ]; then
             for sev in High Review; do
-                while IFS="$TAB" read -r fid fs fc fm fd ft fconf fsup freason; do
+                while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc; do
                     [ "$fs" = "$sev" ] || continue
                     [ "$fsup" = true ] && continue
-                    if [ -n "$ft" ]; then printf '  %s [%s] (%s) [%s] %s\n' "$fid" "$fs" "$fc" "$ft" "$fm"
-                    else printf '  %s [%s] (%s) %s\n' "$fid" "$fs" "$fc" "$fm"; fi
+                    local tag=""; [ "$fioc" = true ] && tag="[IOC] "
+                    if [ -n "$ft" ]; then printf '  %s [%s] (%s) [%s] %s%s\n' "$fid" "$fs" "$fc" "$ft" "$tag" "$fm"
+                    else printf '  %s [%s] (%s) %s%s\n' "$fid" "$fs" "$fc" "$tag" "$fm"; fi
                     [ -n "$fd" ] && printf '        %s\n' "$fd"
                 done < "$F2"
             done
@@ -681,7 +774,7 @@ EOF
         if [ "$sup_count" -gt 0 ]; then
             echo ""
             echo "-------- SUPPRESSED BY ALLOWLIST: $sup_count (kept for audit) --------"
-            while IFS="$TAB" read -r fid fs fc fm fd ft fconf fsup freason; do
+            while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc; do
                 [ "$fsup" = true ] || continue
                 printf '  %s [%s] (%s) %s  <- %s\n' "$fid" "$fs" "$fc" "$fm" "$freason"
             done < "$F2"
@@ -759,17 +852,18 @@ EOF
 
 # Emit the findings[] array items (v2 schema) from an augmented findings file.
 _emit_findings_json() {  # $1 = F2 path
-    local f2="$1" first=1 fid fs fc fm fd ft fconf fsup freason techjson
+    local f2="$1" first=1 fid fs fc fm fd ft fconf fsup freason fioc techjson
     [ -s "$f2" ] || return 0
-    while IFS="$(printf '\t')" read -r fid fs fc fm fd ft fconf fsup freason; do
+    while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc; do
         [ $first -eq 1 ] && first=0 || printf ','
         if [ -n "$ft" ]; then
             techjson=$(printf '%s' "$ft" | awk '{printf "[";for(i=1;i<=NF;i++)printf "%s\"%s\"",(i>1?",":""),$i;printf "]"}')
         else techjson="[]"; fi
         [ -n "$fconf" ] || fconf=0.3
-        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"suppressed":%s,"suppressReason":"%s","iocMatch":false}' \
+        case "$fioc" in true|false) : ;; *) fioc=false ;; esac
+        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"suppressed":%s,"suppressReason":"%s","iocMatch":%s}' \
             "$(json_escape "$fid")" "$(json_escape "$fs")" "$(json_escape "$fc")" "$techjson" \
-            "$(json_escape "$fm")" "$(json_escape "$fd")" "$fconf" "${fsup:-false}" "$(json_escape "$freason")"
+            "$(json_escape "$fm")" "$(json_escape "$fd")" "$fconf" "${fsup:-false}" "$(json_escape "$freason")" "$fioc"
     done < "$f2"
 }
 
