@@ -14,5 +14,7 @@
     "Microsoft Windows",
     "NVIDIA Corporation"
   ],
-  "hashes": []
+  "hashes": [],
+  "_packageOwned_comment": "Linux only: when true, findings whose binary is owned by an installed dpkg/rpm package are suppressed as vendor-trusted. Set false to keep them.",
+  "packageOwned": true
 }

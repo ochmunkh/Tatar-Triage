@@ -34,7 +34,7 @@ TOOL="TATAR Triage Toolkit (Linux)"
 # ---------------------------------------------------------------------------
 ALL=0; LIST=0; HELP=0; COMPRESS=0; SILENT=0; DUMP_DELETED=0
 OUTPUT_BASE="/tmp/forensic"; CASE_ID=""; EXAMINER=""
-MODULES=""; UNKNOWN=""
+MODULES=""; UNKNOWN=""; ALLOWLIST=""
 
 while [ $# -gt 0 ]; do
     raw="$1"
@@ -50,6 +50,7 @@ while [ $# -gt 0 ]; do
         output|outputpath|o) shift; OUTPUT_BASE="$1" ;;
         caseid|case) shift; CASE_ID="$1" ;;
         examiner)    shift; EXAMINER="$1" ;;
+        allowlist|allow) shift; ALLOWLIST="$1" ;;
         *)           UNKNOWN="$UNKNOWN $raw" ;;
     esac
     shift
@@ -108,12 +109,49 @@ map_technique() {  # map_technique CATEGORY MESSAGE -> space-separated technique
     esac
 }
 
+FIND_SEQ=0
 add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
     local sev="$1" cat="$2" msg="$3" det="$4" tech="${5:-}"
     msg=$(printf '%s' "$msg" | tr '\t\n' '  ')
     det=$(printf '%s' "$det" | tr '\t\n' '  ')
     [ -z "$tech" ] && tech="$(map_technique "$cat" "$msg")"
-    printf '%s\t%s\t%s\t%s\t%s\n' "$sev" "$cat" "$msg" "$det" "$tech" >> "$FINDINGS_FILE"
+    FIND_SEQ=$((FIND_SEQ+1))
+    local id conf
+    id=$(printf 'TTR-F-%03d' "$FIND_SEQ")
+    case "$sev" in High) conf=0.7 ;; Review) conf=0.4 ;; *) conf=0.3 ;; esac
+    # columns: id \t sev \t cat \t msg \t det \t tech \t conf
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$sev" "$cat" "$msg" "$det" "$tech" "$conf" >> "$FINDINGS_FILE"
+}
+
+# --- Allowlist helpers (Linux trust signals: path glob, sha256, package owner) ---
+al_extract_items() {  # $1=json key -> newline-separated values from $ALLOWLIST
+    [ -n "$ALLOWLIST" ] && [ -r "$ALLOWLIST" ] || return 0
+    if have python3; then
+        python3 -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    for x in d.get(sys.argv[2],[]):
+        print(x)
+except Exception:
+    pass' "$ALLOWLIST" "$1" 2>/dev/null
+    else
+        # crude fallback: pull quoted strings from the "key": [ ... ] array
+        sed -n "/\"$1\"[[:space:]]*:[[:space:]]*\[/,/]/p" "$ALLOWLIST" 2>/dev/null \
+          | grep -oE '"[^"]*"' | sed 's/^"//; s/"$//' | grep -vx "$1"
+    fi
+}
+
+pkg_owns() {  # $1=path -> 0 if the file belongs to an installed system package
+    local p="$1"
+    [ -n "$p" ] && [ -e "$p" ] || return 1
+    if have dpkg-query && dpkg-query -S "$p" >/dev/null 2>&1; then return 0; fi
+    if have dpkg && dpkg -S "$p" >/dev/null 2>&1; then return 0; fi
+    if have rpm && rpm -qf "$p" >/dev/null 2>&1; then return 0; fi
+    return 1
+}
+
+al_path_of() {  # $1=msg $2=detail -> first absolute path token found
+    printf '%s %s' "$1" "$2" | grep -oE '/[A-Za-z0-9_.+-][A-Za-z0-9_./+-]*' | head -n1
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -176,6 +214,7 @@ OPTIONS:
   --examiner <name> Examiner name for chain of custody
   --compress        tar.gz + SHA-256 the output at the end
   --silent|--quiet  No console output (for SSH/cron/remote runs)
+  --allowlist <json> Suppress known-good findings (paths[], hashes[], packageOwned)
   --dump-deleted    Recover deleted running binaries via /proc/PID/exe (opt-in; off by default)
 
 OUTPUT (always written):
@@ -543,6 +582,55 @@ write_summary() {
     usr="$(id -un 2>/dev/null)"
     fcount=$( [ -s "$FINDINGS_FILE" ] && wc -l < "$FINDINGS_FILE" || echo 0 )
 
+    # ---- Apply allowlist suppression -> augmented findings file F2 ----------
+    # F2 columns: id \t sev \t cat \t msg \t det \t tech \t conf \t suppressed \t reason
+    local F2; F2="$(mktemp)"
+    local sup_count=0
+    local AL_PATHS AL_HASHES AL_PKGOWN
+    AL_PATHS="$(al_extract_items paths)"
+    AL_HASHES="$(al_extract_items hashes | tr 'A-F' 'a-f')"
+    AL_PKGOWN=1
+    if [ -n "$ALLOWLIST" ] && [ -r "$ALLOWLIST" ] && have python3; then
+        AL_PKGOWN="$(python3 -c 'import json,sys
+try: print(1 if json.load(open(sys.argv[1])).get("packageOwned",True) else 0)
+except Exception: print(1)' "$ALLOWLIST" 2>/dev/null || echo 1)"
+    fi
+    if [ -s "$FINDINGS_FILE" ]; then
+        local fid fs fc fm fd ft fconf supp reason path h g
+        while IFS="$TAB" read -r fid fs fc fm fd ft fconf; do
+            supp=false; reason=""
+            if [ -n "$ALLOWLIST" ] && [ -r "$ALLOWLIST" ]; then
+                path="$(al_path_of "$fm" "$fd")"
+                # 1) sha256 of the referenced binary
+                if [ "$supp" = false ] && [ -n "$AL_HASHES" ] && [ -n "$path" ] && [ -r "$path" ]; then
+                    h="$(sha256sum "$path" 2>/dev/null | awk '{print $1}')"
+                    if [ -n "$h" ] && printf '%s\n' "$AL_HASHES" | grep -qix "$h"; then
+                        supp=true; reason="allowlist sha256"
+                    fi
+                fi
+                # 2) path glob
+                if [ "$supp" = false ] && [ -n "$path" ] && [ -n "$AL_PATHS" ]; then
+                    while IFS= read -r g; do
+                        [ -n "$g" ] || continue
+                        # shellcheck disable=SC2254
+                        case "$path" in $g) supp=true; reason="allowlist path: $g"; break ;; esac
+                    done <<EOF
+$AL_PATHS
+EOF
+                fi
+                # 3) owned by an installed system package (Linux trust signal)
+                if [ "$supp" = false ] && [ "$AL_PKGOWN" = 1 ] && [ -n "$path" ]; then
+                    if pkg_owns "$path"; then supp=true; reason="owned by system package"; fi
+                fi
+            fi
+            [ "$supp" = true ] && sup_count=$((sup_count+1))
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$fid" "$fs" "$fc" "$fm" "$fd" "$ft" "$fconf" "$supp" "$reason" >> "$F2"
+        done < "$FINDINGS_FILE"
+    fi
+    local active_count=$(( fcount - sup_count ))
+    execlog "INFO" "Allowlist: $sup_count/$fcount findings suppressed ($active_count active)"
+
     local S="$OUTDIR/summary.txt"
     {
         echo "=============================================================="
@@ -568,23 +656,35 @@ write_summary() {
             echo "  (no stats collected)"
         fi
         echo ""
-        echo "---------- SUSPICIOUS FINDINGS: $fcount (review leads, NOT verdicts) ----------"
-        if [ -s "$FINDINGS_FILE" ]; then
+        echo "---------- SUSPICIOUS FINDINGS: $active_count active, $sup_count allowlisted (leads, NOT verdicts) ----------"
+        if [ -s "$F2" ] && [ "$active_count" -gt 0 ]; then
             for sev in High Review; do
-                while IFS="$TAB" read -r fs fc fm fd ft; do
+                while IFS="$TAB" read -r fid fs fc fm fd ft fconf fsup freason; do
                     [ "$fs" = "$sev" ] || continue
-                    if [ -n "$ft" ]; then printf '  [%s] (%s) [%s] %s\n' "$fs" "$fc" "$ft" "$fm"
-                    else printf '  [%s] (%s) %s\n' "$fs" "$fc" "$fm"; fi
+                    [ "$fsup" = true ] && continue
+                    if [ -n "$ft" ]; then printf '  %s [%s] (%s) [%s] %s\n' "$fid" "$fs" "$fc" "$ft" "$fm"
+                    else printf '  %s [%s] (%s) %s\n' "$fid" "$fs" "$fc" "$fm"; fi
                     [ -n "$fd" ] && printf '        %s\n' "$fd"
-                done < "$FINDINGS_FILE"
+                done < "$F2"
             done
             echo ""
             echo "  NOTE: entries above are automated pattern matches. Legitimate software"
             echo "  and admin activity can appear. Validate each lead against the full"
             echo "  report before drawing conclusions."
+        elif [ -s "$F2" ]; then
+            echo "  All findings were suppressed by the allowlist (see below). This does"
+            echo "  NOT prove the host is clean - review the full report and artifacts."
         else
             echo "  No automatic findings were flagged. This does NOT prove the host is"
             echo "  clean - review the full report and collected artifacts."
+        fi
+        if [ "$sup_count" -gt 0 ]; then
+            echo ""
+            echo "-------- SUPPRESSED BY ALLOWLIST: $sup_count (kept for audit) --------"
+            while IFS="$TAB" read -r fid fs fc fm fd ft fconf fsup freason; do
+                [ "$fsup" = true ] || continue
+                printf '  %s [%s] (%s) %s  <- %s\n' "$fid" "$fs" "$fc" "$fm" "$freason"
+            done < "$F2"
         fi
         echo ""
         echo "-------------------- NEXT STEPS ------------------------------"
@@ -599,7 +699,7 @@ write_summary() {
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
         printf '  "version": "%s",\n' "$VERSION"
-        printf '  "schemaVersion": "1.1",\n'
+        printf '  "schemaVersion": "1.2",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "os": "%s",\n' "$(json_escape "$os")"
@@ -627,16 +727,10 @@ write_summary() {
         fi
         printf '},\n'
         printf '  "findingsCount": %s,\n' "$fcount"
+        printf '  "activeFindingsCount": %s,\n' "$active_count"
+        printf '  "suppressedCount": %s,\n' "$sup_count"
         printf '  "findings": ['
-        if [ -s "$FINDINGS_FILE" ]; then
-            first=1
-            while IFS="$TAB" read -r fs fc fm fd ft; do
-                [ $first -eq 1 ] && first=0 || printf ','
-                if [ -n "$ft" ]; then techjson=$(printf '%s' "$ft" | awk '{printf "[";for(i=1;i<=NF;i++)printf "%s\"%s\"",(i>1?",":""),$i;printf "]"}'); else techjson="[]"; fi
-                printf '{"severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s"}' \
-                    "$(json_escape "$fs")" "$(json_escape "$fc")" "$techjson" "$(json_escape "$fm")" "$(json_escape "$fd")"
-            done < "$FINDINGS_FILE"
-        fi
+        _emit_findings_json "$F2"
         printf ']\n'
         printf '}\n'
     } > "$J"
@@ -646,25 +740,37 @@ write_summary() {
     {
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
-        printf '  "schemaVersion": "1.1",\n'
+        printf '  "schemaVersion": "1.2",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "caseId": "%s",\n' "$(json_escape "$CASE_ID")"
         printf '  "generated": "%s",\n' "$end_iso"
         printf '  "findingsCount": %s,\n' "$fcount"
+        printf '  "activeFindingsCount": %s,\n' "$active_count"
+        printf '  "suppressedCount": %s,\n' "$sup_count"
         printf '  "findings": ['
-        if [ -s "$FINDINGS_FILE" ]; then
-            first=1
-            while IFS="$TAB" read -r fs fc fm fd ft; do
-                [ $first -eq 1 ] && first=0 || printf ','
-                if [ -n "$ft" ]; then techjson=$(printf '%s' "$ft" | awk '{printf "[";for(i=1;i<=NF;i++)printf "%s\"%s\"",(i>1?",":""),$i;printf "]"}'); else techjson="[]"; fi
-                printf '{"severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s"}' \
-                    "$(json_escape "$fs")" "$(json_escape "$fc")" "$techjson" "$(json_escape "$fm")" "$(json_escape "$fd")"
-            done < "$FINDINGS_FILE"
-        fi
+        _emit_findings_json "$F2"
         printf ']\n'
         printf '}\n'
     } > "$JF"
+
+    rm -f "$F2" 2>/dev/null
+}
+
+# Emit the findings[] array items (v2 schema) from an augmented findings file.
+_emit_findings_json() {  # $1 = F2 path
+    local f2="$1" first=1 fid fs fc fm fd ft fconf fsup freason techjson
+    [ -s "$f2" ] || return 0
+    while IFS="$(printf '\t')" read -r fid fs fc fm fd ft fconf fsup freason; do
+        [ $first -eq 1 ] && first=0 || printf ','
+        if [ -n "$ft" ]; then
+            techjson=$(printf '%s' "$ft" | awk '{printf "[";for(i=1;i<=NF;i++)printf "%s\"%s\"",(i>1?",":""),$i;printf "]"}')
+        else techjson="[]"; fi
+        [ -n "$fconf" ] || fconf=0.3
+        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"suppressed":%s,"suppressReason":"%s","iocMatch":false}' \
+            "$(json_escape "$fid")" "$(json_escape "$fs")" "$(json_escape "$fc")" "$techjson" \
+            "$(json_escape "$fm")" "$(json_escape "$fd")" "$fconf" "${fsup:-false}" "$(json_escape "$freason")"
+    done < "$f2"
 }
 
 # ---------------------------------------------------------------------------
