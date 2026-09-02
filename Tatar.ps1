@@ -89,7 +89,7 @@ $ErrorActionPreference = 'Continue'
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $List=$false; $Help=$false; $Compress=$false
 $CollectHives=$false; $ExportEvtx=$false; $MemoryDump=$false; $Silent=$false
-$Modules=@(); $OutputPath='C:\Forensic'; $CaseId=''; $Examiner=''; $Allowlist=''; $UnknownOpts=@()
+$Modules=@(); $OutputPath='C:\Forensic'; $CaseId=''; $Examiner=''; $Allowlist=''; $IOCFile=''; $UnknownOpts=@()
 for ($k = 0; $k -lt $args.Count; $k++) {
     $tok  = [string]$args[$k]
     $name = $tok.TrimStart('-','/').ToLower()
@@ -111,6 +111,8 @@ for ($k = 0; $k -lt $args.Count; $k++) {
         'caseid'       { if ($k+1 -lt $args.Count) { $CaseId = [string]$args[++$k] } }
         'examiner'     { if ($k+1 -lt $args.Count) { $Examiner = [string]$args[++$k] } }
         'allowlist'    { if ($k+1 -lt $args.Count) { $Allowlist = [string]$args[++$k] } }
+        'iocfile'      { if ($k+1 -lt $args.Count) { $IOCFile = [string]$args[++$k] } }
+        'ioc'          { if ($k+1 -lt $args.Count) { $IOCFile = [string]$args[++$k] } }
         default        { $UnknownOpts += $tok }
     }
 }
@@ -245,6 +247,8 @@ OPTIONS:
   -ExportEvtx          Export full .evtx logs
   -MemoryDump          Raw memory image via tools\winpmem.exe (may trigger EDR)
   -Silent              No console output (for WinRM/scheduled runs). Alias: -Quiet
+  -Allowlist <json>    Suppress known-good findings (paths[], publishers[], hashes[])
+  -IOCFile <json>      Match findings/evidence vs IOCs (hashes[],ips[],domains[],filenames[])
 
 OUTPUT EXTRAS (always written):
   summary.txt / summary.json   Analyst-first triage summary + aggregated findings
@@ -931,13 +935,66 @@ function Write-Summary {
             Write-ExecLog 'INFO' ("Allowlist applied: {0}/{1} findings suppressed" -f (@($sorted | Where-Object { $_.suppressed }).Count), $sorted.Count)
         } catch { Add-Err "Allowlist failed: $_" }
     }
+    # ---- IOC matching (known-bad OVERRIDES the allowlist) ----
+    if ($IOCFile -and (Test-Path $IOCFile)) {
+        try {
+            $ioc       = Get-Content $IOCFile -Raw | ConvertFrom-Json
+            $iocHashes = @($ioc.hashes    | ForEach-Object { "$_".ToLower() } | Where-Object { $_ })
+            $iocStr    = @(@($ioc.ips) + @($ioc.domains) + @($ioc.filenames) | Where-Object { $_ })
+            $iocSeen   = New-Object System.Collections.Generic.List[string]
+            $iocHits   = 0
+            # Pass A: annotate existing findings; a hit re-activates + escalates.
+            foreach ($f in $sorted) {
+                $blob = "$($f.message) $($f.detail)"
+                $hit  = $null
+                foreach ($s in $iocStr) { if ($blob -match [regex]::Escape($s)) { $hit = $s; break } }
+                if (-not $hit -and $iocHashes.Count) {
+                    $cp = ([regex]::Match($blob, '([A-Za-z]:\\[^"''\r\n]+?\.(?:exe|dll|sys|ps1|bat|scr|cmd))')).Groups[1].Value
+                    if ($cp -and (Test-Path -LiteralPath $cp)) {
+                        $h = (Get-FileHash -LiteralPath $cp -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
+                        if ($h -and ($iocHashes -contains $h.ToLower())) { $hit = $h.ToLower() }
+                    }
+                }
+                if ($hit) {
+                    $iocHits++; if (-not $iocSeen.Contains($hit)) { $iocSeen.Add($hit) }
+                    $f.iocMatch = $true; $f.suppressed = $false; $f.suppressReason = ''
+                    $f.severity = 'High'; $f.confidence = 0.95
+                    $f.detail = "IOC match: $hit | $($f.detail)"
+                }
+            }
+            # Pass B: raise new findings for IOCs seen anywhere in collected artifacts.
+            $scan = @(Get-ChildItem -Path $script:OutDir -Recurse -File -Include *.txt,*.csv,*.log -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'summary.txt' })
+            foreach ($val in (@($iocStr) + @($iocHashes))) {
+                if (-not $val -or $iocSeen.Contains($val)) { continue }
+                $found = $null
+                foreach ($file in $scan) {
+                    $m = Select-String -LiteralPath $file.FullName -SimpleMatch -Pattern $val -ErrorAction SilentlyContinue | Select-Object -First 1
+                    if ($m) { $found = $m.Line.Trim(); break }
+                }
+                if ($found) {
+                    $iocSeen.Add($val)
+                    $script:FindingSeq++
+                    $script:Findings.Add([pscustomobject]@{
+                        id             = ('TTR-F-{0:D3}' -f $script:FindingSeq)
+                        severity       = 'High'; category = 'ioc'; technique = @('T1071')
+                        message        = "IOC observed in collected evidence: $val"
+                        detail         = $found.Substring(0, [Math]::Min(160, $found.Length))
+                        confidence     = 0.95; suppressed = $false; suppressReason = ''; iocMatch = $true
+                    })
+                }
+            }
+            $sorted = @($script:Findings | Sort-Object { if ($sevOrder.ContainsKey($_.Severity)) { $sevOrder[$_.Severity] } else { 2 } }, Category)
+            Write-ExecLog 'INFO' ("IOC matching: {0} hit(s) on existing findings; {1} findings total" -f $iocHits, $sorted.Count)
+        } catch { Add-Err "IOC matching failed: $_" }
+    }
     $active     = @($sorted | Where-Object { -not $_.suppressed })
     $suppressed = @($sorted | Where-Object { $_.suppressed })
     $L.Add(("---------- SUSPICIOUS FINDINGS: {0} active{1} (review leads, NOT verdicts) ----------" -f $active.Count, $(if ($suppressed.Count) { ", $($suppressed.Count) allowlisted" } else { '' })))
     if ($active.Count -gt 0) {
         foreach ($f in $active) {
             $tech = if ($f.technique -and @($f.technique).Count -gt 0) { ' [' + (@($f.technique) -join ',') + ']' } else { '' }
-            $L.Add(("  [{0}] ({1}){2} {3}" -f $f.severity, $f.category, $tech, $f.message))
+            $ioc  = if ($f.iocMatch) { '[IOC] ' } else { '' }
+            $L.Add(("  [{0}] ({1}){2} {3}{4}" -f $f.severity, $f.category, $tech, $ioc, $f.message))
             if ($f.detail) { $L.Add(("        {0}" -f $f.detail)) }
         }
         $L.Add('')
@@ -996,7 +1053,9 @@ function Write-Summary {
         host          = $hn
         caseId        = $CaseId
         generated     = $End.ToString('o')
-        findingsCount = $sorted.Count
+        findingsCount        = $sorted.Count
+        activeFindingsCount  = $active.Count
+        suppressedCount      = $suppressed.Count
         findings      = $sorted
     }
     $findObj | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $script:OutDir 'findings.json') -Encoding UTF8
