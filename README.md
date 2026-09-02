@@ -5,6 +5,9 @@
 <p align="center">
   <b>A fast, single-file Windows DFIR triage & artifact collector written in PowerShell.</b>
 </p>
+<p align="center">
+  <b><a href="README.md">English</a> · <a href="README_MN.md">Монгол</a></b>
+</p>
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
@@ -284,9 +287,14 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 For **authorized** use only — on systems you own or have explicit written permission to examine. You are responsible for complying with applicable laws and organizational policy.
 
-## Author
+## Contact
 
-**Enkhbat.O** — Security Analyst
+**Author:** Enkhbat Oyunbayar — Security Analyst · Ulaanbaatar
+
+[![Facebook](https://img.shields.io/badge/Facebook-Enkhbat%20Oyunbayar-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/enkhbat.o/)
+[![GitHub](https://img.shields.io/badge/GitHub-ochmunkh-181717?logo=github&logoColor=white)](https://github.com/ochmunkh)
+
+For **authorized use only** — on systems you own or have written permission to examine.
 
 ## License
 
