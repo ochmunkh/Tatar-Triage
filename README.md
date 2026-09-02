@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.1-blue" alt="v1.1">
+  <img src="https://img.shields.io/badge/version-1.2-blue" alt="v1.2">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows 10/11">
   <img src="https://img.shields.io/badge/modules-30-5eead4" alt="30 modules">
@@ -102,6 +102,12 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 # Automated / remote run: no console output, check the exit code
 .\Tatar.ps1 -All -Silent -OutputPath E:\Evidence -CaseId IR-2026-014
 if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check Tatar.log" }
+
+# Cut the noise: suppress known-good findings with an allowlist
+.\Tatar.ps1 -All -Allowlist allowlist.sample.json
+
+# Confirm known-bad: match findings & evidence against an offline IOC feed
+.\Tatar.ps1 -All -Allowlist allowlist.sample.json -IOCFile ioc.sample.json
 ```
 
 ### Options
@@ -120,6 +126,8 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check Tat
 | `-ExportEvtx` | Export full `.evtx` logs |
 | `-MemoryDump` | Raw memory image via `tools\winpmem.exe` (may trigger EDR) |
 | `-Silent` / `-Quiet` | Suppress **all** console output (banner, progress, status). Files, including `Tatar.log`, are still written. For WinRM / scheduled / automated runs |
+| `-Allowlist <json>` | Suppress known-good findings by path glob, Authenticode publisher, or SHA-256. Suppressed findings are kept for audit, not deleted |
+| `-IOCFile <json>` | Match findings & collected evidence against an offline IOC feed (hashes/ips/domains/filenames). A hit **overrides** the allowlist and escalates to High |
 
 ### Exit codes
 
@@ -254,6 +262,13 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 ---
 
 ## Changelog
+
+### v1.2.0 — noise reduction & IOC matching (current)
+- **Allowlist engine** (`-Allowlist` / `--allowlist`): suppress known-good findings by path glob, Authenticode publisher (Windows), package ownership via `dpkg`/`rpm` (Linux), or SHA-256. Suppressed findings are **kept for audit** with a reason, not deleted. Clean-host testing went from 11 raw findings to **4 active / 7 suppressed**.
+- **IOC engine** (`-IOCFile` / `--ioc`): offline `hashes/ips/domains/filenames` feed. *Pass A* annotates findings (`iocMatch`) and a hit **overrides the allowlist** — re-activates + escalates to High/0.95. *Pass B* raises new findings for IOCs seen anywhere in the collected evidence.
+- **`findings.json` / `summary.json` schema 1.2**: findings gain `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`; summaries gain `activeFindingsCount` / `suppressedCount`. Backward compatible (`schemaVersion` enum, new fields optional).
+- **Linux correctness fix**: findings pipeline now uses the ASCII Unit Separator (0x1F) instead of TAB — `read` was collapsing empty fields and shifting columns.
+- New **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**: technical system architecture, data flow, and the allowlist/IOC scoring model.
 
 ### Tier 1 hardening (current)
 - **Persistence ASEPs**: IFEO Debugger hijack, AppInit_DLLs, AppCertDlls, Winlogon Shell/Userinit, LSA packages, Print monitors (read-only registry).
