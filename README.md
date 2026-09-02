@@ -72,6 +72,60 @@ The consolidated report flags suspicious activity as it goes (sample):
 
 ---
 
+## Architecture
+
+TATAR ships as two parity editions — `Tatar.ps1` (Windows, 30 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.2`), so a SIEM/SOAR pipeline ingests either platform identically.
+
+```
+                    TATAR Triage
+                         │
+          ┌──────────────┴──────────────┐
+     Windows · Tatar.ps1           Linux · tatar-linux.sh
+     (PowerShell, 30 modules)      (Bash, 18 modules)
+          └──────────────┬──────────────┘
+                         ▼
+             Unified JSON schema  (summary.schema.json · v1.2)
+                         ▼
+        ┌────────────────┼────────────────┐
+        ▼                ▼                ▼
+     summary          findings         timeline
+    (+ report)       (SOAR / SIEM)     (+ hashes)
+        └────────────────┼────────────────┘
+                         ▼
+                DFIR investigation
+```
+
+### Data flow
+
+1. Parse arguments, create the output folder and chain of custody.
+2. Detect the runtime environment (virtualization / container / security module).
+3. Run collectors in **order of volatility** (memory · network · process → disk · registry · logs). Each collector writes raw evidence to disk *and* a structured finding in memory.
+4. The **allowlist engine** suppresses known-good findings — kept for audit, never deleted.
+5. The **IOC engine** annotates known-bad findings, overrides the allowlist, and raises new findings from the collected evidence.
+6. Sort into active vs suppressed, then write `summary.txt` / `summary.json`, `findings.json`, and the SHA-256 manifest.
+
+### The findings model
+
+Every finding is a single record, identical across platforms:
+
+`id` · `severity` (High/Review) · `category` · `technique[]` (MITRE) · `message` · `detail` · `confidence` (0.7 High · 0.4 Review · 0.95 IOC-confirmed) · `suppressed` · `suppressReason` · `iocMatch`.
+
+Suppressed findings stay in the report and JSON with a reason — they are only dropped from the active headline count, never from the record. (On Linux the findings pipeline is delimited with the ASCII Unit Separator `0x1F`, not TAB, because `read` collapses whitespace delimiters and would shift columns on empty fields.)
+
+### Allowlist engine — signal over noise
+
+Suppresses known-good findings by **path glob**, **Authenticode publisher** (Windows), **package ownership** via `dpkg`/`rpm` (Linux), or **SHA-256**. On a clean host this took a run from 11 raw findings to **4 active / 7 suppressed**.
+
+### IOC engine — known-bad wins
+
+Takes an offline feed of `hashes / ips / domains / filenames`. *Pass A* matches existing findings and a hit **overrides the allowlist** — it re-activates a suppressed finding and escalates it to High / 0.95. *Pass B* raises new findings for IOCs seen anywhere in the collected evidence (deduplicated against Pass A). The rule is simple: a known-bad indicator always beats a known-good allowlist entry.
+
+### Trust boundaries
+
+No network calls — allowlist and IOC feeds are local files and every hash is computed locally. Read-only first; root/Admin only widens what can be *read*, never what is changed. The script's own SHA-256 is recorded in the chain of custody, and EDR-sensitive actions (memory dump, hive save, deleted-binary carving) are opt-in and off by default.
+
+---
+
 ## Requirements
 
 - Windows 10 / 11 (Server 2016+ works too)
@@ -268,7 +322,7 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 - **IOC engine** (`-IOCFile` / `--ioc`): offline `hashes/ips/domains/filenames` feed. *Pass A* annotates findings (`iocMatch`) and a hit **overrides the allowlist** — re-activates + escalates to High/0.95. *Pass B* raises new findings for IOCs seen anywhere in the collected evidence.
 - **`findings.json` / `summary.json` schema 1.2**: findings gain `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`; summaries gain `activeFindingsCount` / `suppressedCount`. Backward compatible (`schemaVersion` enum, new fields optional).
 - **Linux correctness fix**: findings pipeline now uses the ASCII Unit Separator (0x1F) instead of TAB — `read` was collapsing empty fields and shifting columns.
-- New **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**: technical system architecture, data flow, and the allowlist/IOC scoring model.
+- New **[Architecture](#architecture)** section in this README: system architecture, data flow, findings model, and the allowlist/IOC scoring model.
 
 ### Tier 1 hardening (current)
 - **Persistence ASEPs**: IFEO Debugger hijack, AppInit_DLLs, AppCertDlls, Winlogon Shell/Userinit, LSA packages, Print monitors (read-only registry).
@@ -353,6 +407,56 @@ Triage гэдэг ойлголт эмнэлгээс гаралтай. Эмч ө�
 - **Ил тод.** Обфускаци, AV/AMSI bypass үгүй. Гарын үсэг зурж, allow-list хийхэд зориулсан.
 - **Cross-platform.** Windows, Linux хоёр нэг [`summary.schema.json`](schema/summary.schema.json) гэрээ гаргана — нэг parser хоёуланг уншина.
 - **Нууц үг задалдаггүй.** Илэрсэн зүйлс нь **review хийх сэжүүр, эцсийн дүгнэлт биш.**
+
+---
+
+## Архитектур
+
+TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 30 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул нэг ижил гаралтын гэрээтэй. Адилхан JSON schema (`schemaVersion 1.2`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
+
+```
+                    TATAR Triage
+                         │
+          ┌──────────────┴──────────────┐
+     Windows · Tatar.ps1           Linux · tatar-linux.sh
+     (PowerShell, 30 модуль)       (Bash, 18 модуль)
+          └──────────────┬──────────────┘
+                         ▼
+             Нэгдсэн JSON schema  (summary.schema.json · v1.2)
+                         ▼
+        ┌────────────────┼────────────────┐
+        ▼                ▼                ▼
+     summary          findings         timeline
+    (+ тайлан)        (SOAR / SIEM)    (+ hashes)
+        └────────────────┼────────────────┘
+                         ▼
+              DFIR мөрдөн шинжилгээ
+```
+
+### Өгөгдлийн урсгал
+
+1. Аргумент уншиж, гаралтын хавтас болон chain of custody-г бэлдэнэ.
+2. Ажиллаж буй орчноо (виртуал / контейнер / хамгаалалт) тодорхойлно.
+3. Модулиудаа **алдагдамтгай өгөгдлийн дарааллаар** ажиллуулна (санах ой · сүлжээ · процесс → диск · registry · лог). Модуль бүр түүхий нотолгоог диск рүү, бүтэцтэй finding-ийг санах ойд гаргана.
+4. **Allowlist** нь урьдаас мэдэгдэж байгаа цэвэр зүйлсийг нууна — устгахгүй, аудитад үлдээнэ.
+5. **IOC** нь мэдэгдэж байгаа мууг тэмдэглэж, allowlist-ийг давж, цуглуулсан нотолгооноос шинэ finding босгоно.
+6. Идэвхтэй/нуугдсанаар нь эрэмбэлж `summary.txt` / `summary.json`, `findings.json`, SHA-256 manifest-ээ бичнэ.
+
+### Finding загвар
+
+Finding бүр нэг бичлэг, платформ хооронд адилхан: `id` · `severity` (High/Review) · `category` · `technique[]` (MITRE) · `message` · `detail` · `confidence` (0.7 High · 0.4 Review · 0.95 IOC-баталгаажсан) · `suppressed` · `suppressReason` · `iocMatch`. Нуугдсан finding нь тайлан болон JSON-д шалтгаантайгаа үлдэнэ — зөвхөн идэвхтэй жагсаалтаас хасагдана, бичлэгээс арилдаггүй.
+
+### Allowlist — дуу чимээнээс дохиог ялгах
+
+Мэдэгдэж байгаа цэвэр зүйлсийг зам, Authenticode нийтлэгч (Windows), `dpkg`/`rpm` багц эзэмшил (Linux), эсвэл SHA-256-аар нууна. Цэвэр хостод нэг run 11 finding-ээс **4 идэвхтэй / 7 нуугдсан** болж багассан.
+
+### IOC — муу нь дийлнэ
+
+Offline `hashes / ips / domains / filenames` жагсаалт авна. *Pass A* нь одоо байгаа finding-уудтай тааруулж, таарвал **allowlist-ийг давж** тухайн finding-ийг дахин идэвхжүүлэн High / 0.95 болгоно. *Pass B* нь цуглуулсан нотолгооноос олдсон IOC-д зориулж шинэ finding босгоно. Зарчим энгийн: мэдэгдэж байгаа муу индикатор үргэлж цэвэр allowlist-ийг дийлдэг.
+
+### Итгэлийн хил
+
+Сүлжээ рүү юу ч илгээхгүй — allowlist, IOC жагсаалт нь дотоод файл, хэш дотооддоо бодогдоно. Зөвхөн уншина; root/Admin нь уншиж болох хүрээг өргөтгөнө, өөрчлөх эрх нэмдэггүй. Скриптийн өөрийн SHA-256-г chain of custody-д бичих ба EDR-т мэдрэг үйлдлүүд (memory dump, hive save, устсан файл сэргээх) default-оор унтраалттай, тухайлан асаадаг.
 
 ---
 

@@ -17,7 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   in the collected evidence, deduplicated against Pass A.
 - Finding v2 fields: `id`, `confidence`, `suppressed`, `suppressReason`,
   `iocMatch`; summaries gain `activeFindingsCount` / `suppressedCount`.
-- `docs/ARCHITECTURE.md` — technical system architecture and scoring model.
+- **Architecture** section in the README — system architecture, data flow, and the allowlist/IOC scoring model.
 - `allowlist.sample.json` (`packageOwned` flag) and `ioc.sample.json` samples.
 
 ### Changed
