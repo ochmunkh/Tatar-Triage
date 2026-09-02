@@ -1,0 +1,18 @@
+{
+  "_comment": "TATAR Triage allowlist. Matched findings are marked suppressed (kept in the report for audit, hidden from the headline). Pass with -Allowlist <file> (Windows) or --allowlist <file> (Linux).",
+  "paths": [
+    "C:\\Windows\\System32\\*",
+    "C:\\Program Files\\Windows Defender\\*",
+    "C:\\ProgramData\\Microsoft\\Windows Defender\\*",
+    "C:\\Program Files\\NVIDIA Corporation\\*",
+    "/usr/bin/*",
+    "/usr/sbin/*",
+    "/usr/lib/*"
+  ],
+  "publishers": [
+    "Microsoft Corporation",
+    "Microsoft Windows",
+    "NVIDIA Corporation"
+  ],
+  "hashes": []
+}

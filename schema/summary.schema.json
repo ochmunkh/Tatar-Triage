@@ -8,7 +8,7 @@
   "properties": {
     "tool": { "type": "string", "description": "Human tool name, e.g. 'TATAR Triage Toolkit'." },
     "version": { "type": "string", "description": "Collector (tool) version, independent per platform." },
-    "schemaVersion": { "type": "string", "const": "1.1", "description": "Version of THIS shared schema. Consumers key off this." },
+    "schemaVersion": { "type": "string", "enum": ["1.1","1.2"], "description": "Version of THIS shared schema. Consumers key off this." },
     "platform": { "type": "string", "enum": ["windows", "linux", "macos", "android"] },
     "host": { "type": "string" },
     "os": { "type": "string" },
@@ -53,7 +53,12 @@
             "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" }
           },
           "message": { "type": "string", "description": "One-line lead for the analyst." },
-          "detail": { "type": "string", "description": "Where to look / why it matters." }
+          "detail": { "type": "string", "description": "Where to look / why it matters." },
+          "id": { "type": "string", "description": "Stable finding id, e.g. TTR-F-001." },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "How sure the tool is (independent of severity)." },
+          "suppressed": { "type": "boolean", "description": "True when hidden from the headline by an allowlist rule (still retained for audit)." },
+          "suppressReason": { "type": "string", "description": "Why the finding was suppressed (allowlist rule / signature)." },
+          "iocMatch": { "type": "boolean", "description": "True when the finding was raised by an IOC match." }
         }
       }
     }

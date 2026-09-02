@@ -1,0 +1,7 @@
+{
+  "_comment": "TATAR Triage IOC feed. Pass with -IOCFile <file> (Windows) or --ioc <file> (Linux). Values matched against collected processes, network, hashed binaries and the timeline. Offline only.",
+  "hashes":    ["5d41402abc4b2a76b9719d911017c592"],
+  "ips":       ["203.0.113.10"],
+  "domains":   ["evil.example.com"],
+  "filenames": ["svch0st.exe", "mimikatz.exe"]
+}
