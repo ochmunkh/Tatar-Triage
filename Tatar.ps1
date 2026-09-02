@@ -89,7 +89,7 @@ $ErrorActionPreference = 'Continue'
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $List=$false; $Help=$false; $Compress=$false
 $CollectHives=$false; $ExportEvtx=$false; $MemoryDump=$false; $Silent=$false
-$Modules=@(); $OutputPath='C:\Forensic'; $CaseId=''; $Examiner=''; $UnknownOpts=@()
+$Modules=@(); $OutputPath='C:\Forensic'; $CaseId=''; $Examiner=''; $Allowlist=''; $UnknownOpts=@()
 for ($k = 0; $k -lt $args.Count; $k++) {
     $tok  = [string]$args[$k]
     $name = $tok.TrimStart('-','/').ToLower()
@@ -110,6 +110,7 @@ for ($k = 0; $k -lt $args.Count; $k++) {
         'outputpath'   { if ($k+1 -lt $args.Count) { $OutputPath = [string]$args[++$k] } }
         'caseid'       { if ($k+1 -lt $args.Count) { $CaseId = [string]$args[++$k] } }
         'examiner'     { if ($k+1 -lt $args.Count) { $Examiner = [string]$args[++$k] } }
+        'allowlist'    { if ($k+1 -lt $args.Count) { $Allowlist = [string]$args[++$k] } }
         default        { $UnknownOpts += $tok }
     }
 }
@@ -183,16 +184,24 @@ function Get-Technique {
     }
 }
 
+$script:FindingSeq = 0
 function Add-Finding {
     # P3: aggregated suspicious findings. LEADS for analyst review, NOT verdicts.
     param([string]$Severity = 'Review', [string]$Category, [string]$Message, [string]$Detail = '', [string[]]$Technique)
     if (-not $Technique -or $Technique.Count -eq 0) { $Technique = Get-Technique -Category $Category -Message $Message }
+    $script:FindingSeq++
+    $conf = switch ($Severity) { 'High' { 0.7 } 'Review' { 0.4 } default { 0.3 } }
     $script:Findings.Add([pscustomobject]@{
-        severity  = $Severity
-        category  = $Category
-        technique = @($Technique)
-        message   = $Message
-        detail    = $Detail
+        id             = ('TTR-F-{0:D3}' -f $script:FindingSeq)
+        severity       = $Severity
+        category       = $Category
+        technique      = @($Technique)
+        message        = $Message
+        detail         = $Detail
+        confidence     = $conf
+        suppressed     = $false
+        suppressReason = ''
+        iocMatch       = $false
     })
 }
 
@@ -891,20 +900,58 @@ function Write-Summary {
         foreach ($key in $script:Stats.Keys) { $L.Add(("  {0,-24} : {1}" -f $key, $script:Stats[$key])) }
     } else { $L.Add('  (no stats collected - modules with counters were not run)') }
     $L.Add('')
-    $L.Add(("---------- SUSPICIOUS FINDINGS: {0} (review leads, NOT verdicts) ----------" -f $sorted.Count))
-    if ($sorted.Count -gt 0) {
-        foreach ($f in $sorted) {
-            $tech = if ($f.Technique -and @($f.Technique).Count -gt 0) { ' [' + (@($f.Technique) -join ',') + ']' } else { '' }
-            $L.Add(("  [{0}] ({1}){2} {3}" -f $f.Severity, $f.Category, $tech, $f.Message))
-            if ($f.Detail) { $L.Add(("        {0}" -f $f.Detail)) }
+    # ---- allowlist suppression (path glob + Authenticode publisher + hash) ----
+    if ($Allowlist -and (Test-Path $Allowlist)) {
+        try {
+            $al = Get-Content $Allowlist -Raw | ConvertFrom-Json
+            $alPaths  = @($al.paths)
+            $alPubs   = @($al.publishers)
+            $alHashes = @($al.hashes | ForEach-Object { "$_".ToLower() })
+            foreach ($f in $sorted) {
+                $blob  = "$($f.message) $($f.detail)"
+                $cands = @([regex]::Matches($blob, '([A-Za-z]:\\[^"''\r\n]+?\.(?:exe|dll|sys|ps1|bat|scr|cmd))') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+                foreach ($cp in $cands) {
+                    $hit = $false
+                    foreach ($g in $alPaths) { if ($cp -like $g) { $f.suppressed = $true; $f.suppressReason = "allowlist path: $g"; $hit = $true; break } }
+                    if (-not $hit -and $alPubs.Count -and (Test-Path -LiteralPath $cp)) {
+                        try {
+                            $sig = Get-AuthenticodeSignature -LiteralPath $cp -ErrorAction SilentlyContinue
+                            if ($sig -and $sig.Status -eq 'Valid' -and $sig.SignerCertificate) {
+                                foreach ($pub in $alPubs) { if ($sig.SignerCertificate.Subject -match [regex]::Escape($pub)) { $f.suppressed = $true; $f.suppressReason = "signed: $pub"; $hit = $true; break } }
+                            }
+                        } catch {}
+                    }
+                    if ($hit) { break }
+                }
+                if (-not $f.suppressed -and $alHashes.Count) {
+                    $hm = [regex]::Match($blob, '\b[a-fA-F0-9]{64}\b')
+                    if ($hm.Success -and ($alHashes -contains $hm.Value.ToLower())) { $f.suppressed = $true; $f.suppressReason = 'allowlist hash' }
+                }
+            }
+            Write-ExecLog 'INFO' ("Allowlist applied: {0}/{1} findings suppressed" -f (@($sorted | Where-Object { $_.suppressed }).Count), $sorted.Count)
+        } catch { Add-Err "Allowlist failed: $_" }
+    }
+    $active     = @($sorted | Where-Object { -not $_.suppressed })
+    $suppressed = @($sorted | Where-Object { $_.suppressed })
+    $L.Add(("---------- SUSPICIOUS FINDINGS: {0} active{1} (review leads, NOT verdicts) ----------" -f $active.Count, $(if ($suppressed.Count) { ", $($suppressed.Count) allowlisted" } else { '' })))
+    if ($active.Count -gt 0) {
+        foreach ($f in $active) {
+            $tech = if ($f.technique -and @($f.technique).Count -gt 0) { ' [' + (@($f.technique) -join ',') + ']' } else { '' }
+            $L.Add(("  [{0}] ({1}){2} {3}" -f $f.severity, $f.category, $tech, $f.message))
+            if ($f.detail) { $L.Add(("        {0}" -f $f.detail)) }
         }
         $L.Add('')
         $L.Add('  NOTE: entries above are automated pattern matches. Legitimate software')
         $L.Add('  (updaters, IT tools, this script itself) can appear. Validate each lead')
         $L.Add('  against the full report before drawing conclusions.')
     } else {
-        $L.Add('  No automatic findings were flagged. This does NOT prove the host is')
+        $L.Add('  No active findings (after allowlist). This does NOT prove the host is')
         $L.Add('  clean - review the full report and collected artifacts.')
+    }
+    if ($suppressed.Count -gt 0) {
+        $L.Add('')
+        $L.Add(("---------- SUPPRESSED BY ALLOWLIST: {0} (kept for audit) ----------" -f $suppressed.Count))
+        foreach ($f in $suppressed) { $L.Add(("  [{0}] ({1}) {2}   <- {3}" -f $f.severity, $f.category, $f.message, $f.suppressReason)) }
     }
     $L.Add('')
     $L.Add('-------------------- NEXT STEPS ------------------------------')
@@ -918,7 +965,7 @@ function Write-Summary {
     $jsonObj = [pscustomobject]@{
         tool            = 'TATAR Triage Toolkit'
         version         = '1.1'
-        schemaVersion   = '1.1'
+        schemaVersion   = '1.2'
         platform        = 'windows'
         host            = $hn
         os              = $osCap
@@ -934,7 +981,9 @@ function Write-Summary {
         errorsLogged    = $script:ErrorCount
         modulesRun      = @($ModulesRun)
         stats           = [pscustomobject]$script:Stats
-        findingsCount   = $sorted.Count
+        findingsCount        = $sorted.Count
+        activeFindingsCount  = $active.Count
+        suppressedCount      = $suppressed.Count
         findings        = $sorted
     }
     $jsonObj | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $script:OutDir 'summary.json') -Encoding UTF8
@@ -942,7 +991,7 @@ function Write-Summary {
     # findings-only file for SOAR / SIEM ingestion
     $findObj = [pscustomobject]@{
         tool          = 'TATAR Triage Toolkit'
-        schemaVersion = '1.1'
+        schemaVersion = '1.2'
         platform      = 'windows'
         host          = $hn
         caseId        = $CaseId
