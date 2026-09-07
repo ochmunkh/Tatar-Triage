@@ -118,11 +118,11 @@ Suppresses known-good findings by **path glob**, **Authenticode publisher** (Win
 
 ### IOC engine — known-bad wins
 
-Takes an offline feed of `hashes / ips / domains / filenames`. *Pass A* matches existing findings and a hit **overrides the allowlist** — it re-activates a suppressed finding and escalates it to High / 0.95. *Pass B* raises new findings for IOCs seen anywhere in the collected evidence (deduplicated against Pass A). The rule is simple: a known-bad indicator always beats a known-good allowlist entry.
+Takes an offline feed of `hashes / ips / domains / filenames` (`hashes` are SHA-256 — MD5/SHA-1 are not compared; see [`ioc.sample.json`](ioc.sample.json)). *Pass A* matches existing findings and a hit **overrides the allowlist** — it re-activates a suppressed finding and escalates it to High / 0.95. *Pass B* raises new findings for IOCs seen anywhere in the collected evidence (deduplicated against Pass A). The rule is simple: a known-bad indicator always beats a known-good allowlist entry.
 
 ### Trust boundaries
 
-No network calls — allowlist and IOC feeds are local files and every hash is computed locally. Read-only first; root/Admin only widens what can be *read*, never what is changed. The script's own SHA-256 is recorded in the chain of custody, and EDR-sensitive actions (memory dump, hive save, deleted-binary carving) are opt-in and off by default.
+No network calls — allowlist and IOC feeds are local files and every hash is computed locally. Read-only first; root/Admin only widens what can be *read*, never what is changed. The script's own SHA-256 and tool version ("version" in summary.json, a single constant per edition) are recorded in the chain of custody, and EDR-sensitive actions (memory dump, hive save, deleted-binary carving) are opt-in and off by default.
 
 ---
 
@@ -181,7 +181,7 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check Tat
 | `-MemoryDump` | Raw memory image via `tools\winpmem.exe` (may trigger EDR) |
 | `-Silent` / `-Quiet` | Suppress **all** console output (banner, progress, status). Files, including `Tatar.log`, are still written. For WinRM / scheduled / automated runs |
 | `-Allowlist <json>` | Suppress known-good findings by path glob, Authenticode publisher, or SHA-256. Suppressed findings are kept for audit, not deleted |
-| `-IOCFile <json>` | Match findings & collected evidence against an offline IOC feed (hashes/ips/domains/filenames). A hit **overrides** the allowlist and escalates to High |
+| `-IOCFile <json>` | Match findings & collected evidence against an offline IOC feed (hashes = SHA-256 only, ips, domains, filenames). A hit **overrides** the allowlist and escalates to High |
 
 ### Exit codes
 
@@ -457,11 +457,11 @@ Finding бүр нэг бичлэг, платформ хооронд адилха
 
 ### IOC — муу нь дийлнэ
 
-Offline `hashes / ips / domains / filenames` жагсаалт авна. *Pass A* нь одоо байгаа finding-уудтай тааруулж, таарвал **allowlist-ийг давж** тухайн finding-ийг дахин идэвхжүүлэн High / 0.95 болгоно. *Pass B* нь цуглуулсан нотолгооноос олдсон IOC-д зориулж шинэ finding босгоно. Зарчим энгийн: мэдэгдэж байгаа муу индикатор үргэлж цэвэр allowlist-ийг дийлдэг.
+Offline `hashes / ips / domains / filenames` жагсаалт авна (`hashes` нь зөвхөн SHA-256 — MD5/SHA-1 харьцуулагдахгүй). *Pass A* нь одоо байгаа finding-уудтай тааруулж, таарвал **allowlist-ийг давж** тухайн finding-ийг дахин идэвхжүүлэн High / 0.95 болгоно. *Pass B* нь цуглуулсан нотолгооноос олдсон IOC-д зориулж шинэ finding босгоно. Зарчим энгийн: мэдэгдэж байгаа муу индикатор үргэлж цэвэр allowlist-ийг дийлдэг.
 
 ### Итгэлийн хил
 
-Сүлжээ рүү юу ч илгээхгүй — allowlist, IOC жагсаалт нь дотоод файл, хэш дотооддоо бодогдоно. Зөвхөн уншина; root/Admin нь уншиж болох хүрээг өргөтгөнө, өөрчлөх эрх нэмдэггүй. Скриптийн өөрийн SHA-256-г chain of custody-д бичих ба EDR-т мэдрэг үйлдлүүд (memory dump, hive save, устсан файл сэргээх) default-оор унтраалттай, тухайлан асаадаг.
+Сүлжээ рүү юу ч илгээхгүй — allowlist, IOC жагсаалт нь дотоод файл, хэш дотооддоо бодогдоно. Зөвхөн уншина; root/Admin нь уншиж болох хүрээг өргөтгөнө, өөрчлөх эрх нэмдэггүй. Скриптийн өөрийн SHA-256 болон хувилбарыг (`summary.json`-ийн `version`) chain of custody-д бичих ба EDR-т мэдрэг үйлдлүүд (memory dump, hive save, устсан файл сэргээх) default-оор унтраалттай, тухайлан асаадаг.
 
 ---
 

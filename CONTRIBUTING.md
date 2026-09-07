@@ -40,6 +40,19 @@ Tatar-Triage is a lightweight, cross-platform **DFIR triage & artifact collector
 
 Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
+## Versioning & releases (maintainers)
+
+- The tool version lives in **one place per edition**: `$script:ToolVersion` in `Tatar.ps1` and
+  `VERSION` in `linux/tatar-linux.sh`. Banner, help, `summary.txt`, `summary.json`, the execution
+  log and `chain_of_custody.txt` all read from it — never hard-code a version string elsewhere.
+  Bump both together; CI asserts `summary.json.version` is SemVer.
+- `schemaVersion` is separate and changes only when the JSON contract changes (add the new value to
+  the enum in `schema/summary.schema.json`, keep new fields optional).
+- Line endings are enforced by `.gitattributes` (`.sh`/`.md`/`.json` = LF, `.ps1` = CRLF). If
+  `git status` shows a whole-file diff, run `git add --renormalize <file>`.
+- Release: update `CHANGELOG.md` + the README changelog → commit → annotated tag `vX.Y.Z` → push →
+  wait for CI → GitHub release with `Tatar.ps1`, `tatar-linux.sh`, the two sample JSONs and a
+  `SHA256SUMS.txt` attached (publish the hashes — that is how users allow-list the script).
 ## Reporting issues
 
 Use the templates in `.github/ISSUE_TEMPLATE/`. For security-sensitive reports, contact the
@@ -63,5 +76,10 @@ schema сайжруулах · хоёр OS-ийн parity · баримт/орч�
 хэлбэрээр бич, ATT&CK technique-ээр тагла, **read-only** байлга, тухайн OS дээр турш.
 
 **Урсгал:** fork → `feat/...` салбар → турших → Pull Request (ямар artifact цуглуулж, ямар
-ATT&CK mapping хийснийг тайлбарла). Code of Conduct-ыг дагана уу. Аюулгүй байдлын нарийн
+ATT&CK mapping хийснийг тайлбарла). Code of Conduct-ыг дагана уу.
+
+**Хувилбар:** tool version нь $script:ToolVersion (Tatar.ps1) болон VERSION (	atar-linux.sh) гэсэн
+ганц газар байдаг — хоёуланг нь хамт өсгө, өөр газар version бичихгүй. schemaVersion нь зөвхөн JSON
+гэрээ өөрчлөгдөхөд солигдоно. Release: CHANGELOG → commit → X.Y.Z tag → push → CI → GitHub release
+(скрипт + sample + SHA256SUMS.txt хавсаргах). Аюулгүй байдлын нарийн
 асуудлыг **nkhbat@yahoo.com** руу хувийн байдлаар мэдэгдэнэ үү.
