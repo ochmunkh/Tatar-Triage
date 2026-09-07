@@ -317,14 +317,19 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.2.0 — noise reduction & IOC matching (current)
+### v1.2.1 — release hygiene (current)
+- Tool version now reported correctly ("1.2.1"; was "1.1") in summary.json, banner, summary, log and chain of custody — single constant on both editions.
+- `ioc.sample.json` hash is now SHA-256 (EICAR test file) — the engines compare SHA-256 only; the old sample was MD5 and could never match.
+- Linux README brought to v1.2 (`--allowlist` / `--ioc` documented); CI now exercises the allowlist + IOC path on both platforms. Full list in [CHANGELOG.md](CHANGELOG.md).
+
+### v1.2.0 — noise reduction & IOC matching
 - **Allowlist engine** (`-Allowlist` / `--allowlist`): suppress known-good findings by path glob, Authenticode publisher (Windows), package ownership via `dpkg`/`rpm` (Linux), or SHA-256. Suppressed findings are **kept for audit** with a reason, not deleted. Clean-host testing went from 11 raw findings to **4 active / 7 suppressed**.
 - **IOC engine** (`-IOCFile` / `--ioc`): offline `hashes/ips/domains/filenames` feed. *Pass A* annotates findings (`iocMatch`) and a hit **overrides the allowlist** — re-activates + escalates to High/0.95. *Pass B* raises new findings for IOCs seen anywhere in the collected evidence.
 - **`findings.json` / `summary.json` schema 1.2**: findings gain `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`; summaries gain `activeFindingsCount` / `suppressedCount`. Backward compatible (`schemaVersion` enum, new fields optional).
 - **Linux correctness fix**: findings pipeline now uses the ASCII Unit Separator (0x1F) instead of TAB — `read` was collapsing empty fields and shifting columns.
 - New **[Architecture](#architecture)** section in this README: system architecture, data flow, findings model, and the allowlist/IOC scoring model.
 
-### Tier 1 hardening (current)
+### Tier 1 hardening
 - **Persistence ASEPs**: IFEO Debugger hijack, AppInit_DLLs, AppCertDlls, Winlogon Shell/Userinit, LSA packages, Print monitors (read-only registry).
 - **Process genealogy**: parent -> child tree + suspicious-lineage findings (Office/script host spawning a shell).
 - **More event IDs**: 4698/4699 (task), 4719 (audit policy), 4648 (explicit creds), 4768/4769/4776 (Kerberos/NTLM), 5140 (share), 4627.
@@ -333,7 +338,7 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 - **Robustness**: winpmem HVCI/empty-image detection; manifest hashing tolerates locked files (`-ErrorAction SilentlyContinue`).
 - **Exit-code accuracy**: expected live-system locks (Amcache.hve, active NTUSER.DAT) are now logged as NOTE/WARN (not errors), so a clean run returns exit 0 instead of 2.
 
-### Schema 1.1 — cross-platform (current)
+### Schema 1.1 — cross-platform
 - **Unified `summary.json` schema** ([`schema/summary.schema.json`](schema/summary.schema.json)) now shared with the Linux edition; consumers key off `schemaVersion`.
 - Findings carry a **MITRE ATT&CK `technique[]`** array (centralized mapping); the summary shows the IDs inline.
 - New **`environment`** block: virtualization, container, security module.

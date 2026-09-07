@@ -1,7 +1,7 @@
 # TATAR Triage Toolkit — Linux edition
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1-blue" alt="v1.1">
+  <img src="https://img.shields.io/badge/version-1.2-blue" alt="v1.2">
   <img src="https://img.shields.io/badge/shell-bash%205.1%2B-4EAA25?logo=gnubash&logoColor=white" alt="Bash 5+">
   <img src="https://img.shields.io/badge/targets-Debian%2FUbuntu%20%C2%B7%20RHEL%2FCentOS-orange" alt="targets">
   <img src="https://img.shields.io/badge/modules-18-5eead4" alt="18 modules">
@@ -43,6 +43,9 @@ sudo ./tatar-linux.sh --modules network,process,persistence,sshkeys
 sudo ./tatar-linux.sh --all --output /mnt/usb/evidence \
      --caseid IR-2026-014 --examiner "Enkhbat.O" --compress
 
+# v1.2: cut noise with an allowlist and check the evidence against an IOC feed
+sudo ./tatar-linux.sh --all --allowlist allowlist.json --ioc ioc.json --output /mnt/usb/evidence
+
 # automated / remote run: no console output, check exit code
 sudo ./tatar-linux.sh --all --silent --output /mnt/usb/evidence
 if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
@@ -62,6 +65,8 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 | `--compress` | `tar.gz` + SHA-256 the output at the end |
 | `--silent` / `--quiet` | Suppress **all** console output (SSH / cron / remote runs) |
 | `--dump-deleted` | Recover deleted running binaries via `/proc/PID/exe` (opt-in; **off by default**, read-only-first) |
+| `--allowlist <json>` | **v1.2** Suppress known-good findings by path glob, SHA-256 or dpkg/rpm package ownership (see below) |
+| `--ioc <json>` | **v1.2** Match findings and collected evidence against an offline IOC feed (see below) |
 
 ### Exit codes
 
@@ -81,6 +86,17 @@ Coverage: system/kernel info, network sockets & routing & DNS, process tree with
 
 ---
 
+## Allowlist & IOC (v1.2)
+
+Two optional JSON inputs, both offline. Sample files live in the repository root: [`allowlist.sample.json`](../allowlist.sample.json) and [`ioc.sample.json`](../ioc.sample.json).
+
+**`--allowlist <json>`** marks known-good findings as `suppressed` — they stay in `summary.json` / `findings.json` with a `suppressReason` for audit, but leave the headline list. Matching is by `paths[]` (glob, e.g. `/usr/lib/*`), `hashes[]` (SHA-256 of the binary) or, when `"packageOwned": true`, by `dpkg -S` / `rpm -qf` ownership of the finding's binary (vendor-trusted). The Windows-only `publishers[]` key is ignored on Linux, so one allowlist file can serve both editions.
+
+**`--ioc <json>`** is a known-bad feed: `hashes[]` (SHA-256 only), `ips[]`, `domains[]`, `filenames[]`. Pass A annotates existing findings with `iocMatch`; an IOC hit **overrides the allowlist** — a suppressed finding is re-activated and escalated to `High` / confidence `0.95`. Pass B raises new findings for IOCs seen anywhere in the collected evidence (processes, sockets, hashed binaries, timeline), de-duplicated against Pass A.
+
+Findings carry the v2 fields `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`; summaries gain `activeFindingsCount` / `suppressedCount` (`schemaVersion 1.2`, backward compatible).
+
+---
 ## Output
 
 ```
@@ -97,7 +113,7 @@ Coverage: system/kernel info, network sockets & routing & DNS, process tree with
 └─ logs/                             # copied auth/syslog/wtmp/btmp where readable
 ```
 
-The `summary.json` matches the Windows edition (`platform`, `host`, `os`, `stats`, `findings[]` with `severity/category/message/detail`), so a single parser ingests both.
+The `summary.json` matches the Windows edition (`platform`, `host`, `os`, `stats`, `findings[]` with `severity/category/message/detail` plus the v2 fields `id/confidence/suppressed/suppressReason/iocMatch`), so a single parser ingests both. Schema: [`schema/summary.schema.json`](../schema/summary.schema.json).
 
 ---
 
@@ -129,7 +145,7 @@ The aggregated **Suspicious findings** list is built from heuristic pattern matc
 - Output can contain sensitive data (logs, keys, history). Encrypt and transfer securely.
 - Transparent by design — review the script, publish its SHA-256, allow-list rather than disabling EDR/AV.
 
-## Known limitations (v1.0)
+## Known limitations
 
 - Core triage scope (18 modules); not yet a full super-timeline or memory acquisition.
 - No `$MFT`-equivalent deep filesystem parsing (use dedicated tools for that).

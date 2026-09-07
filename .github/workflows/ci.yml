@@ -34,9 +34,31 @@ jobs:
           inst   = json.load(open(sys.argv[1], encoding="utf-8"))
           schema = json.load(open(sys.argv[2], encoding="utf-8"))
           validate(instance=inst, schema=schema)
-          print("OK: summary.json validates against schema 1.1")
+          print("OK: summary.json validates against schema", inst.get("schemaVersion"))
           PY
           python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8')); print('OK: findings.json is valid JSON')" "$d/findings.json"
+
+      - name: Allowlist + IOC run (v1.2 engines) + schema validation
+        run: |
+          ./linux/tatar-linux.sh --modules sysinfo,process,network,users,persistence,hashes --silent --caseid CI-IOC \
+              --allowlist allowlist.sample.json --ioc ioc.sample.json --output /tmp/tt2 || true
+          d="$(find /tmp/tt2 -mindepth 1 -maxdepth 1 -type d | head -n1)"
+          test -s "$d/summary.json" || { echo "summary.json missing (allowlist/ioc run)"; exit 1; }
+          python3 - "$d/summary.json" schema/summary.schema.json <<'PY'
+          import json, sys
+          from jsonschema import validate
+          inst   = json.load(open(sys.argv[1], encoding="utf-8"))
+          schema = json.load(open(sys.argv[2], encoding="utf-8"))
+          validate(instance=inst, schema=schema)
+          assert inst["schemaVersion"] == "1.2", inst["schemaVersion"]
+          for k in ("activeFindingsCount", "suppressedCount"):
+              assert k in inst, f"missing {k}"
+          assert inst["activeFindingsCount"] + inst["suppressedCount"] == len(inst["findings"]), "active+suppressed != findings"
+          for f in inst["findings"]:
+              for k in ("id", "confidence", "suppressed"):
+                  assert k in f, f"finding without {k}: {f}"
+          print("OK: allowlist/ioc run validates; active=%d suppressed=%d" % (inst["activeFindingsCount"], inst["suppressedCount"]))
+          PY
 
   windows:
     name: Windows (parse / PSScriptAnalyzer / run)
@@ -74,3 +96,16 @@ jobs:
             Get-Content $fp -Raw | ConvertFrom-Json | Out-Null
             "OK: $f is valid JSON"
           }
+
+      - name: Allowlist + IOC run (v1.2 engines)
+        shell: pwsh
+        run: |
+          pwsh -File ./Tatar.ps1 -Modules sysinfo,users,process,persistence,hashes -Silent -Allowlist ./allowlist.sample.json -IOCFile ./ioc.sample.json -OutputPath "$env:TEMP\tt2"
+          "Collector exit code: $LASTEXITCODE"
+          $d = (Get-ChildItem "$env:TEMP\tt2" -Directory | Select-Object -First 1).FullName
+          $s = Get-Content (Join-Path $d 'summary.json') -Raw | ConvertFrom-Json
+          if ($s.schemaVersion -ne '1.2') { throw "schemaVersion $($s.schemaVersion) != 1.2" }
+          if ($s.version -notmatch '^\d+\.\d+\.\d+$') { throw "tool version missing/invalid: $($s.version)" }
+          if (($s.activeFindingsCount + $s.suppressedCount) -ne @($s.findings).Count) { throw 'active+suppressed != findings' }
+          foreach ($f in @($s.findings)) { foreach ($k in 'id','confidence','suppressed') { if (-not ($f.PSObject.Properties.Name -contains $k)) { throw "finding without $k" } } }
+          "OK: allowlist/ioc run; version=$($s.version) active=$($s.activeFindingsCount) suppressed=$($s.suppressedCount)"

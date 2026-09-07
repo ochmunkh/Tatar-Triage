@@ -1,6 +1,6 @@
 {
-  "_comment": "TATAR Triage IOC feed. Pass with -IOCFile <file> (Windows) or --ioc <file> (Linux). Values matched against collected processes, network, hashed binaries and the timeline. Offline only.",
-  "hashes":    ["5d41402abc4b2a76b9719d911017c592"],
+  "_comment": "TATAR Triage IOC feed. Pass with -IOCFile <file> (Windows) or --ioc <file> (Linux). Values matched against collected processes, network, hashed binaries and the timeline. Offline only. hashes[] must be SHA-256 (64 hex chars, case-insensitive); MD5/SHA-1 are not compared. The sample hash is the SHA-256 of the EICAR test file, so you can test a hit safely - replace it with real IOCs.",
+  "hashes":    ["275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"],
   "ips":       ["203.0.113.10"],
   "domains":   ["evil.example.com"],
   "filenames": ["svch0st.exe", "mimikatz.exe"]

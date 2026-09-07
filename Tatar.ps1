@@ -8,6 +8,14 @@
     report plus per-artifact files, and produces a SHA-256 manifest for
     chain-of-custody. Module based: run everything or pick specific modules.
 
+    v1.2 additions:
+      * -Allowlist <json> - suppress known-good findings by path glob, Authenticode
+        publisher or SHA-256 (kept in the report as suppressed, with a reason).
+      * -IOCFile <json>   - offline IOC feed (hashes/ips/domains/filenames); a hit
+        overrides the allowlist and escalates to High / 0.95.
+      * findings v2 fields (id, confidence, suppressed, suppressReason, iocMatch),
+        schemaVersion 1.2.
+
     v1.1 additions:
       * summary.txt / summary.json - analyst-first triage summary with an
         aggregated "Suspicious findings" list (leads for REVIEW, not verdicts).
@@ -74,7 +82,7 @@
     .\Tatar.ps1 -List
 
 .NOTES
-    Author : Enkhbat.O (Security Analyst)  |  TATAR Triage Toolkit v1.1
+    Author : Enkhbat.O (Security Analyst)  |  TATAR Triage Toolkit v1.2.1
     Requires: Windows 10/11, PowerShell 5.1+ (PS7 compatible). Run as Administrator.
     Exit codes: 0 = success | 1 = fatal / usage error | 2 = completed with errors (see Tatar.log).
     This tool does NOT extract or decrypt saved passwords.
@@ -85,6 +93,9 @@
 #       single-dash (-All) and double-dash (--all) styles work, any case.
 
 $ErrorActionPreference = 'Continue'
+
+# Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
+$script:ToolVersion = '1.2.1'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $List=$false; $Help=$false; $Compress=$false
@@ -221,7 +232,7 @@ function Show-Banner {
     foreach ($l in $art) { Write-Host ("   " + $l) -ForegroundColor Cyan }
     Write-Host ""
     Write-Host $bar -ForegroundColor DarkCyan
-    Write-Host ('|' + ('   TATAR TRIAGE TOOLKIT   v1.1').PadRight($w) + '|') -ForegroundColor White
+    Write-Host ('|' + ("   TATAR TRIAGE TOOLKIT   v$($script:ToolVersion)").PadRight($w) + '|') -ForegroundColor White
     Write-Host ('|' + ('   Windows Quick Triage / Incident Response Collector').PadRight($w) + '|') -ForegroundColor Gray
     Write-Host ('|' + ('   Transparent DFIR  -  sign & allow-list, do not evade').PadRight($w) + '|') -ForegroundColor DarkGray
     Write-Host $bar -ForegroundColor DarkCyan
@@ -230,7 +241,7 @@ function Show-Banner {
 
 function Show-Help {
 @"
-TATAR Triage Toolkit v1.1 - Windows quick triage collector
+TATAR Triage Toolkit v$($script:ToolVersion) - Windows quick triage collector
 
 USAGE:
   .\Tatar.ps1 -All                          Run all modules (order of volatility)
@@ -884,7 +895,7 @@ function Write-Summary {
     # ---------- summary.txt ----------
     $L = New-Object System.Collections.Generic.List[string]
     $L.Add('==============================================================')
-    $L.Add(' TATAR Triage Toolkit v1.1 - TRIAGE SUMMARY')
+    $L.Add(" TATAR Triage Toolkit v$($script:ToolVersion) - TRIAGE SUMMARY")
     $L.Add('==============================================================')
     $L.Add(("Host       : {0}" -f $hn))
     $L.Add(("OS         : {0} ({1})" -f $osCap, $osVer))
@@ -1021,7 +1032,7 @@ function Write-Summary {
     # ---------- summary.json ----------
     $jsonObj = [pscustomobject]@{
         tool            = 'TATAR Triage Toolkit'
-        version         = '1.1'
+        version         = $script:ToolVersion
         schemaVersion   = '1.2'
         platform        = 'windows'
         host            = $hn
@@ -1133,7 +1144,7 @@ try {
 
 # P4: execution log lives next to the evidence, excluded from the manifest (operational log, not evidence)
 $script:ExecLog = Join-Path $script:OutDir 'Tatar.log'
-Write-ExecLog 'INFO' ("TATAR Triage Toolkit v1.1 starting on {0} as {1} (admin={2}, silent={3})" -f $hostn, $env:USERNAME, $isAdmin, $Silent)
+Write-ExecLog 'INFO' ("TATAR Triage Toolkit v$($script:ToolVersion) starting on {0} as {1} (admin={2}, silent={3})" -f $hostn, $env:USERNAME, $isAdmin, $Silent)
 Write-ExecLog 'INFO' ("CaseId='{0}' Examiner='{1}' OutDir={2}" -f $CaseId, $Examiner, $script:OutDir)
 Write-ExecLog 'INFO' ("Modules selected: {0}" -f ($toRun -join ', '))
 if (-not $isAdmin) { Write-ExecLog 'WARN' 'Not running as Administrator - collection will be incomplete.' }
@@ -1145,7 +1156,7 @@ if ((Split-Path $OutputPath -Qualifier) -eq $env:SystemDrive) {
 
 $start = Get-Date
 @"
-TATAR Triage Toolkit v1.1 - Collection Report
+TATAR Triage Toolkit v$($script:ToolVersion) - Collection Report
 Host        : $hostn
 Case ID     : $CaseId
 Examiner    : $Examiner
@@ -1200,7 +1211,7 @@ Finished     : $($end.ToString('o'))
 Duration     : $([math]::Round(($end-$start).TotalMinutes,2)) min
 Script       : $PSCommandPath
 Script SHA256: $selfHash
-Tool         : TATAR Triage Toolkit v1.1
+Tool         : TATAR Triage Toolkit v$($script:ToolVersion)
 "@ | Out-File (Join-Path $script:OutDir 'chain_of_custody.txt') -Encoding UTF8
 
 Write-ExecLog 'INFO' 'Writing summary.txt / summary.json'

@@ -4,6 +4,26 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.2.1] — 2026-09-07
+
+Release-hygiene patch for 1.2.0 — no collector or schema changes.
+
+### Fixed
+- Tool version reported as `1.1` in `summary.json`, banner, help, summary,
+  execution log and chain of custody on both editions. Version is now a single
+  constant (`$script:ToolVersion` / `VERSION`) and reads `1.2.1`.
+- `ioc.sample.json` shipped an MD5 hash; both IOC engines compare SHA-256 only,
+  so the sample could never match. Replaced with the SHA-256 of the EICAR test
+  file (safe to test a hit) and documented the SHA-256-only rule.
+- Linux README was still at v1.1: badge, `--allowlist` / `--ioc` options and an
+  Allowlist & IOC section added; line endings normalized to LF per
+  `.gitattributes`.
+- README: duplicate "(current)" label on the Schema 1.1 section.
+
+### Changed
+- CI now also runs both editions with `allowlist.sample.json` + `ioc.sample.json`
+  and asserts `schemaVersion 1.2`, a SemVer tool version, findings v2 fields and
+  `activeFindingsCount + suppressedCount == findings`.
 ## [1.2.0] — 2026-09-02
 
 ### Added
@@ -47,6 +67,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 - Initial release: 30 Windows collectors in RFC 3227 order of volatility, chain
   of custody, SHA-256 manifest, optional archive, and hive/EVTX/memory switches.
 
+[1.2.1]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.1
 [1.2.0]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.0
 [1.1.0]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.1.0
 [1.0.0]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.0.0
