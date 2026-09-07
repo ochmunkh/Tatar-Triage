@@ -487,8 +487,8 @@ function Collect-Persistence {
             }
         }
         foreach ($k in 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows','HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows NT\CurrentVersion\Windows') {
-            $ai = (Get-ItemProperty $k -Name AppInit_DLLs -ErrorAction SilentlyContinue).AppInit_DLLs
-            if ($ai) { Add-Report "[AppInit_DLLs] $k = $ai"; Add-Finding -Category 'persistence' -Message 'AppInit_DLLs is set (DLL loaded into most user processes)' -Detail "$k AppInit_DLLs = $ai" }
+            $appInit = (Get-ItemProperty $k -Name AppInit_DLLs -ErrorAction SilentlyContinue).AppInit_DLLs
+            if ($appInit) { Add-Report "[AppInit_DLLs] $k = $appInit"; Add-Finding -Category 'persistence' -Message 'AppInit_DLLs is set (DLL loaded into most user processes)' -Detail "$k AppInit_DLLs = $appInit" }
         }
         $ac = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls'
         if (Test-PathSafe $ac) {

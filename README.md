@@ -363,9 +363,9 @@ For **authorized** use only — on systems you own or have explicit written perm
 
 ## Contact
 
-**Author:** Enkhbat Oyunbayar — Security Analyst · Ulaanbaatar
+**Author:** Enkhbat.O — Security Analyst
 
-[![Facebook](https://img.shields.io/badge/Facebook-Enkhbat%20Oyunbayar-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/enkhbat.o/)
+[![Facebook](https://img.shields.io/badge/Facebook-Enkhbat.O-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/enkhbat.o/)
 [![GitHub](https://img.shields.io/badge/GitHub-ochmunkh-181717?logo=github&logoColor=white)](https://github.com/ochmunkh)
 
 For **authorized use only** — on systems you own or have written permission to examine.
@@ -549,9 +549,9 @@ sudo ./tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-014 --ex
 
 ## Холбоо барих
 
-**Зохиогч:** Enkhbat Oyunbayar — Security Analyst · Улаанбаатар
+**Зохиогч:** Enkhbat.O — Security Analyst
 
-[![Facebook](https://img.shields.io/badge/Facebook-Enkhbat%20Oyunbayar-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/enkhbat.o/)
+[![Facebook](https://img.shields.io/badge/Facebook-Enkhbat.O-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/enkhbat.o/)
 [![GitHub](https://img.shields.io/badge/GitHub-ochmunkh-181717?logo=github&logoColor=white)](https://github.com/ochmunkh)
 
 Зөвхөн **зөвшөөрөлтэй** хэрэглээнд — өөрийн эзэмшлийн буюу бичгээр зөвшөөрөл авсан системд ашиглана уу.
