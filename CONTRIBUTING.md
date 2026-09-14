@@ -50,9 +50,12 @@ Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
   the enum in `schema/summary.schema.json`, keep new fields optional).
 - Line endings are enforced by `.gitattributes` (`.sh`/`.md`/`.json` = LF, `.ps1` = CRLF). If
   `git status` shows a whole-file diff, run `git add --renormalize <file>`.
-- Release: update `CHANGELOG.md` + the README changelog → commit → annotated tag `vX.Y.Z` → push →
-  wait for CI → GitHub release with `Tatar.ps1`, `tatar-linux.sh`, the two sample JSONs and a
-  `SHA256SUMS.txt` attached (publish the hashes — that is how users allow-list the script).
+- Release: update `CHANGELOG.md` + the README changelog → commit → annotated tag `vX.Y.Z` →
+  push the branch, then push the tag. The `Release` workflow builds `SHA256SUMS.txt` and attaches
+  both collectors and both sample JSONs to the release, taking its notes from the matching
+  `CHANGELOG.md` section. If the tag has no release yet it creates a **draft** — review it and
+  publish. Never hand-edit the hashes: `SHA256SUMS.txt` is the published source of truth.
+
 ## Reporting issues
 
 Use the templates in `.github/ISSUE_TEMPLATE/`. For security-sensitive reports, contact the
@@ -78,8 +81,9 @@ schema сайжруулах · хоёр OS-ийн parity · баримт/орч�
 **Урсгал:** fork → `feat/...` салбар → турших → Pull Request (ямар artifact цуглуулж, ямар
 ATT&CK mapping хийснийг тайлбарла). Code of Conduct-ыг дагана уу.
 
-**Хувилбар:** tool version нь $script:ToolVersion (Tatar.ps1) болон VERSION (	atar-linux.sh) гэсэн
+**Хувилбар:** tool version нь $script:ToolVersion (Tatar.ps1) болон VERSION (tatar-linux.sh) гэсэн
 ганц газар байдаг — хоёуланг нь хамт өсгө, өөр газар version бичихгүй. schemaVersion нь зөвхөн JSON
-гэрээ өөрчлөгдөхөд солигдоно. Release: CHANGELOG → commit → X.Y.Z tag → push → CI → GitHub release
-(скрипт + sample + SHA256SUMS.txt хавсаргах). Аюулгүй байдлын нарийн
+гэрээ өөрчлөгдөхөд солигдоно. Release: CHANGELOG → commit → vX.Y.Z tag → push (branch, дараа tag).
+Release workflow нь SHA256SUMS.txt-ийг CI дээр бодож, хоёр скрипт + хоёр sample-ыг release-д автоматаар
+хавсаргана; tag дээр release байхгүй бол draft үүсгэнэ — хянаад publish хий. Хэшийг гараар бичихгүй. Аюулгүй байдлын нарийн
 асуудлыг **nkhbat@yahoo.com** руу хувийн байдлаар мэдэгдэнэ үү.

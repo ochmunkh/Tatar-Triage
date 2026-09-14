@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Attach collectors + SHA256SUMS to the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # .gitattributes forces .ps1 to CRLF and .sh/.json to LF in the working
+      # tree on every platform, so the hashes built here match what a user
+      # gets from a Windows clone.
+      - name: Collect assets + build SHA256SUMS.txt
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp Tatar.ps1 linux/tatar-linux.sh allowlist.sample.json ioc.sample.json dist/
+          cd dist
+          sha256sum Tatar.ps1 tatar-linux.sh allowlist.sample.json ioc.sample.json > SHA256SUMS.txt
+          echo "--- SHA256SUMS.txt"
+          cat SHA256SUMS.txt
+
+      - name: Take release notes from CHANGELOG.md
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VER" '
+            $0 ~ "^## \\[" ver "\\]" { flag = 1; next }
+            flag && /^## \[/ { exit }
+            flag { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "No CHANGELOG section for $VER - writing a short fallback note" >&2
+            printf 'See CHANGELOG.md for the details of %s.\n' "$GITHUB_REF_NAME" > notes.md
+          fi
+          echo "--- notes.md"
+          cat notes.md
+
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists - uploading assets (clobber)"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            echo "No release for $TAG yet - creating a DRAFT; review the notes, then publish"
+            gh release create "$TAG" --draft --title "$TAG" --notes-file notes.md dist/*
+          fi
+          gh release view "$TAG"

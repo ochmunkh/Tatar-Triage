@@ -293,7 +293,17 @@ This tool is intentionally **transparent** (no obfuscation / AMSI bypass). To ru
 2. **Publish its SHA-256** so responders can verify and allow-list it.
 3. On the forensic host, add a **scoped Defender/EDR exclusion** for the tool, and remove it afterward.
 
-`SHA-256 (Tatar.ps1): A69F953AFCE102190DA9928869D380528F6E2BB7E203C66CF46E97187709219B`
+**Verify what you downloaded.** Every release ships a `SHA256SUMS.txt` covering both collectors and both sample files. That file — not this README — is the source of truth for hashes, so nothing here goes stale:
+
+```bash
+sha256sum -c SHA256SUMS.txt                          # Linux
+```
+
+```powershell
+(Get-FileHash .\Tatar.ps1 -Algorithm SHA256).Hash    # Windows - compare with SHA256SUMS.txt
+```
+
+Latest release: **[github.com/ochmunkh/Tatar-Triage/releases/latest](https://github.com/ochmunkh/Tatar-Triage/releases/latest)**
 
 ---
 
@@ -317,7 +327,12 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.2.1 — release hygiene (current)
+### v1.2.2 — verifiable releases (current)
+- The published SHA-256 lives in the release's `SHA256SUMS.txt` only; the README points there instead of hard-coding a hash that goes stale.
+- **Release automation**: pushing a `v*` tag builds `SHA256SUMS.txt` in CI and attaches both collectors plus both sample files to the GitHub release, taking the notes from `CHANGELOG.md`.
+- Tool version bumped to `1.2.2` on both editions so tag, tool and release agree.
+
+### v1.2.1 — release hygiene
 - Tool version now reported correctly ("1.2.1"; was "1.1") in summary.json, banner, summary, log and chain of custody — single constant on both editions.
 - `ioc.sample.json` hash is now SHA-256 (EICAR test file) — the engines compare SHA-256 only; the old sample was MD5 and could never match.
 - Linux README brought to v1.2 (`--allowlist` / `--ioc` documented); CI now exercises the allowlist + IOC path on both platforms. Full list in [CHANGELOG.md](CHANGELOG.md).
@@ -533,6 +548,7 @@ sudo ./tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-014 --ex
 - Цуглуулга дуусахаас өмнө хостыг **унтраах/restart хийхгүй**.
 - Гаралт нь **эмзэг мэдээлэл** агуулж болзошгүй (registry hive, browser мета) — шифрлэж, аюулгүй дамжуулна уу.
 - Зарим модуль (`hives`, `memorydump`, `exportevtx`) EDR/AV-г идэвхжүүлж болзошгүй — SOC-той зөвшилцөж, tool-оо урьдчилан allow-list хий.
+- **Татсан файлаа шалга.** Release бүр SHA256SUMS.txt-тэй гарна: Linux дээр `sha256sum -c SHA256SUMS.txt`, Windows дээр `Get-FileHash`. Хэшийг README дотор хатуу бичихгүй — release-ийн тэр файл нь эх сурвалж.
 
 Дэлгэрэнгүй MITRE ATT&CK mapping: [`docs/MITRE_ATTACK.md`](docs/MITRE_ATTACK.md).
 

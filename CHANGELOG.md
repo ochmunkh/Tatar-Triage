@@ -4,6 +4,24 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.2.2] — 2026-09-14
+
+Docs and release-process patch. No collector, finding or schema changes.
+
+### Changed
+- The collector's SHA-256 is no longer hard-coded in the README. Every release
+  ships `SHA256SUMS.txt`, which is now the single source of truth for hashes —
+  the README points there and shows the verify command for each platform. (The
+  hash printed in the README had gone stale at the v1.0 value.)
+- **Release automation** (`.github/workflows/release.yml`): pushing a `v*` tag
+  builds `SHA256SUMS.txt` in CI and attaches `Tatar.ps1`, `tatar-linux.sh` and
+  both sample files to the GitHub release, taking the release notes from this
+  file. Assets and hashes are no longer assembled by hand.
+- Tool version is `1.2.2` on both editions, so tag, tool output and release agree.
+
+### Fixed
+- CONTRIBUTING: a stray control character in the Mongolian versioning section.
+
 ## [1.2.1] — 2026-09-07
 
 Release-hygiene patch for 1.2.0 — no collector or schema changes.
@@ -67,6 +85,7 @@ Release-hygiene patch for 1.2.0 — no collector or schema changes.
 - Initial release: 30 Windows collectors in RFC 3227 order of volatility, chain
   of custody, SHA-256 manifest, optional archive, and hive/EVTX/memory switches.
 
+[1.2.2]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.2
 [1.2.1]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.1
 [1.2.0]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.0
 [1.1.0]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.1.0
