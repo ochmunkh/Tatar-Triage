@@ -1,0 +1,7 @@
+{
+  "_comment": "Partial tokens that must NOT match. 127.0.0 is only a prefix of 127.0.0.1; ocalhost sits inside localhost; vchost.exe inside svchost.exe; ystemd inside systemd. A boundary-aware matcher raises nothing here.",
+  "hashes": [],
+  "ips": ["127.0.0"],
+  "domains": ["ocalhost"],
+  "filenames": ["vchost.exe", "ystemd"]
+}

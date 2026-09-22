@@ -1,0 +1,7 @@
+{
+  "_comment": "A sentinel we put into the output ourselves via --caseid, so the positive test is deterministic on any host. Not a real indicator.",
+  "hashes": [],
+  "ips": [],
+  "domains": [],
+  "filenames": ["TATAR-IOC-PROBE-4711"]
+}
