@@ -4,6 +4,37 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.2.3] — 2026-09-22
+
+Correctness pass, driven by a new test suite. No new collectors, no schema change.
+
+### Fixed
+- **IOC matching was substring-based on both editions**, so a partial indicator
+  raised a false `High` / `0.95` finding: `127.0.0` matched `127.0.0.1` and
+  `ocalhost` matched `localhost`. Indicators are now matched on a boundary — IP
+  literals may not be flanked by a digit, dot or colon; domains and filenames may
+  not be flanked by a word character, dot or dash, so `evil.example.com` no
+  longer matches `notevil.example.com` or `evil.example.com.mn`. Both the
+  annotate pass and the evidence-scan pass use the same rule: Windows via a
+  lookaround regex (`Get-IocPattern`), Linux via a portable `awk` helper
+  (`ioc_match`) — GNU `grep -P` is not available everywhere.
+- **Linux: `activeFindingsCount` was derived arithmetically** while the
+  suppressed tally was tracked by hand across two passes. It is now counted from
+  the findings data, so `active + suppressed == findings` cannot drift.
+- **Linux: `"packageOwned": false` was ignored without `python3`**, leaving
+  package-ownership suppression silently on.
+- **Windows: the allowlist hash check only inspected the first SHA-256** in a
+  finding; every hash mentioned is now considered.
+
+### Added
+- `tests/` — black-box contract tests for both editions (`Invoke-Tests.ps1`,
+  `run-tests.sh`, `fixtures/`). They assert the output contract only: schema
+  version, SemVer tool version, `findings` never null, `active + suppressed ==
+  findings`, unique well-formed ids, findings v2 fields, severity and confidence
+  from the fixed sets, an IOC hit implying High/0.95/active, and a reason on
+  every suppressed finding. Four cases: baseline, partial IOC tokens that must
+  NOT match, a sentinel token that must match, malformed allowlist/IOC files that
+  must warn and carry on. CI runs them on Windows and Linux.
 ## [1.2.2] — 2026-09-14
 
 Docs and release-process patch. No collector, finding or schema changes.
@@ -85,6 +116,7 @@ Release-hygiene patch for 1.2.0 — no collector or schema changes.
 - Initial release: 30 Windows collectors in RFC 3227 order of volatility, chain
   of custody, SHA-256 manifest, optional archive, and hive/EVTX/memory switches.
 
+[1.2.3]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.3
 [1.2.2]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.2
 [1.2.1]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.1
 [1.2.0]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.0

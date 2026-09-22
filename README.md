@@ -327,6 +327,12 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
+### v1.2.3 — correctness pass (current)
+- **IOC matching is boundary-aware** on both editions. It used to be a plain substring match, so `127.0.0` matched `127.0.0.1` and `ocalhost` matched `localhost`, raising false `High` / `0.95` findings; `evil.example.com` no longer matches `notevil.example.com` either.
+- Linux: `activeFindingsCount` is counted from the findings data instead of being derived arithmetically, so `active + suppressed == findings` cannot drift; `"packageOwned": false` is honoured even without `python3`.
+- Windows: the allowlist hash check considers every SHA-256 in a finding, not just the first.
+- **New [`tests/`](tests/)**: black-box contract tests for both editions, run by CI on every push.
+
 ### v1.2.2 — verifiable releases (current)
 - The published SHA-256 lives in the release's `SHA256SUMS.txt` only; the README points there instead of hard-coding a hash that goes stale.
 - **Release automation**: pushing a `v*` tag builds `SHA256SUMS.txt` in CI and attaches both collectors plus both sample files to the GitHub release, taking the notes from `CHANGELOG.md`.

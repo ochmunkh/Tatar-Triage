@@ -82,7 +82,7 @@
     .\Tatar.ps1 -List
 
 .NOTES
-    Author : Enkhbat.O (Security Analyst)  |  TATAR Triage Toolkit v1.2.2
+    Author : Enkhbat.O (Security Analyst)  |  TATAR Triage Toolkit v1.2.3
     Requires: Windows 10/11, PowerShell 5.1+ (PS7 compatible). Run as Administrator.
     Exit codes: 0 = success | 1 = fatal / usage error | 2 = completed with errors (see Tatar.log).
     This tool does NOT extract or decrypt saved passwords.
@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.2.2'
+$script:ToolVersion = '1.2.3'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $List=$false; $Help=$false; $Compress=$false

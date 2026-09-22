@@ -20,13 +20,13 @@
 #
 # Exit codes:  0 = success | 1 = fatal / usage error | 2 = completed with errors
 #
-# Author: Enkhbat.O (Security Analyst) | TATAR Triage Toolkit - Linux v1.2.2
+# Author: Enkhbat.O (Security Analyst) | TATAR Triage Toolkit - Linux v1.2.3
 # ---------------------------------------------------------------------------
 
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.2.2"
+VERSION="1.2.3"
 TOOL="TATAR Triage Toolkit (Linux)"
 
 # Field separator for the findings pipeline. MUST be non-whitespace: bash 'read'
@@ -245,7 +245,7 @@ banner() {
     |_/_/   \_\ |_/_/   \_\_| \_\
 
 +==============================================================+
-|   TATAR TRIAGE TOOLKIT  (Linux)   v1.2.2                     |
+|   TATAR TRIAGE TOOLKIT  (Linux)   v1.2.3                     |
 |   Fast DFIR triage / artifact collector                      |
 |   Transparent - review, sign & allow-list; do not evade      |
 +==============================================================+

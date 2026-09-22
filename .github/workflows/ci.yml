@@ -60,6 +60,9 @@ jobs:
           print("OK: allowlist/ioc run validates; active=%d suppressed=%d" % (inst["activeFindingsCount"], inst["suppressedCount"]))
           PY
 
+      - name: Contract tests
+        run: bash tests/run-tests.sh
+
   windows:
     name: Windows (parse / PSScriptAnalyzer / run)
     runs-on: windows-latest
@@ -109,3 +112,7 @@ jobs:
           if (($s.activeFindingsCount + $s.suppressedCount) -ne @($s.findings).Count) { throw 'active+suppressed != findings' }
           foreach ($f in @($s.findings)) { foreach ($k in 'id','confidence','suppressed') { if (-not ($f.PSObject.Properties.Name -contains $k)) { throw "finding without $k" } } }
           "OK: allowlist/ioc run; version=$($s.version) active=$($s.activeFindingsCount) suppressed=$($s.suppressedCount)"
+
+      - name: Contract tests
+        shell: pwsh
+        run: pwsh -File tests/Invoke-Tests.ps1
