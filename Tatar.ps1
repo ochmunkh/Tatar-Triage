@@ -937,7 +937,7 @@ function Write-Summary {
             $alHashes = @($al.hashes | ForEach-Object { "$_".ToLower() })
             foreach ($f in $sorted) {
                 $blob  = "$($f.message) $($f.detail)"
-                $cands = @([regex]::Matches($blob, '([A-Za-z]:\\[^"''\r\n]+?\.(?:exe|dll|sys|ps1|bat|scr|cmd))') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+                $cands = @([regex]::Matches($blob, '([A-Za-z]:\\[^"''\r\n]+?\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
                 foreach ($cp in $cands) {
                     $hit = $false
                     foreach ($g in $alPaths) { if ($cp -like $g) { $f.suppressed = $true; $f.suppressReason = "allowlist path: $g"; $hit = $true; break } }
@@ -975,7 +975,7 @@ function Write-Summary {
                 $hit  = $null
                 foreach ($s in $iocStr) { if ([regex]::IsMatch($blob, (Get-IocPattern $s), 'IgnoreCase')) { $hit = $s; break } }
                 if (-not $hit -and $iocHashes.Count) {
-                    $cp = ([regex]::Match($blob, '([A-Za-z]:\\[^"''\r\n]+?\.(?:exe|dll|sys|ps1|bat|scr|cmd))')).Groups[1].Value
+                    $cp = ([regex]::Match($blob, '([A-Za-z]:\\[^"''\r\n]+?\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])')).Groups[1].Value
                     if ($cp -and (Test-Path -LiteralPath $cp)) {
                         $h = (Get-FileHash -LiteralPath $cp -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
                         if ($h -and ($iocHashes -contains $h.ToLower())) { $hit = $h.ToLower() }
@@ -1009,9 +1009,12 @@ function Write-Summary {
                     })
                 }
             }
-            $sorted = @($script:Findings | Sort-Object { if ($sevOrder.ContainsKey($_.Severity)) { $sevOrder[$_.Severity] } else { 2 } }, Category)
-            Write-ExecLog 'INFO' ("IOC matching: {0} hit(s) on existing findings; {1} findings total" -f $iocHits, $sorted.Count)
+            Write-ExecLog 'INFO' ("IOC matching: {0} hit(s) on existing findings" -f $iocHits)
         } catch { Add-Err "IOC matching failed: $_" }
+        # Re-sort OUTSIDE the try: Pass B may have appended findings before an
+        # error, and a stale $sorted would drop them from every output file.
+        $sorted = @($script:Findings | Sort-Object { if ($sevOrder.ContainsKey($_.Severity)) { $sevOrder[$_.Severity] } else { 2 } }, Category)
+        Write-ExecLog 'INFO' ("IOC matching: {0} findings total after Pass B" -f $sorted.Count)
     }
     $active     = @($sorted | Where-Object { -not $_.suppressed })
     $suppressed = @($sorted | Where-Object { $_.suppressed })

@@ -108,7 +108,7 @@ TATAR ships as two parity editions — `Tatar.ps1` (Windows, 30 modules) and `li
 
 Every finding is a single record, identical across platforms:
 
-`id` · `severity` (High/Review) · `category` · `technique[]` (MITRE) · `message` · `detail` · `confidence` (0.7 High · 0.4 Review · 0.95 IOC-confirmed) · `suppressed` · `suppressReason` · `iocMatch`.
+`id` · `severity` (High/Review) · `category` · `technique[]` (MITRE) · `message` · `detail` · `confidence` (0.7 High · 0.4 Review · 0.95 IOC-confirmed) · `suppressed` · `suppressReason` · `iocMatch` (a boolean; the matched indicator itself is prefixed into `detail` as `IOC match: <indicator> | ...`).
 
 Suppressed findings stay in the report and JSON with a reason — they are only dropped from the active headline count, never from the record. (On Linux the findings pipeline is delimited with the ASCII Unit Separator `0x1F`, not TAB, because `read` collapses whitespace delimiters and would shift columns on empty fields.)
 
@@ -470,7 +470,7 @@ TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1`
 
 ### Finding загвар
 
-Finding бүр нэг бичлэг, платформ хооронд адилхан: `id` · `severity` (High/Review) · `category` · `technique[]` (MITRE) · `message` · `detail` · `confidence` (0.7 High · 0.4 Review · 0.95 IOC-баталгаажсан) · `suppressed` · `suppressReason` · `iocMatch`. Нуугдсан finding нь тайлан болон JSON-д шалтгаантайгаа үлдэнэ — зөвхөн идэвхтэй жагсаалтаас хасагдана, бичлэгээс арилдаггүй.
+Finding бүр нэг бичлэг, платформ хооронд адилхан: `id` · `severity` (High/Review) · `category` · `technique[]` (MITRE) · `message` · `detail` · `confidence` (0.7 High · 0.4 Review · 0.95 IOC-баталгаажсан) · `suppressed` · `suppressReason` · `iocMatch` (boolean; таарсан индикатор нь `detail`-д `IOC match: <indicator> | ...` хэлбэрээр бичигдэнэ). Нуугдсан finding нь тайлан болон JSON-д шалтгаантайгаа үлдэнэ — зөвхөн идэвхтэй жагсаалтаас хасагдана, бичлэгээс арилдаггүй.
 
 ### Allowlist — дуу чимээнээс дохиог ялгах
 

@@ -25,7 +25,25 @@ Correctness pass, driven by a new test suite. No new collectors, no schema chang
   package-ownership suppression silently on.
 - **Windows: the allowlist hash check only inspected the first SHA-256** in a
   finding; every hash mentioned is now considered.
+- **Linux: the IOC evidence scan only looked at the consolidated report**, while
+  the Windows edition scans every collected text artifact. Linux now scans the
+  whole output folder too (`*.txt`, `*.csv`, `*.log`, minus `summary.txt`), so an
+  indicator that appears only in `timeline.csv` or under `logs/` is no longer
+  missed.
+- **Windows: allowlist and IOC path extraction was limited to seven extensions**
+  (`exe|dll|sys|ps1|bat|scr|cmd`), so a finding about a `.vbs`, `.jse`, `.lnk` or
+  `.dat` file could not be allowlisted or hashed. Any extension is accepted now.
+- **Linux: `al_path_of` returned the first absolute path in a finding**, which
+  hashed or globbed the wrong file when a message mentioned several ("/tmp/x runs
+  from /usr/bin/foo"). It now prefers a path that exists on disk.
+- **Windows: findings appended by IOC Pass B were dropped** if the IOC block then
+  threw, because the re-sort lived inside the `try`. It now runs outside it.
 
+### Changed
+- `iocMatch` is documented for what it is: a boolean. The matched indicator is
+  prefixed into `detail` as `IOC match: <indicator> | ...`. Schema description and
+  both README languages say so now (carrying the indicator in its own field is a
+  v1.3 candidate).
 ### Added
 - `tests/` — black-box contract tests for both editions (`Invoke-Tests.ps1`,
   `run-tests.sh`, `fixtures/`). They assert the output contract only: schema

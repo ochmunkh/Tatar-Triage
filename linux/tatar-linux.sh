@@ -156,8 +156,21 @@ pkg_owns() {  # $1=path -> 0 if the file belongs to an installed system package
     return 1
 }
 
-al_path_of() {  # $1=msg $2=detail -> first absolute path token found
-    printf '%s %s' "$1" "$2" | grep -oE '/[A-Za-z0-9_.+-][A-Za-z0-9_./+-]*' | head -n1
+al_path_of() {  # $1=msg $2=detail -> best absolute path token
+    # A finding can mention several paths ("/tmp/x runs from /usr/bin/foo"). Taking
+    # the first one blindly hashed or globbed the wrong file, so prefer a token
+    # that exists on disk and fall back to the first one.
+    local toks first p
+    toks="$(printf '%s %s' "$1" "$2" | grep -oE '/[A-Za-z0-9_.+-][A-Za-z0-9_./+-]*')"
+    [ -n "$toks" ] || return 0
+    first="$(printf '%s\n' "$toks" | head -n1)"
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        if [ -e "$p" ]; then printf '%s' "$p"; return 0; fi
+    done <<EOF
+$toks
+EOF
+    printf '%s' "$first"
 }
 
 json_array_items() {  # $1=file $2=key -> newline-separated array values
@@ -734,13 +747,18 @@ EOF
 
         # Pass B: raise NEW findings for IOCs seen anywhere in the collected report
         local val ln
-        if [ -r "$REPORT" ]; then
+        # Scope parity with the Windows edition: scan every text artifact in the
+        # output folder, not just the consolidated report (summary.txt excluded -
+        # it is written later and would echo our own findings back).
+        if [ -d "$OUTDIR" ]; then
             { printf '%s\n' "$IOC_STR"; printf '%s\n' "$IOC_HASHES"; } | while IFS= read -r val; do
                 [ -n "$val" ] || continue
                 # skip IOCs already tied to a specific finding in Pass A
                 grep -qxF -- "$val" "$IOC_HIT" 2>/dev/null && continue
                 # grep pre-filters, ioc_match confirms the hit sits on a boundary
-                ln="$(grep -iF -- "$val" "$REPORT" 2>/dev/null | grep -viE 'IOC match' \
+                ln="$(find "$OUTDIR" -type f \( -name '*.txt' -o -name '*.csv' -o -name '*.log' \) \
+                        ! -name 'summary.txt' -print0 2>/dev/null \
+                      | xargs -0 -r grep -ihF -- "$val" 2>/dev/null | grep -viE 'IOC match' \
                       | while IFS= read -r cand; do
                             if ioc_match "$cand" "$val"; then printf '%s' "$cand"; break; fi
                         done)"
