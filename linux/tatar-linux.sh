@@ -176,6 +176,38 @@ except Exception:
     fi
 }
 
+# Boundary-aware IOC match. Plain substring matching used to let "127.0.0" match
+# 127.0.0.1 and "ocalhost" match localhost, raising false High findings. awk keeps
+# this portable: GNU grep -P is not available everywhere.
+ioc_match() {  # ioc_match TEXT TOKEN -> exit 0 on a boundary-aligned hit
+    [ -n "$2" ] || return 1
+    printf '%s' "$1" | awk -v tok="$2" '
+    function isdig(c) { return (c >= "0" && c <= "9") }
+    function isw(c)   { return ((c >= "0" && c <= "9") || (c >= "a" && c <= "z") || c == "_") }
+    {
+        text = tolower($0); t = tolower(tok); n = length(t)
+        ipish = (t ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) || (t ~ /^[0-9a-f:]+$/ && index(t, ":") > 0)
+        start = 1
+        while ((p = index(substr(text, start), t)) > 0) {
+            p = p + start - 1
+            before = (p > 1) ? substr(text, p - 1, 1) : ""
+            after  = substr(text, p + n, 1)
+            ok = 1
+            if (ipish) {
+                if (before != "" && (isdig(before) || before == "." || before == ":")) ok = 0
+                if (after  != "" && (isdig(after)  || after  == "." || after  == ":")) ok = 0
+            } else {
+                if (before != "" && (isw(before) || before == "." || before == "-")) ok = 0
+                if (after  != "" && (isw(after)  || after  == "-")) ok = 0
+                if (after == "." && isw(substr(text, p + n + 1, 1))) ok = 0
+            }
+            if (ok) { found = 1; exit }
+            start = p + 1
+        }
+    }
+    END { exit(found ? 0 : 1) }'
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # Execution-context detection (container / virtualization / LSM). Best-effort.
@@ -617,6 +649,9 @@ write_summary() {
         AL_PKGOWN="$(python3 -c 'import json,sys
 try: print(1 if json.load(open(sys.argv[1])).get("packageOwned",True) else 0)
 except Exception: print(1)' "$ALLOWLIST" 2>/dev/null || echo 1)"
+    elif [ -n "$ALLOWLIST" ] && [ -r "$ALLOWLIST" ]; then
+        # no python3: still honour an explicit "packageOwned": false
+        if grep -qE '"packageOwned"[[:space:]]*:[[:space:]]*false' "$ALLOWLIST" 2>/dev/null; then AL_PKGOWN=0; fi
     fi
     if [ -s "$FINDINGS_FILE" ]; then
         local fid fs fc fm fd ft fconf supp reason path h g
@@ -671,7 +706,7 @@ EOF
             if [ -n "$IOC_STR" ]; then
                 while IFS= read -r ind; do
                     [ -n "$ind" ] || continue
-                    if printf '%s %s' "$xm" "$xd" | grep -qiF -- "$ind"; then hit="$ind"; break; fi
+                    if ioc_match "$xm $xd" "$ind"; then hit="$ind"; break; fi
                 done <<EOF
 $IOC_STR
 EOF
@@ -704,7 +739,11 @@ EOF
                 [ -n "$val" ] || continue
                 # skip IOCs already tied to a specific finding in Pass A
                 grep -qxF -- "$val" "$IOC_HIT" 2>/dev/null && continue
-                ln="$(grep -iF -- "$val" "$REPORT" 2>/dev/null | grep -viE 'IOC match' | head -n1)"
+                # grep pre-filters, ioc_match confirms the hit sits on a boundary
+                ln="$(grep -iF -- "$val" "$REPORT" 2>/dev/null | grep -viE 'IOC match' \
+                      | while IFS= read -r cand; do
+                            if ioc_match "$cand" "$val"; then printf '%s' "$cand"; break; fi
+                        done)"
                 if [ -n "$ln" ]; then
                     FIND_SEQ=$((FIND_SEQ+1))
                     printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
@@ -719,6 +758,13 @@ EOF
     fi
 
     fcount=$( [ -s "$F2" ] && wc -l < "$F2" || echo 0 )
+    # Count the suppressed column instead of tracking it arithmetically: the JSON
+    # contract (active + suppressed == findings) has to come from the data itself.
+    if [ -s "$F2" ]; then
+        sup_count=$(awk -F"$FSEP" '$8 == "true"' "$F2" | wc -l | tr -d ' ')
+    else
+        sup_count=0
+    fi
     local active_count=$(( fcount - sup_count ))
     [ "$active_count" -lt 0 ] && active_count=0
     execlog "INFO" "Allowlist: $sup_count suppressed | IOC hits: $ioc_hits | active: $active_count / $fcount"

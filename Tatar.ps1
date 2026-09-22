@@ -872,6 +872,19 @@ function Collect-Timeline {
 # =====================================================================
 #  Summary (P3): analyst-first one-pager, txt + json
 # =====================================================================
+function Get-IocPattern {
+    # Boundary-aware regex for one IOC token. Plain substring matching used to let
+    # "127.0.0" match 127.0.0.1 and "ocalhost" match localhost, raising false High
+    # findings. An indicator now only counts when the characters around it are not
+    # part of the same address / hostname / filename.
+    param([string]$Token)
+    $e = [regex]::Escape($Token)
+    if ($Token -match '^\d{1,3}(\.\d{1,3}){3}$' -or ($Token -match '^[0-9A-Fa-f:]+$' -and $Token.Contains(':'))) {
+        return "(?<![0-9A-Fa-f.:])$e(?![0-9A-Fa-f.:])"       # IPv4 / IPv6 literal
+    }
+    return "(?<![\w.-])$e(?![\w-])(?!\.[A-Za-z0-9])"         # domain / filename
+}
+
 function Write-Summary {
     param([datetime]$Start, [datetime]$End, [string[]]$ModulesRun, [bool]$IsAdmin)
     $osCap = ''; $osVer = ''
@@ -939,8 +952,10 @@ function Write-Summary {
                     if ($hit) { break }
                 }
                 if (-not $f.suppressed -and $alHashes.Count) {
-                    $hm = [regex]::Match($blob, '\b[a-fA-F0-9]{64}\b')
-                    if ($hm.Success -and ($alHashes -contains $hm.Value.ToLower())) { $f.suppressed = $true; $f.suppressReason = 'allowlist hash' }
+                    # every SHA-256 mentioned in the finding, not only the first one
+                    foreach ($hm in [regex]::Matches($blob, '\b[a-fA-F0-9]{64}\b')) {
+                        if ($alHashes -contains $hm.Value.ToLower()) { $f.suppressed = $true; $f.suppressReason = 'allowlist hash'; break }
+                    }
                 }
             }
             Write-ExecLog 'INFO' ("Allowlist applied: {0}/{1} findings suppressed" -f (@($sorted | Where-Object { $_.suppressed }).Count), $sorted.Count)
@@ -958,7 +973,7 @@ function Write-Summary {
             foreach ($f in $sorted) {
                 $blob = "$($f.message) $($f.detail)"
                 $hit  = $null
-                foreach ($s in $iocStr) { if ($blob -match [regex]::Escape($s)) { $hit = $s; break } }
+                foreach ($s in $iocStr) { if ([regex]::IsMatch($blob, (Get-IocPattern $s), 'IgnoreCase')) { $hit = $s; break } }
                 if (-not $hit -and $iocHashes.Count) {
                     $cp = ([regex]::Match($blob, '([A-Za-z]:\\[^"''\r\n]+?\.(?:exe|dll|sys|ps1|bat|scr|cmd))')).Groups[1].Value
                     if ($cp -and (Test-Path -LiteralPath $cp)) {
@@ -979,7 +994,7 @@ function Write-Summary {
                 if (-not $val -or $iocSeen.Contains($val)) { continue }
                 $found = $null
                 foreach ($file in $scan) {
-                    $m = Select-String -LiteralPath $file.FullName -SimpleMatch -Pattern $val -ErrorAction SilentlyContinue | Select-Object -First 1
+                    $m = Select-String -LiteralPath $file.FullName -Pattern (Get-IocPattern $val) -ErrorAction SilentlyContinue | Select-Object -First 1
                     if ($m) { $found = $m.Line.Trim(); break }
                 }
                 if ($found) {
