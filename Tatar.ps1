@@ -82,7 +82,7 @@
     .\Tatar.ps1 -List
 
 .NOTES
-    Author : Enkhbat.O (Security Analyst)  |  TATAR Triage Toolkit v1.2.3
+    Author : Enkhbat.O (Security Analyst)  |  TATAR Triage Toolkit v1.2.4
     Requires: Windows 10/11, PowerShell 5.1+ (PS7 compatible). Run as Administrator.
     Exit codes: 0 = success | 1 = fatal / usage error | 2 = completed with errors (see Tatar.log).
     This tool does NOT extract or decrypt saved passwords.
@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.2.3'
+$script:ToolVersion = '1.2.4'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $List=$false; $Help=$false; $Compress=$false
@@ -879,8 +879,14 @@ function Get-IocPattern {
     # part of the same address / hostname / filename.
     param([string]$Token)
     $e = [regex]::Escape($Token)
-    if ($Token -match '^\d{1,3}(\.\d{1,3}){3}$' -or ($Token -match '^[0-9A-Fa-f:]+$' -and $Token.Contains(':'))) {
-        return "(?<![0-9A-Fa-f.:])$e(?![0-9A-Fa-f.:])"       # IPv4 / IPv6 literal
+    if ($Token -match '^\d{1,3}(\.\d{1,3}){3}$') {
+        # IPv4: only a digit or a dot can extend the address. A colon must NOT
+        # block the match - netstat and almost every log write addr:port, so
+        # treating ':' as part of the address made IPv4 indicators unmatchable.
+        return "(?<![0-9.])$e(?![0-9.])"
+    }
+    if ($Token -match '^[0-9A-Fa-f:]+$' -and $Token.Contains(':')) {
+        return "(?<![0-9A-Fa-f.:])$e(?![0-9A-Fa-f.:])"       # IPv6 literal
     }
     return "(?<![\w.-])$e(?![\w-])(?!\.[A-Za-z0-9])"         # domain / filename
 }

@@ -1,0 +1,26 @@
+# token	text	expect	note
+# Shared by tests/Test-IocBoundary.ps1 and tests/test-ioc-boundary.sh so
+# both editions are held to exactly the same rule. expect: match | nomatch
+127.0.0.1	outbound to 127.0.0.1:445 from svc	match	plain IPv4 hit, port suffix is not part of the address
+127.0.0	seen 127.0.0.1 in netstat	nomatch	truncated IPv4 must not match the full address
+10.0.0.1	peer 110.0.0.1 established	nomatch	IPv4 must not match inside a longer octet on the left
+10.0.0.1	peer 10.0.0.10 established	nomatch	IPv4 must not match inside a longer octet on the right
+192.168.1.5	src=192.168.1.5 dst=8.8.8.8	match	delimiters around the address are fine
+fe80::1	neighbour fe80::1 dev eth0	match	IPv6 literal
+evil.example.com	GET http://evil.example.com/a.php	match	domain inside a URL
+evil.example.com	resolved notevil.example.com	nomatch	domain must not match as a suffix of a longer label
+evil.example.com	resolved evil.example.com.mn	nomatch	domain must not match when the FQDN continues
+evil.example.com	resolved sub.evil.example.com	nomatch	domain must not match as a parent of a subdomain
+ocalhost	connect to localhost	nomatch	truncated hostname must not match
+svchost.exe	image C:\Windows\svchost.exe running	match	filename after a path separator
+svchost.exe	image notsvchost.exe running	nomatch	filename must not match as a suffix
+svchost.exe	found svchost.exe.bak on disk	nomatch	filename must not match when an extension follows
+SVCHOST.EXE	image c:/windows/svchost.exe	match	matching is case-insensitive
+evil.sh	ran /tmp/evil.sh as root	match	unix path
+evil	ran evil-tool once	nomatch	a bare token must not match across a hyphen
+mimikatz	dropped mimikatz.exe in temp	nomatch	KNOWN: a bare name does not match once an extension follows - feed the full filename
+127.0.0.1	  TCP    127.0.0.1:49670   127.0.0.1:445   ESTABLISHED	match	netstat writes addr:port - the colon must not block the match
+8.8.8.8	nameserver 8.8.8.8	match	bare IPv4 at end of line
+127.0.0.1	mapped ::ffff:127.0.0.1 socket	match	IPv4 embedded in an IPv4-mapped IPv6 address is still that address
+fe80::1	neighbour fe80::11 dev eth0	nomatch	IPv6 must not match a longer address on the right
+fe80::1	neighbour afe80::1 dev eth0	nomatch	IPv6 must not match when a hex digit precedes it

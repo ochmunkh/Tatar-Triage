@@ -4,6 +4,34 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.2.4] — 2026-09-27
+
+Detection fix found by a new unit-test layer. No new collectors, no schema change.
+
+### Fixed
+- **An IPv4 indicator could never match in the evidence that matters most.**
+  v1.2.3 made IOC matching boundary-aware and treated a colon as part of an
+  address, so that an IPv6 literal could not be cut in half. But `netstat`,
+  `ss`, firewall logs and almost every other source write an address as
+  `addr:port` — and with `:` counted as part of the address, `127.0.0.1` did not
+  match `127.0.0.1:445`. The IPv4 and IPv6 rules are now separate: only a digit
+  or a dot extends an IPv4 address, while an IPv6 literal keeps the stricter
+  hex/dot/colon boundary. As a side effect an IPv4 inside an IPv4-mapped IPv6
+  address (`::ffff:127.0.0.1`) is now correctly recognised as that address.
+- **Linux: the IPv6 boundary only rejected decimal digits**, so `fe80::1` still
+  matched inside `afe80::1`. It now rejects any hex digit, matching the Windows
+  rule.
+
+### Added
+- `tests/Test-IocBoundary.ps1`, `tests/test-ioc-boundary.sh` and
+  `tests/fixtures/ioc-boundary-cases.tsv` — unit tests that call the matchers
+  (`Get-IocPattern`, `ioc_match`) directly, rather than inferring their
+  behaviour from a full collection. Both editions run the *same* 23-case table,
+  so a rule cannot hold on one platform and quietly differ on the other, and a
+  regression names the exact case instead of a missing finding. Each matcher is
+  lifted out of the collector by text, so no test ever runs a collection.
+  CI runs them on Windows and Linux.
+
 ## [1.2.3] — 2026-09-22
 
 Correctness pass, driven by a new test suite. No new collectors, no schema change.
@@ -134,6 +162,7 @@ Release-hygiene patch for 1.2.0 — no collector or schema changes.
 - Initial release: 30 Windows collectors in RFC 3227 order of volatility, chain
   of custody, SHA-256 manifest, optional archive, and hive/EVTX/memory switches.
 
+[1.2.4]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.4
 [1.2.3]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.3
 [1.2.2]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.2
 [1.2.1]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.1

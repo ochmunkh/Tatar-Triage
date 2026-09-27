@@ -327,7 +327,12 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.2.3 — correctness pass (current)
+### v1.2.4 — IPv4 indicators match again (current)
+- **An IPv4 indicator could not match `addr:port` text.** v1.2.3 treated a colon as part of an address so an IPv6 literal would not be cut in half — but that also meant `127.0.0.1` did not match `127.0.0.1:445`, which is how `netstat`, `ss` and firewall logs write every connection. IPv4 and IPv6 now have separate boundary rules.
+- Linux: the IPv6 boundary rejected only decimal digits, so `fe80::1` matched inside `afe80::1`. It now rejects any hex digit, as Windows does.
+- **New unit tests** call the matchers directly against a 23-case table shared by both editions ([`tests/`](tests/)), so the two platforms are held to exactly the same rule. CI runs them on every push.
+
+### v1.2.3 — correctness pass
 - **IOC matching is boundary-aware** on both editions. It used to be a plain substring match, so `127.0.0` matched `127.0.0.1` and `ocalhost` matched `localhost`, raising false `High` / `0.95` findings; `evil.example.com` no longer matches `notevil.example.com` either.
 - Linux: `activeFindingsCount` is counted from the findings data instead of being derived arithmetically, so `active + suppressed == findings` cannot drift; `"packageOwned": false` is honoured even without `python3`.
 - Windows: the allowlist hash check considers every SHA-256 in a finding, not just the first.

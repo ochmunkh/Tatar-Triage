@@ -10,7 +10,8 @@ design (a run every ~10 days re-reads the same days), and the most recent fetch
 of a day is the authoritative one, because the current day is always partial.
 
 Reads:  GITHUB_TOKEN, GITHUB_REPOSITORY, METRICS_DIR (default: metrics-data)
-Writes: <METRICS_DIR>/traffic.csv, <METRICS_DIR>/releases.csv
+Writes: <METRICS_DIR>/traffic.csv, <METRICS_DIR>/releases.csv,
+        <METRICS_DIR>/repo.csv
 Stdlib only - no pip install step in the workflow.
 """
 
@@ -25,6 +26,7 @@ from datetime import datetime, timezone
 API = "https://api.github.com"
 TRAFFIC_FIELDS = ["date", "clones", "clones_unique", "views", "views_unique"]
 RELEASE_FIELDS = ["date", "tag", "asset", "downloads"]
+REPO_FIELDS = ["date", "stars", "forks", "watchers", "open_issues"]
 
 
 def get(path, token):
@@ -57,8 +59,10 @@ def read_csv(path, fields):
         return {}
     with open(path, newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
-    key = (lambda r: r["date"]) if fields is TRAFFIC_FIELDS else (
-        lambda r: (r["date"], r["tag"], r["asset"]))
+    if fields is RELEASE_FIELDS:
+        key = lambda r: (r["date"], r["tag"], r["asset"])
+    else:
+        key = lambda r: r["date"]
     return {key(r): r for r in rows}
 
 
@@ -119,6 +123,24 @@ def main():
     total = write_csv(rel_path, RELEASE_FIELDS, releases)
     print("releases.csv: %d asset(s) snapshotted for %s, %d total"
           % (grabbed, today, total))
+
+    # Stars, forks and watchers need no special rights and, unlike clone counts,
+    # are not inflated by crawlers - a bot does not star a repository. They are
+    # cumulative, so one row per run date.
+    meta = get("/repos/%s" % repo, token)
+    repo_path = os.path.join(outdir, "repo.csv")
+    repo_rows = read_csv(repo_path, REPO_FIELDS)
+    repo_rows[today] = {
+        "date": today,
+        "stars": str(meta.get("stargazers_count", 0)),
+        "forks": str(meta.get("forks_count", 0)),
+        "watchers": str(meta.get("subscribers_count", 0)),
+        "open_issues": str(meta.get("open_issues_count", 0)),
+    }
+    total = write_csv(repo_path, REPO_FIELDS, repo_rows)
+    print("repo.csv: stars=%s forks=%s watchers=%s, %d row(s) total"
+          % (repo_rows[today]["stars"], repo_rows[today]["forks"],
+             repo_rows[today]["watchers"], total))
 
 
 if __name__ == "__main__":

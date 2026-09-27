@@ -20,13 +20,13 @@
 #
 # Exit codes:  0 = success | 1 = fatal / usage error | 2 = completed with errors
 #
-# Author: Enkhbat.O (Security Analyst) | TATAR Triage Toolkit - Linux v1.2.3
+# Author: Enkhbat.O (Security Analyst) | TATAR Triage Toolkit - Linux v1.2.4
 # ---------------------------------------------------------------------------
 
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.2.3"
+VERSION="1.2.4"
 TOOL="TATAR Triage Toolkit (Linux)"
 
 # Field separator for the findings pipeline. MUST be non-whitespace: bash 'read'
@@ -197,18 +197,26 @@ ioc_match() {  # ioc_match TEXT TOKEN -> exit 0 on a boundary-aligned hit
     printf '%s' "$1" | awk -v tok="$2" '
     function isdig(c) { return (c >= "0" && c <= "9") }
     function isw(c)   { return ((c >= "0" && c <= "9") || (c >= "a" && c <= "z") || c == "_") }
+    function ishex(c) { return (isdig(c) || (c >= "a" && c <= "f")) }
     {
         text = tolower($0); t = tolower(tok); n = length(t)
-        ipish = (t ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) || (t ~ /^[0-9a-f:]+$/ && index(t, ":") > 0)
+        ipv4 = (t ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/)
+        ipv6 = (!ipv4 && t ~ /^[0-9a-f:]+$/ && index(t, ":") > 0)
         start = 1
         while ((p = index(substr(text, start), t)) > 0) {
             p = p + start - 1
             before = (p > 1) ? substr(text, p - 1, 1) : ""
             after  = substr(text, p + n, 1)
             ok = 1
-            if (ipish) {
-                if (before != "" && (isdig(before) || before == "." || before == ":")) ok = 0
-                if (after  != "" && (isdig(after)  || after  == "." || after  == ":")) ok = 0
+            if (ipv4) {
+                # Only a digit or a dot can extend an IPv4 address. A colon must
+                # NOT block the match: netstat and most logs write addr:port, so
+                # treating ":" as part of the address made IPv4 unmatchable.
+                if (before != "" && (isdig(before) || before == ".")) ok = 0
+                if (after  != "" && (isdig(after)  || after  == ".")) ok = 0
+            } else if (ipv6) {
+                if (before != "" && (ishex(before) || before == "." || before == ":")) ok = 0
+                if (after  != "" && (ishex(after)  || after  == "." || after  == ":")) ok = 0
             } else {
                 if (before != "" && (isw(before) || before == "." || before == "-")) ok = 0
                 if (after  != "" && (isw(after)  || after  == "-")) ok = 0
@@ -258,7 +266,7 @@ banner() {
     |_/_/   \_\ |_/_/   \_\_| \_\
 
 +==============================================================+
-|   TATAR TRIAGE TOOLKIT  (Linux)   v1.2.3                     |
+|   TATAR TRIAGE TOOLKIT  (Linux)   v1.2.4                     |
 |   Fast DFIR triage / artifact collector                      |
 |   Transparent - review, sign & allow-list; do not evade      |
 +==============================================================+
