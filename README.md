@@ -403,6 +403,8 @@ For **authorized** use only — on systems you own or have explicit written perm
 
 For **authorized use only** — on systems you own or have written permission to examine.
 
+Found a security problem in the tool itself? See [`SECURITY.md`](SECURITY.md) — please report it privately, not as a public issue. Want to contribute? [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## License
 
 MIT (see `LICENSE`).
@@ -590,6 +592,8 @@ sudo ./tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-014 --ex
 [![GitHub](https://img.shields.io/badge/GitHub-ochmunkh-181717?logo=github&logoColor=white)](https://github.com/ochmunkh)
 
 Зөвхөн **зөвшөөрөлтэй** хэрэглээнд — өөрийн эзэмшлийн буюу бичгээр зөвшөөрөл авсан системд ашиглана уу.
+
+Хэрэгсэл дээр өөрөө аюулгүй байдлын асуудал олсон бол [`SECURITY.md`](SECURITY.md)-г үзнэ үү — нээлттэй issue биш, хувийн сувгаар мэдээлнэ. Хувь нэмэр оруулах бол [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Лиценз
 
