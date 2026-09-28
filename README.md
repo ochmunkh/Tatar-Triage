@@ -327,7 +327,14 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.2.4 — IPv4 indicators match again (current)
+### v1.2.5 — no more silent no-ops (current)
+- **An unreadable `--allowlist` / `--ioc` path was skipped in silence** — a typo in the filename meant the feed never ran, with no warning and exit code 0, so the analyst read "No active findings" believing it had been applied. Both paths are now validated before collection starts: an unreadable one warns in red, logs an error and forces exit code `2`.
+- Windows: IOC Pass A hashed only the first path named in a finding, so a hash indicator for the second file never matched. Every path is now considered.
+- Pass B tagged every new IOC finding `T1071` on both editions, including filename and hash hits. The technique now follows the indicator type (`T1071` / `T1071.004` / `T1204.002` / `T1588.001`).
+- Windows: Pass B could raise a finding from the tool's own `IOC match:` output, and `environment.container` was never populated so a Windows container reported as none. Both fixed.
+- New test case T5 on both editions covers a *missing* feed file — the contract tests only covered a malformed one, which is how this class of defect survived.
+
+### v1.2.4 — IPv4 indicators match again
 - **An IPv4 indicator could not match `addr:port` text.** v1.2.3 treated a colon as part of an address so an IPv6 literal would not be cut in half — but that also meant `127.0.0.1` did not match `127.0.0.1:445`, which is how `netstat`, `ss` and firewall logs write every connection. IPv4 and IPv6 now have separate boundary rules.
 - Linux: the IPv6 boundary rejected only decimal digits, so `fe80::1` matched inside `afe80::1`. It now rejects any hex digit, as Windows does.
 - **New unit tests** call the matchers directly against a 23-case table shared by both editions ([`tests/`](tests/)), so the two platforms are held to exactly the same rule. CI runs them on every push.

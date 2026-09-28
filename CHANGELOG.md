@@ -4,6 +4,48 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.2.5] — 2026-09-28
+
+Fixes four ways the collector could quietly do less than it was asked to. Found
+by reading the allowlist / IOC pipeline end to end before leaving the project
+alone for a while — none of these crash, corrupt output or break the JSON
+contract, which is exactly why the existing tests stayed green.
+
+### Fixed
+- **An unreadable `--allowlist` / `--ioc` path was skipped in silence.** A typo
+  in the filename meant a full collection ran with no matching applied, no
+  warning anywhere, and exit code 0. The analyst then reads *"No active
+  findings"* believing their feed was applied. For a triage tool that is the
+  worst possible failure: not a wrong answer, but false reassurance. Both paths
+  are now checked up front — before any collector runs, so the run can be
+  stopped and fixed — and an unreadable one prints a red warning, is logged as
+  an error, and forces exit code `2`.
+- **Windows: IOC Pass A hashed only the first path named in a finding.** A
+  message like `x.exe launched from y.dll` had `y.dll` ignored, so a hash
+  indicator for it never matched. Every path mentioned is now considered, and
+  paths that are not on disk are skipped. This brings the pass in line with the
+  allowlist loop directly above it (which already enumerated all candidates) and
+  with the Linux `al_path_of` helper fixed in 1.2.3.
+- **Pass B tagged every new IOC finding `T1071`** (Application Layer Protocol)
+  on both editions, including filename and hash hits, where it is simply wrong —
+  and a wrong ATT&CK mapping is worse than none. The technique now follows the
+  indicator type: `T1071` for an IP, `T1071.004` for a domain, `T1204.002` for a
+  filename, `T1588.001` for a hash.
+- **Windows: Pass B could match the tool's own output.** Pass A writes
+  `IOC match: <indicator>` into a finding and `Tatar.log` can quote an indicator
+  back, so a second finding could be raised about TATAR rather than about the
+  host. Those lines are now skipped, as the Linux edition already did.
+- **Windows: `environment.container` and `containerRuntime` were never
+  populated**, so every Windows run claimed it was not in a container while the
+  Linux edition detected docker/podman/lxc. Windows containers exist; the
+  documented signals (`cexecsvc`, `ContainerAdministrator`) are now checked.
+
+### Added
+- Test case T5 on both editions: a feed path that does not exist must produce
+  exit code `2`, a logged error per file, and a log line naming each file as not
+  applied. The contract tests already covered *malformed* feed files; nothing
+  covered a *missing* one, which is how this class of defect survived.
+
 ## [1.2.4] — 2026-09-27
 
 Detection fix found by a new unit-test layer. No new collectors, no schema change.
@@ -162,6 +204,7 @@ Release-hygiene patch for 1.2.0 — no collector or schema changes.
 - Initial release: 30 Windows collectors in RFC 3227 order of volatility, chain
   of custody, SHA-256 manifest, optional archive, and hive/EVTX/memory switches.
 
+[1.2.5]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.5
 [1.2.4]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.4
 [1.2.3]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.3
 [1.2.2]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.2

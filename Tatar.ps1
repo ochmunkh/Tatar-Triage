@@ -82,7 +82,7 @@
     .\Tatar.ps1 -List
 
 .NOTES
-    Author : Enkhbat.O (Security Analyst)  |  TATAR Triage Toolkit v1.2.4
+    Author : Enkhbat.O (Security Analyst)  |  TATAR Triage Toolkit v1.2.5
     Requires: Windows 10/11, PowerShell 5.1+ (PS7 compatible). Run as Administrator.
     Exit codes: 0 = success | 1 = fatal / usage error | 2 = completed with errors (see Tatar.log).
     This tool does NOT extract or decrypt saved passwords.
@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.2.4'
+$script:ToolVersion = '1.2.5'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $List=$false; $Help=$false; $Compress=$false
@@ -908,6 +908,14 @@ function Write-Summary {
         elseif ($mdl -match 'Xen')            { $envVirt = 'xen' }
     } catch {}
     try { if ((Get-Service -Name WinDefend -ErrorAction SilentlyContinue).Status -eq 'Running') { $envSecmod = 'defender' } } catch {}
+    # The schema has carried container / containerRuntime since 1.1 while the
+    # Windows edition never populated them, so it always claimed 'not a
+    # container'. Windows containers do exist; these are the documented signals.
+    try {
+        if ($env:USERNAME -eq 'ContainerAdministrator' -or (Get-Service -Name cexecsvc -ErrorAction SilentlyContinue)) {
+            $envContainer = $true; $envRuntime = 'windows-container'
+        }
+    } catch {}
     $sevOrder = @{ 'High' = 0; 'Review' = 1 }
     $sorted = @($script:Findings | Sort-Object { if ($sevOrder.ContainsKey($_.Severity)) { $sevOrder[$_.Severity] } else { 2 } }, Category)
 
@@ -981,10 +989,14 @@ function Write-Summary {
                 $hit  = $null
                 foreach ($s in $iocStr) { if ([regex]::IsMatch($blob, (Get-IocPattern $s), 'IgnoreCase')) { $hit = $s; break } }
                 if (-not $hit -and $iocHashes.Count) {
-                    $cp = ([regex]::Match($blob, '([A-Za-z]:\\[^"''\r\n]+?\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])')).Groups[1].Value
-                    if ($cp -and (Test-Path -LiteralPath $cp)) {
+                    # A finding can name several files ("x.exe launched from y.dll").
+                    # Hashing only the first one checked the wrong file, so consider
+                    # every path mentioned and skip the ones that are not on disk.
+                    $hp = @([regex]::Matches($blob, '([A-Za-z]:\\[^"''\r\n]+?\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+                    foreach ($cp in $hp) {
+                        if (-not (Test-PathSafe $cp)) { continue }
                         $h = (Get-FileHash -LiteralPath $cp -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
-                        if ($h -and ($iocHashes -contains $h.ToLower())) { $hit = $h.ToLower() }
+                        if ($h -and ($iocHashes -contains $h.ToLower())) { $hit = $h.ToLower(); break }
                     }
                 }
                 if ($hit) {
@@ -994,13 +1006,24 @@ function Write-Summary {
                     $f.detail = "IOC match: $hit | $($f.detail)"
                 }
             }
+            # An IOC's ATT&CK technique depends on WHAT matched. Tagging a filename
+            # or a hash hit as T1071 (application layer protocol) was simply wrong,
+            # and a wrong mapping is worse than no mapping at all.
+            $iocIps   = @(@($ioc.ips)       | Where-Object { $_ })
+            $iocDoms  = @(@($ioc.domains)   | Where-Object { $_ })
+            $iocFiles = @(@($ioc.filenames) | Where-Object { $_ })
+
             # Pass B: raise new findings for IOCs seen anywhere in collected artifacts.
             $scan = @(Get-ChildItem -Path $script:OutDir -Recurse -File -Include *.txt,*.csv,*.log -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'summary.txt' })
             foreach ($val in (@($iocStr) + @($iocHashes))) {
                 if (-not $val -or $iocSeen.Contains($val)) { continue }
                 $found = $null
                 foreach ($file in $scan) {
-                    $m = Select-String -LiteralPath $file.FullName -Pattern (Get-IocPattern $val) -ErrorAction SilentlyContinue | Select-Object -First 1
+                    # Skip our own echo: Pass A writes "IOC match: <indicator>" into a
+                    # finding and Tatar.log can quote an indicator back at us. Matching
+                    # those would raise a finding about the tool, not about the host.
+                    $m = Select-String -LiteralPath $file.FullName -Pattern (Get-IocPattern $val) -ErrorAction SilentlyContinue |
+                         Where-Object { $_.Line -notmatch 'IOC match:' } | Select-Object -First 1
                     if ($m) { $found = $m.Line.Trim(); break }
                 }
                 if ($found) {
@@ -1008,7 +1031,11 @@ function Write-Summary {
                     $script:FindingSeq++
                     $script:Findings.Add([pscustomobject]@{
                         id             = ('TTR-F-{0:D3}' -f $script:FindingSeq)
-                        severity       = 'High'; category = 'ioc'; technique = @('T1071')
+                        severity       = 'High'; category = 'ioc'
+                        technique      = @(if     ($iocIps   -contains $val) { 'T1071'     }
+                                           elseif ($iocDoms  -contains $val) { 'T1071.004' }
+                                           elseif ($iocFiles -contains $val) { 'T1204.002' }
+                                           else                              { 'T1588.001' })
                         message        = "IOC observed in collected evidence: $val"
                         detail         = $found.Substring(0, [Math]::Min(160, $found.Length))
                         confidence     = 0.95; suppressed = $false; suppressReason = ''; iocMatch = $true
@@ -1192,6 +1219,21 @@ OutputDir   : $script:OutDir
 "@ | Out-File $script:ReportFile -Encoding UTF8
 
 Write-Console "`n[i] Output: $script:OutDir`n" 'Green'
+
+# An allowlist / IOC path that cannot be read used to be skipped in silence.
+# That is the worst failure mode a triage tool has: the analyst reads "no
+# active findings" believing their feed was applied, when it never ran. Say so
+# loudly, before the collection, and make it count towards the exit code.
+foreach ($spec in @(@{ Name = 'Allowlist'; Path = $Allowlist }, @{ Name = 'IOC file'; Path = $IOCFile })) {
+    if (-not $spec.Path) { continue }
+    if (Test-PathSafe $spec.Path) {
+        Write-ExecLog 'INFO' ("{0} will be applied: {1}" -f $spec.Name, $spec.Path)
+    } else {
+        Write-Console ("[!] {0} NOT READABLE: {1}" -f $spec.Name, $spec.Path) 'Red'
+        Write-Console ("    It will NOT be applied. Fix the path and re-run.") 'Red'
+        Add-Err ("{0} not readable, so it was NOT applied: {1}" -f $spec.Name, $spec.Path)
+    }
+}
 $i = 0; $n = $toRun.Count; $ran = 0
 foreach ($m in $toRun) {
     $i++

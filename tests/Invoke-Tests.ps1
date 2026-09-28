@@ -142,8 +142,22 @@ Check 'T4 : run still completes (exit 0 or 2)' ($t4.ExitCode -in 0,2) "got $($t4
 $s4 = Get-Summary $t4
 Assert-Contract $s4 'T4'
 
+# T5 - a path that does not exist must NOT be skipped in silence. Reading
+# "no active findings" while the IOC feed never ran is the failure mode this
+# whole test file exists to prevent, so it is asserted, not assumed.
+Write-Host ''
+Write-Host 'T5  missing allowlist and IOC paths are reported, not ignored'
+$t5 = Invoke-Collector 't5' @('-Allowlist', (Join-Path $Fixtures 'does-not-exist.json'),
+                              '-IOCFile',   (Join-Path $Fixtures 'also-missing.json'))
+Check 'T5 : unreadable feed paths force the error exit code' ($t5.ExitCode -eq 2) "got $($t5.ExitCode)"
+$s5 = Get-Summary $t5
+Assert-Contract $s5 'T5'
+Check 'T5 : the run records the errors' ($s5.errorsLogged -ge 2) "got $($s5.errorsLogged)"
+$log5 = if ($t5.Dir) { Get-Content (Join-Path $t5.Dir 'Tatar.log') -Raw -ErrorAction SilentlyContinue } else { '' }
+Check 'T5 : the log names both files as NOT applied' (([regex]::Matches($log5, 'NOT applied')).Count -ge 2)
+
 # cleanup
-foreach ($r in @($t1,$t2,$t3,$t4)) { if ($r.Root -and (Test-Path $r.Root)) { Remove-Item $r.Root -Recurse -Force -ErrorAction SilentlyContinue } }
+foreach ($r in @($t1,$t2,$t3,$t4,$t5)) { if ($r.Root -and (Test-Path $r.Root)) { Remove-Item $r.Root -Recurse -Force -ErrorAction SilentlyContinue } }
 
 Write-Host ''
 Write-Host ("RESULT  passed: {0}  failed: {1}" -f $script:PassCount, $script:FailCount) -ForegroundColor $(if ($script:FailCount) { 'Red' } else { 'Green' })

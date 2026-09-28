@@ -158,7 +158,19 @@ D4="$(run_collector t4 --allowlist "$FIXTURES/allowlist-malformed.json" --ioc "$
 check_exit T4 "$E4"
 assert_contract "$D4/summary.json" "T4"
 
-rm -rf /tmp/tatar-test-t1-$$ /tmp/tatar-test-t2-$$ /tmp/tatar-test-t3-$$ /tmp/tatar-test-t4-$$ "$EXITFILE" 2>/dev/null
+# T5 - a path that does not exist must NOT be skipped in silence. Reading "no
+# active findings" while the IOC feed never ran is the failure mode this whole
+# test file exists to prevent, so it is asserted, not assumed.
+printf '\nT5  missing allowlist and IOC paths are reported, not ignored\n'
+D5="$(run_collector t5 --allowlist "$FIXTURES/does-not-exist.json" --ioc "$FIXTURES/also-missing.json")"; E5="$(cat "$EXITFILE" 2>/dev/null)"
+if [ "$E5" = "2" ]; then check "T5 : unreadable feed paths force the error exit code" 1
+else check "T5 : unreadable feed paths force the error exit code" 0 "got $E5"; fi
+assert_contract "$D5/summary.json" "T5"
+N5="$(grep -c 'NOT applied' "$D5/tatar.log" 2>/dev/null || echo 0)"
+if [ "${N5:-0}" -ge 2 ]; then check "T5 : the log names both files as NOT applied" 1
+else check "T5 : the log names both files as NOT applied" 0 "got $N5"; fi
+
+rm -rf /tmp/tatar-test-t1-$$ /tmp/tatar-test-t2-$$ /tmp/tatar-test-t3-$$ /tmp/tatar-test-t4-$$ /tmp/tatar-test-t5-$$ "$EXITFILE" 2>/dev/null
 
 printf '\nRESULT  passed: %d  failed: %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

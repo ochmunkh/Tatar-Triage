@@ -20,13 +20,13 @@
 #
 # Exit codes:  0 = success | 1 = fatal / usage error | 2 = completed with errors
 #
-# Author: Enkhbat.O (Security Analyst) | TATAR Triage Toolkit - Linux v1.2.4
+# Author: Enkhbat.O (Security Analyst) | TATAR Triage Toolkit - Linux v1.2.5
 # ---------------------------------------------------------------------------
 
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.2.4"
+VERSION="1.2.5"
 TOOL="TATAR Triage Toolkit (Linux)"
 
 # Field separator for the findings pipeline. MUST be non-whitespace: bash 'read'
@@ -229,6 +229,17 @@ ioc_match() {  # ioc_match TEXT TOKEN -> exit 0 on a boundary-aligned hit
     END { exit(found ? 0 : 1) }'
 }
 
+# An IOC's ATT&CK technique depends on WHAT matched. Tagging a filename or a
+# hash hit as T1071 (application layer protocol) was simply wrong, and a wrong
+# mapping is worse than no mapping at all.
+ioc_technique() {  # ioc_technique INDICATOR -> ATT&CK id
+    if   printf '%s\n' "${IOC_IPS:-}"   | grep -qxF -- "$1"; then printf 'T1071'
+    elif printf '%s\n' "${IOC_DOMS:-}"  | grep -qxF -- "$1"; then printf 'T1071.004'
+    elif printf '%s\n' "${IOC_FILES:-}" | grep -qxF -- "$1"; then printf 'T1204.002'
+    else printf 'T1588.001'
+    fi
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # Execution-context detection (container / virtualization / LSM). Best-effort.
@@ -266,7 +277,7 @@ banner() {
     |_/_/   \_\ |_/_/   \_\_| \_\
 
 +==============================================================+
-|   TATAR TRIAGE TOOLKIT  (Linux)   v1.2.4                     |
+|   TATAR TRIAGE TOOLKIT  (Linux)   v1.2.5                     |
 |   Fast DFIR triage / artifact collector                      |
 |   Transparent - review, sign & allow-list; do not evade      |
 +==============================================================+
@@ -716,7 +727,10 @@ EOF
         local IOC_HASHES IOC_STR
         IOC_HASHES="$(json_array_items "$IOCFILE" hashes | tr 'A-F' 'a-f' | grep -E '.')"
         # ips + domains + filenames matched as case-insensitive substrings
-        IOC_STR="$( { json_array_items "$IOCFILE" ips; json_array_items "$IOCFILE" domains; json_array_items "$IOCFILE" filenames; } | grep -E '.' )"
+        IOC_IPS="$(json_array_items "$IOCFILE" ips       | grep -E '.')"
+        IOC_DOMS="$(json_array_items "$IOCFILE" domains   | grep -E '.')"
+        IOC_FILES="$(json_array_items "$IOCFILE" filenames | grep -E '.')"
+        IOC_STR="$( { printf '%s\n' "$IOC_IPS"; printf '%s\n' "$IOC_DOMS"; printf '%s\n' "$IOC_FILES"; } | grep -E '.' )"
 
         # Pass A: annotate/override existing findings
         local F2b IOC_HIT; F2b="$(mktemp)"; IOC_HIT="$(mktemp)"
@@ -776,7 +790,7 @@ EOF
                         "$(printf 'TTR-F-%03d' "$FIND_SEQ")" "High" "ioc" \
                         "IOC observed in collected evidence: $val" \
                         "$(printf '%s' "$ln" | tr '\t\037' '  ' | cut -c1-160)" \
-                        "T1071" "0.95" "false" "" "true" >> "$F2"
+                        "$(ioc_technique "$val")" "0.95" "false" "" "true" >> "$F2"
                 fi
             done
         fi
@@ -993,6 +1007,23 @@ execlog "INFO" "Modules selected: $TO_RUN"
 START_ISO="$(iso)"; START_EPOCH="$(date +%s)"
 detect_environment
 execlog "INFO" "Environment: virt=$ENV_VIRT container=$ENV_CONTAINER runtime=$ENV_RUNTIME secmod=$ENV_SECMOD"
+# An allowlist / IOC path that cannot be read used to be skipped in silence.
+# That is the worst failure mode a triage tool has: the analyst reads "no active
+# findings" believing their feed was applied, when it never ran. Say so loudly,
+# before the collection, and make it count towards the exit code.
+for _spec in "Allowlist:$ALLOWLIST" "IOC file:$IOCFILE"; do
+    _name="${_spec%%:*}"; _path="${_spec#*:}"
+    [ -n "$_path" ] || continue
+    if [ -r "$_path" ]; then
+        execlog "INFO" "$_name will be applied: $_path"
+    else
+        c_out "[!] $_name NOT READABLE: $_path"
+        c_out "    It will NOT be applied. Fix the path and re-run."
+        add_err "$_name not readable, so it was NOT applied: $_path"
+    fi
+done
+unset _spec _name _path
+
 c_out ""; c_out "[i] Output: $OUTDIR"
 c_out "[i] Env: virt=$ENV_VIRT container=$ENV_CONTAINER runtime=$ENV_RUNTIME secmod=$ENV_SECMOD"
 c_out ""
