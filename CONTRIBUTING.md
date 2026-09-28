@@ -65,25 +65,25 @@ maintainer privately at **nkhbat@yahoo.com** rather than opening a public issue.
 
 ## Монгол хэл дээр
 
-Хувь нэмэр оруулах хүсэлд баярлалаа! 🎉 Tatar-Triage бол хөнгөн, кросс-платформ **DFIR triage
-& artifact collector** (Windows PowerShell + Linux Bash), нэгдсэн JSON schema, MITRE ATT&CK
-тагтай.
+Хувь нэмэр оруулах хүсэлд баярлалаа! 🎉 Tatar-Triage бол хөнгөн, cross-platform **DFIR triage
+& artifact collector** (Windows PowerShell + Linux Bash) — нэгдсэн JSON schema, MITRE ATT&CK
+mapping-тай.
 
-**Гол зарчим:** Read-only first (мөрдөж буй системийг хэзээ ч өөрчлөхгүй) · ил тод · нэгдсэн
+**Гол зарчим:** Read-only first (шинжилж буй системийг хэзээ ч өөрчлөхгүй) · ил тод · нэгдсэн
 schema · chain of custody (hash/timestamp хадгална).
 
 **Хувь нэмрийн чиглэл:** шинэ collector/artifact (Windows эсвэл Linux) · ATT&CK tagging ·
 schema сайжруулах · хоёр OS-ийн parity · баримт/орчуулга.
 
 **Collector нэмэх:** Windows → `Tatar.ps1`; Linux → `linux/`. Гаралтыг `schema/`-ийн нэгдсэн
-хэлбэрээр бич, ATT&CK technique-ээр тагла, **read-only** байлга, тухайн OS дээр турш.
+хэлбэрээр бич, ATT&CK technique-ээр тэмдэглэ, **read-only** байлга, тухайн OS дээр турш.
 
 **Урсгал:** fork → `feat/...` салбар → турших → Pull Request (ямар artifact цуглуулж, ямар
 ATT&CK mapping хийснийг тайлбарла). Code of Conduct-ыг дагана уу.
 
-**Хувилбар:** tool version нь $script:ToolVersion (Tatar.ps1) болон VERSION (tatar-linux.sh) гэсэн
+**Хувилбар:** tool version нь `$script:ToolVersion` (Tatar.ps1) болон `VERSION` (tatar-linux.sh) гэсэн
 ганц газар байдаг — хоёуланг нь хамт өсгө, өөр газар version бичихгүй. schemaVersion нь зөвхөн JSON
-гэрээ өөрчлөгдөхөд солигдоно. Release: CHANGELOG → commit → vX.Y.Z tag → push (branch, дараа tag).
+contract өөрчлөгдөхөд солигдоно. Release: CHANGELOG → commit → vX.Y.Z tag → push (branch, дараа tag).
 Release workflow нь SHA256SUMS.txt-ийг CI дээр бодож, хоёр скрипт + хоёр sample-ыг release-д автоматаар
 хавсаргана; tag дээр release байхгүй бол draft үүсгэнэ — хянаад publish хий. Хэшийг гараар бичихгүй. Аюулгүй байдлын нарийн
 асуудлыг **nkhbat@yahoo.com** руу хувийн байдлаар мэдэгдэнэ үү.

@@ -345,7 +345,7 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 - Windows: the allowlist hash check considers every SHA-256 in a finding, not just the first.
 - **New [`tests/`](tests/)**: black-box contract tests for both editions, run by CI on every push.
 
-### v1.2.2 — verifiable releases (current)
+### v1.2.2 — verifiable releases
 - The published SHA-256 lives in the release's `SHA256SUMS.txt` only; the README points there instead of hard-coding a hash that goes stale.
 - **Release automation**: pushing a `v*` tag builds `SHA256SUMS.txt` in CI and attaches both collectors plus both sample files to the GitHub release, taking the notes from `CHANGELOG.md`.
 - Tool version bumped to `1.2.2` on both editions so tag, tool and release agree.
@@ -413,7 +413,7 @@ MIT (see `LICENSE`).
 <a id="монгол"></a>
 ## 🇲🇳 Монгол хувилбар
 
-> Хурдан, нэг файлт, cross-platform DFIR triage — Windows (PowerShell) + Linux (Bash).
+> Хурдан, нэг файлтай, cross-platform DFIR triage — Windows (PowerShell) + Linux (Bash).
 
 Халдлагад өртсөн шинж тэмдэг гарсан (хортой сайт зочилсон, сэжигтэй файл ажиллуулсан, тайлбаргүй удааширсан) үед нотлох баримтыг **хурдан** хамгаалж авах хэрэгтэй болдог — олон тусдаа хэрэгсэл суулгаж чирэгдэлгүйгээр. `Tatar.ps1` (Windows) болон `tatar-linux.sh` (Linux) нь системийн чухал volatile ба non-volatile artifact-уудыг **read-only-first** нэг дамжлагаар цуглуулж, шинжээчид зориулсан нэгдсэн тайлан, MITRE ATT&CK тэмдэглэгээ, chain-of-custody-тай SHA-256 manifest үүсгэнэ.
 
@@ -436,21 +436,22 @@ Triage гэдэг ойлголт эмнэлгээс гаралтай. Эмч ө�
 
 ## Онцлох боломжууд
 
-- **Нэг скрипт, суулгах шаардлагагүй.** Хост дээр (эсвэл USB-д) хийгээд шууд ажиллуулна.
+- **Нэг скрипт, суулгах шаардлагагүй.** Хост дээр (эсвэл USB-д) хуулж аваад шууд ажиллуулна.
 - **Windows 30 / Linux 18 модуль**, RFC 3227 order of volatility дарааллаар (санах ой → сүлжээ → процесс → … → диск / registry / лог).
-- **Шинжээч-төвтэй тайлан.** Run бүр `summary.txt` + `summary.json` + `findings.json` гаргана — host/OS/case мета, quick stats, нэгтгэсэн **Сэжигтэй findings** жагсаалт. JSON нь SIEM/SOAR-т шууд ордог.
+- **Шинжээч-төвтэй тайлан.** Run бүр `summary.txt` + `summary.json` + `findings.json` гаргана — host/OS/case мета, quick stats, нэгтгэсэн **сэжигтэй finding-уудын** жагсаалт. JSON нь SIEM/SOAR-т шууд ордог.
 - **Гүйцэтгэлийн лог** (`Tatar.log`/`tatar.log`) — модуль бүрийн `START/OK/WARN/FAILED`.
-- **Read-only-first.** Хүнд/эвдрэлтэй үйлдлүүд (memory dump, hive save, EVTX export) default-оор унтраалттай, тодорхой тугаар л асна.
+- **Read-only-first.** Хүнд/эвдрэлтэй үйлдлүүд (memory dump, hive save, EVTX export) default-оор унтраалттай, тодорхой switch-ээр л асаана.
 - **Chain of custody.** Run бүрийн мета, examiner/case ID, файл бүрийн SHA-256 manifest.
 - **Ил тод.** Обфускаци, AV/AMSI bypass үгүй. Гарын үсэг зурж, allow-list хийхэд зориулсан.
-- **Cross-platform.** Windows, Linux хоёр нэг [`summary.schema.json`](schema/summary.schema.json) гэрээ гаргана — нэг parser хоёуланг уншина.
-- **Нууц үг задалдаггүй.** Илэрсэн зүйлс нь **review хийх сэжүүр, эцсийн дүгнэлт биш.**
+- **Cross-platform.** Windows, Linux хоёр ижил [`summary.schema.json`](schema/summary.schema.json) contract-ыг ашиглана — нэг parser хоёуланг уншина.
+- **Нууц үг задлахгүй, тайлахгүй.** Хадгалагдсан credential-д хүрэхгүй.
+- **Finding нь сэжүүр.** Илэрсэн зүйлс нь **review хийх сэжүүр, эцсийн дүгнэлт биш.**
 
 ---
 
 ## Архитектур
 
-TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 30 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул нэг ижил гаралтын гэрээтэй. Адилхан JSON schema (`schemaVersion 1.2`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
+TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 30 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.2`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
 
 ```
                     TATAR Triage
@@ -475,26 +476,26 @@ TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1`
 
 1. Аргумент уншиж, гаралтын хавтас болон chain of custody-г бэлдэнэ.
 2. Ажиллаж буй орчноо (виртуал / контейнер / хамгаалалт) тодорхойлно.
-3. Модулиудаа **алдагдамтгай өгөгдлийн дарааллаар** ажиллуулна (санах ой · сүлжээ · процесс → диск · registry · лог). Модуль бүр түүхий нотолгоог диск рүү, бүтэцтэй finding-ийг санах ойд гаргана.
+3. Модулиудаа **volatility-ийн дарааллаар** (RFC 3227) ажиллуулна (санах ой · сүлжээ · процесс → диск · registry · лог). Модуль бүр түүхий нотолгоог диск рүү, бүтэцтэй finding-ийг санах ойд гаргана.
 4. **Allowlist** нь урьдаас мэдэгдэж байгаа цэвэр зүйлсийг нууна — устгахгүй, аудитад үлдээнэ.
-5. **IOC** нь мэдэгдэж байгаа мууг тэмдэглэж, allowlist-ийг давж, цуглуулсан нотолгооноос шинэ finding босгоно.
-6. Идэвхтэй/нуугдсанаар нь эрэмбэлж `summary.txt` / `summary.json`, `findings.json`, SHA-256 manifest-ээ бичнэ.
+5. **IOC** нь мэдэгдэж байгаа хортой индикаторыг тэмдэглэж, allowlist-ийг давж, цуглуулсан нотолгоонд тулгуурлан шинэ finding үүсгэнэ.
+6. Идэвхтэй / suppressed гэж эрэмбэлж `summary.txt` / `summary.json`, `findings.json`, SHA-256 manifest-ээ бичнэ.
 
 ### Finding загвар
 
-Finding бүр нэг бичлэг, платформ хооронд адилхан: `id` · `severity` (High/Review) · `category` · `technique[]` (MITRE) · `message` · `detail` · `confidence` (0.7 High · 0.4 Review · 0.95 IOC-баталгаажсан) · `suppressed` · `suppressReason` · `iocMatch` (boolean; таарсан индикатор нь `detail`-д `IOC match: <indicator> | ...` хэлбэрээр бичигдэнэ). Нуугдсан finding нь тайлан болон JSON-д шалтгаантайгаа үлдэнэ — зөвхөн идэвхтэй жагсаалтаас хасагдана, бичлэгээс арилдаггүй.
+Finding бүр нэг бичлэг бөгөөд платформ хооронд ижил бүтэцтэй: `id` · `severity` (High/Review) · `category` · `technique[]` (MITRE) · `message` · `detail` · `confidence` (0.7 High · 0.4 Review · 0.95 IOC-баталгаажсан) · `suppressed` · `suppressReason` · `iocMatch` (boolean; таарсан индикатор нь `detail`-д `IOC match: <indicator> | ...` хэлбэрээр бичигдэнэ). Suppressed finding нь тайлан болон JSON-д шалтгаантайгаа үлдэнэ — зөвхөн идэвхтэй жагсаалтаас хасагдана, бичлэгээс арилдаггүй.
 
 ### Allowlist — дуу чимээнээс дохиог ялгах
 
-Мэдэгдэж байгаа цэвэр зүйлсийг зам, Authenticode нийтлэгч (Windows), `dpkg`/`rpm` багц эзэмшил (Linux), эсвэл SHA-256-аар нууна. Цэвэр хостод нэг run 11 finding-ээс **4 идэвхтэй / 7 нуугдсан** болж багассан.
+Мэдэгдэж байгаа цэвэр зүйлсийг зам, Authenticode нийтлэгч (Windows), `dpkg`/`rpm` багц эзэмшил (Linux), эсвэл SHA-256-аар нууна. Цэвэр хост дээр хийсэн нэг run-д 11 finding-ээс **4 нь идэвхтэй, 7 нь suppressed** болсон.
 
-### IOC — муу нь дийлнэ
+### IOC — known-bad нь allowlist-ийг давна
 
-Offline `hashes / ips / domains / filenames` жагсаалт авна (`hashes` нь зөвхөн SHA-256 — MD5/SHA-1 харьцуулагдахгүй). *Pass A* нь одоо байгаа finding-уудтай тааруулж, таарвал **allowlist-ийг давж** тухайн finding-ийг дахин идэвхжүүлэн High / 0.95 болгоно. *Pass B* нь цуглуулсан нотолгооноос олдсон IOC-д зориулж шинэ finding босгоно. Зарчим энгийн: мэдэгдэж байгаа муу индикатор үргэлж цэвэр allowlist-ийг дийлдэг.
+Offline `hashes / ips / domains / filenames` жагсаалт авна (`hashes` нь зөвхөн SHA-256 — MD5/SHA-1 харьцуулагдахгүй). *Pass A* нь одоо байгаа finding-уудтай тааруулж, таарвал **allowlist-ийг давж** тухайн finding-ийг дахин идэвхжүүлэн High / 0.95 болгоно. *Pass B* нь цуглуулсан нотолгооноос олдсон IOC-д зориулж шинэ finding үүсгэнэ. Зарчим энгийн: мэдэгдэж байгаа хортой индикатор үргэлж цэвэр allowlist-ийг давна.
 
-### Итгэлийн хил
+### Trust boundary
 
-Сүлжээ рүү юу ч илгээхгүй — allowlist, IOC жагсаалт нь дотоод файл, хэш дотооддоо бодогдоно. Зөвхөн уншина; root/Admin нь уншиж болох хүрээг өргөтгөнө, өөрчлөх эрх нэмдэггүй. Скриптийн өөрийн SHA-256 болон хувилбарыг (`summary.json`-ийн `version`) chain of custody-д бичих ба EDR-т мэдрэг үйлдлүүд (memory dump, hive save, устсан файл сэргээх) default-оор унтраалттай, тухайлан асаадаг.
+Сүлжээгээр юу ч илгээхгүй — allowlist, IOC жагсаалт нь дотоод файл, хэш дотооддоо бодогдоно. Зөвхөн уншина; root/Admin нь уншиж болох хүрээг өргөтгөнө, өөрчлөх эрх нэмдэггүй. Скриптийн өөрийн SHA-256 болон хувилбарыг (`summary.json`-ийн `version`) chain of custody-д бичих ба EDR-т мэдрэг үйлдлүүд (memory dump, hive save, устсан файл сэргээх) default-оор унтраалттай, тухайлан асаадаг.
 
 ---
 
@@ -564,7 +565,7 @@ sudo ./tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-014 --ex
 
 - **Гадаад дискэнд бичихийг зөвлөнө** (`-OutputPath E:\Evidence`). Систем дискэнд бичвэл устсан файлын ул мөрийг дарж бичиж болзошгүй.
 - Цуглуулга дуусахаас өмнө хостыг **унтраах/restart хийхгүй**.
-- Гаралт нь **эмзэг мэдээлэл** агуулж болзошгүй (registry hive, browser мета) — шифрлэж, аюулгүй дамжуулна уу.
+- Гаралт нь **эмзэг мэдээлэл** агуулж болзошгүй (registry hive, browser мета) — шифрлэж, аюулгүй дамжуул.
 - Зарим модуль (`hives`, `memorydump`, `exportevtx`) EDR/AV-г идэвхжүүлж болзошгүй — SOC-той зөвшилцөж, tool-оо урьдчилан allow-list хий.
 - **Татсан файлаа шалга.** Release бүр SHA256SUMS.txt-тэй гарна: Linux дээр `sha256sum -c SHA256SUMS.txt`, Windows дээр `Get-FileHash`. Хэшийг README дотор хатуу бичихгүй — release-ийн тэр файл нь эх сурвалж.
 
@@ -577,7 +578,7 @@ sudo ./tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-014 --ex
 - Хадгалагдсан нууц үг **задалдаггүй / тайлдаггүй**.
 - Бүрэн `$MFT` parse хийхэд offline хэрэгсэл (MFTECmd / RawCopy) хэрэгтэй; скрипт зөвхөн NTFS/MFT мета бичнэ.
 - Browser artifact бол **зөвхөн мета** (DB задлахгүй).
-- Findings нь эвристик хэв тааралт — хууль ёсны программаас FP гарч болно, **үргэлж баталгаажуул**.
+- Finding нь эвристик pattern match — хууль ёсны программаас FP гарч болзошгүй, **үргэлж баталгаажуул**.
 
 ---
 
