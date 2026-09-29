@@ -74,7 +74,7 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 |------|---------|
 | `0` | Collection completed successfully |
 | `1` | Fatal / usage error (nothing selected, output dir cannot be created, no valid modules) |
-| `2` | Collection completed, but one or more steps logged errors — check `tatar.log` |
+| `2` | Collection completed, but one or more steps logged errors — check `tatar.log`. An unreadable `--allowlist` / `--ioc` path lands here. |
 
 ---
 
@@ -92,7 +92,9 @@ Two optional JSON inputs, both offline. Sample files live in the repository root
 
 **`--allowlist <json>`** marks known-good findings as `suppressed` — they stay in `summary.json` / `findings.json` with a `suppressReason` for audit, but leave the headline list. Matching is by `paths[]` (glob, e.g. `/usr/lib/*`), `hashes[]` (SHA-256 of the binary) or, when `"packageOwned": true`, by `dpkg -S` / `rpm -qf` ownership of the finding's binary (vendor-trusted). The Windows-only `publishers[]` key is ignored on Linux, so one allowlist file can serve both editions.
 
-**`--ioc <json>`** is a known-bad feed: `hashes[]` (SHA-256 only), `ips[]`, `domains[]`, `filenames[]`. Pass A annotates existing findings with `iocMatch`; an IOC hit **overrides the allowlist** — a suppressed finding is re-activated and escalated to `High` / confidence `0.95`. Pass B raises new findings for IOCs seen anywhere in the collected evidence (processes, sockets, hashed binaries, timeline), de-duplicated against Pass A.
+**`--ioc <json>`** is a known-bad feed: `hashes[]` (SHA-256 only), `ips[]`, `domains[]`, `filenames[]`. Pass A annotates existing findings with `iocMatch`; an IOC hit **overrides the allowlist** — a suppressed finding is re-activated and escalated to `High` / confidence `0.95`. Pass B raises new findings for IOCs seen anywhere in the collected evidence (processes, sockets, hashed binaries, timeline), de-duplicated against Pass A and tagged by indicator type — `T1071` for an IP, `T1071.004` for a domain, `T1204.002` for a filename, `T1588.001` for a hash.
+
+Both paths are checked **before collection starts**. A path that cannot be read is never skipped in silence: it warns on the console, is logged as an error, and forces exit code `2`.
 
 Findings carry the v2 fields `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`; summaries gain `activeFindingsCount` / `suppressedCount` (`schemaVersion 1.2`, backward compatible).
 

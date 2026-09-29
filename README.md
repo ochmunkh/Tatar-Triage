@@ -118,7 +118,9 @@ Suppresses known-good findings by **path glob**, **Authenticode publisher** (Win
 
 ### IOC engine — known-bad wins
 
-Takes an offline feed of `hashes / ips / domains / filenames` (`hashes` are SHA-256 — MD5/SHA-1 are not compared; see [`ioc.sample.json`](ioc.sample.json)). *Pass A* matches existing findings and a hit **overrides the allowlist** — it re-activates a suppressed finding and escalates it to High / 0.95. *Pass B* raises new findings for IOCs seen anywhere in the collected evidence (deduplicated against Pass A). The rule is simple: a known-bad indicator always beats a known-good allowlist entry.
+Takes an offline feed of `hashes / ips / domains / filenames` (`hashes` are SHA-256 — MD5/SHA-1 are not compared; see [`ioc.sample.json`](ioc.sample.json)). *Pass A* matches existing findings and a hit **overrides the allowlist** — it re-activates a suppressed finding and escalates it to High / 0.95. *Pass B* raises new findings for IOCs seen anywhere in the collected evidence (deduplicated against Pass A), tagged by indicator type — `T1071` for an IP, `T1071.004` for a domain, `T1204.002` for a filename, `T1588.001` for a hash. The rule is simple: a known-bad indicator always beats a known-good allowlist entry.
+
+Both feed paths are checked **before collection starts**. A path that cannot be read is never skipped in silence: it warns on the console, is logged as an error, and forces exit code `2` — so a typo in a filename can never leave you reading "no active findings" while the feed never ran.
 
 ### Trust boundaries
 
@@ -189,7 +191,7 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check Tat
 |------|---------|
 | `0` | Collection completed successfully |
 | `1` | Fatal / usage error (nothing selected, output dir cannot be created, no valid modules) |
-| `2` | Collection completed, but one or more steps logged errors — check `Tatar.log` |
+| `2` | Collection completed, but one or more steps logged errors — check `Tatar.log`. An unreadable `-Allowlist` / `-IOCFile` path lands here. |
 
 ---
 
@@ -493,7 +495,9 @@ Finding бүр нэг бичлэг бөгөөд платформ хооронд 
 
 ### IOC — known-bad нь allowlist-ийг давна
 
-Offline `hashes / ips / domains / filenames` жагсаалт авна (`hashes` нь зөвхөн SHA-256 — MD5/SHA-1 харьцуулагдахгүй). *Pass A* нь одоо байгаа finding-уудтай тааруулж, таарвал **allowlist-ийг давж** тухайн finding-ийг дахин идэвхжүүлэн High / 0.95 болгоно. *Pass B* нь цуглуулсан нотолгооноос олдсон IOC-д зориулж шинэ finding үүсгэнэ. Зарчим энгийн: мэдэгдэж байгаа хортой индикатор үргэлж цэвэр allowlist-ийг давна.
+Offline `hashes / ips / domains / filenames` жагсаалт авна (`hashes` нь зөвхөн SHA-256 — MD5/SHA-1 харьцуулагдахгүй). *Pass A* нь одоо байгаа finding-уудтай тааруулж, таарвал **allowlist-ийг давж** тухайн finding-ийг дахин идэвхжүүлэн High / 0.95 болгоно. *Pass B* нь цуглуулсан нотолгооноос олдсон IOC-д зориулж шинэ finding үүсгэнэ, technique-ийг indicator-ийн төрлөөр тавина — IP → `T1071`, domain → `T1071.004`, filename → `T1204.002`, hash → `T1588.001`. Зарчим энгийн: мэдэгдэж байгаа хортой индикатор үргэлж цэвэр allowlist-ийг давна.
+
+Feed-ийн хоёр замыг **цуглуулга эхлэхээс өмнө** шалгана. Уншигдахгүй замыг чимээгүй өнгөрөөхгүй: консол дээр сануулж, error бүртгэж, exit code `2` болгоно — тиймээс файлын нэрэн дээрх нэг үсгийн алдаа чамайг "идэвхтэй finding байхгүй" гэж уншуулж, гэтэл feed огт ажиллаагүй байх нөхцөлд хэзээ ч оруулахгүй.
 
 ### Trust boundary
 
@@ -532,7 +536,7 @@ sudo ./tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-014 --ex
 ./tatar-linux.sh --list
 ```
 
-**Exit code:** `0` = амжилт · `1` = fatal/usage алдаа · `2` = алдаатай дууссан (лог шалга).
+**Exit code:** `0` = амжилт · `1` = fatal/usage алдаа · `2` = алдаатай дууссан (лог шалга). Уншигдахгүй `-Allowlist` / `-IOCFile` зам нь `2`-т унана.
 
 ---
 

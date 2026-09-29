@@ -62,6 +62,22 @@ can pivot straight from an artifact to the technique it supports.
 | `usb` | USBSTOR device history | T1091 Replication Through Removable Media · T1200 Hardware Additions |
 | `shadow` | Volume Shadow Copy state | T1490 Inhibit System Recovery |
 
+### Raised by the IOC engine
+
+When an `--ioc` feed is supplied, *Pass B* raises a finding for any indicator seen
+in the collected evidence. That finding is not tied to a collector module, so its
+technique follows the **kind of indicator** that matched:
+
+| Indicator | Technique |
+|---|---|
+| `ips[]` | T1071 Application Layer Protocol |
+| `domains[]` | T1071.004 Application Layer Protocol: DNS |
+| `filenames[]` | T1204.002 User Execution: Malicious File |
+| `hashes[]` | T1588.001 Obtain Capabilities: Malware |
+
+Until v1.2.5 every one of these was tagged `T1071`, which is wrong for a filename
+or a hash — a wrong mapping is worse than no mapping, so the type now decides.
+
 ## Evidence / execution-history sources (support many techniques)
 
 | Module | Artifact | Use |
