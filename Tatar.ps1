@@ -410,6 +410,25 @@ function Get-ServiceImagePath {
     return $null
 }
 
+function Test-NoMatchingEvents {
+    # Get-WinEvent -ErrorAction Stop throws for two completely different
+    # reasons: the log could not be read (access denied, log disabled), and the
+    # filter simply matched nothing - which is a CLEAN result. Collect-Sessions
+    # reported both as '(not available / access denied)', so an operator on a
+    # quiet host was told they had a permissions problem they did not have, and
+    # then went and re-ran the whole collection elevated for nothing.
+    #
+    # The fully-qualified error id is the documented discriminator. The message
+    # test behind it is deliberate belt-and-braces: the id has NOT been confirmed
+    # against a live Get-WinEvent from here (no Windows host), and the caller's
+    # other branch now prints the real exception text, so a miss degrades to the
+    # truth rather than back to a guess.
+    param($ErrorRecord)
+    if (-not $ErrorRecord) { return $false }
+    if ("$($ErrorRecord.FullyQualifiedErrorId)" -like '*NoMatchingEventsFound*') { return $true }
+    return ("$($ErrorRecord.Exception.Message)" -match '(?i)no events were found that match')
+}
+
 # =====================================================================
 #  Collector modules
 # =====================================================================
@@ -447,7 +466,23 @@ function Collect-Network {
             # be able to plot "listening ports" across platforms.
             $script:Stats['ListeningTcpPorts']      = $listenCount
             $script:Stats['EstablishedConnections'] = $estabCount
-        } catch { cmd /c "netstat -ano" | Out-File $script:ReportFile -Append -Encoding UTF8 }
+        } catch {
+            # The reason used to be thrown away: the operator saw netstat output
+            # and no statement that Get-NetTCPConnection had failed, let alone
+            # why - and 'not elevated enough' and 'the cmdlet is genuinely
+            # absent' mean different things for the evidence.
+            Add-Note ("Get-NetTCPConnection failed ({0}); fell back to netstat -ano." -f $_.Exception.Message)
+            # ListeningTcpPorts / EstablishedConnections are set INSIDE the try,
+            # so on this path they are never set. They are left absent on
+            # purpose rather than zeroed - 0 reads as 'no listening ports' when
+            # the truth is 'not measured' - and the gap is stated here so it is
+            # visible in the report and the log instead of only as a missing
+            # key. Parsing the two counters back out of netstat is the real
+            # repair; netstat's state column is localised, so it needs a
+            # non-English Windows first (N-2 in tests/WINDOWS_STATIC_REVIEW.md).
+            Add-Note 'ListeningTcpPorts / EstablishedConnections were NOT measured on the netstat fallback path.'
+            cmd /c "netstat -ano" | Out-File $script:ReportFile -Append -Encoding UTF8
+        }
         arp -a | Out-File (Join-Path $script:OutDir 'arp.txt') -Encoding UTF8
         route print | Out-File (Join-Path $script:OutDir 'routes.txt') -Encoding UTF8
         ipconfig /displaydns | Out-File (Join-Path $script:OutDir 'dns_cache.txt') -Encoding UTF8
@@ -521,16 +556,41 @@ function Collect-Sessions {
     try {
         (quser 2>&1) | Out-File $script:ReportFile -Append -Encoding UTF8
         (net session 2>&1) | Out-File $script:ReportFile -Append -Encoding UTF8
+        # The cap was written three times - -MaxEvents, the report heading and
+        # the saturation test - so it could be changed in one place and leave
+        # the heading asserting a number that was never read.
+        $evtCap = 15
         foreach ($id in 4624,4625) {
-            Add-Report "`n-- Security Event $id (last 15) --"
+            Add-Report ("`n-- Security Event {0} (last {1}) --" -f $id, $evtCap)
             try {
-                $evts = Get-WinEvent -FilterHashtable @{LogName='Security';Id=$id} -MaxEvents 15 -ErrorAction Stop
+                $evts = @(Get-WinEvent -FilterHashtable @{LogName='Security';Id=$id} -MaxEvents $evtCap -ErrorAction Stop)
                 $evts | Select-Object TimeCreated, Id, Message | Format-List | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
                 if ($id -eq 4625) {
-                    $script:Stats['RecentFailedLogons'] = @($evts).Count
-                    if (@($evts).Count -ge 15) { Add-Finding -Category 'sessions' -Message 'High volume of failed logons (4625): 15+ in recent Security log' -Detail 'See report section 04; possible brute force - review source accounts/IPs' }
+                    $script:Stats['RecentFailedLogons'] = $evts.Count
+                    if ($evts.Count -ge $evtCap) {
+                        # The counter SATURATES: -MaxEvents stops at the cap, so
+                        # the cap value means 'this many or more', never exactly
+                        # this many - and 'four thousand failed logons' is the
+                        # case this check exists to surface. An uncapped count
+                        # needs a second, count-only query whose cost on a large
+                        # Security log has to be measured on Windows (SE-1), so
+                        # until then the limit is stated instead of implied.
+                        Add-Note ("RecentFailedLogons is capped at {0} by -MaxEvents; the true 4625 count is {0} or higher." -f $evtCap)
+                        Add-Finding -Category 'sessions' -Message ("High volume of failed logons (4625): {0}+ in recent Security log" -f $evtCap) -Detail 'See report section 04; possible brute force - review source accounts/IPs'
+                    }
                 }
-            } catch { Add-Report "  (event $id not available / access denied)" }
+            } catch {
+                if (Test-NoMatchingEvents $_) {
+                    Add-Report ("  (no event {0} records in the Security log)" -f $id)
+                    # A query that ran and matched nothing is a real zero, so the
+                    # key belongs in summary.json. Previously it was absent here
+                    # too, which a consumer cannot tell apart from 'not measured'.
+                    if ($id -eq 4625) { $script:Stats['RecentFailedLogons'] = 0 }
+                } else {
+                    Add-Report ("  (event {0} could not be read: {1})" -f $id, $_.Exception.Message)
+                    if ($id -eq 4625) { Add-Note 'RecentFailedLogons was NOT measured: the 4625 query failed.' }
+                }
+            }
         }
     } catch { Add-Err "Sessions failed: $_" }
 }
@@ -564,8 +624,18 @@ function Collect-Users {
     try {
         (net user 2>&1) | Out-File $script:ReportFile -Append -Encoding UTF8
         (net localgroup administrators 2>&1) | Out-File $script:ReportFile -Append -Encoding UTF8
-        $lu = Get-LocalUser -ErrorAction SilentlyContinue | Select-Object Name, Enabled, LastLogon, PasswordLastSet
-        if ($lu) { $script:Stats['Accounts'] = @($lu).Count }
+        # Absent is not zero. -ErrorAction SilentlyContinue turned a FAILED query
+        # into $null, the guard then left 'Accounts' out of summary.json, and a
+        # consumer read that as 'this host has no local accounts' - off a query
+        # that never ran. Get-LocalUser genuinely fails on a domain controller
+        # and under some AppLocker policies, so this is not hypothetical. Stop
+        # plus a catch separates the two: a result that came back sets the
+        # counter, zero included; a failure leaves it absent and says so.
+        $lu = @()
+        try {
+            $lu = @(Get-LocalUser -ErrorAction Stop | Select-Object Name, Enabled, LastLogon, PasswordLastSet)
+            $script:Stats['Accounts'] = $lu.Count
+        } catch { Add-Note "Get-LocalUser failed, Accounts was NOT measured: $_" }
         $lu | Format-Table -AutoSize | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
         # Mirrors of the Linux users checks (second UID-0 account / empty
         # password): this module collected the data and raised nothing, so the
@@ -600,16 +670,44 @@ function Collect-Persistence {
     Add-Section '08 Persistence (startup, Run keys, scheduled tasks)'
     try {
         Get-CimInstance Win32_StartupCommand | Select-Object Name, Command, Location, User | Format-Table -AutoSize | Out-String -Width 4096 | Out-File $script:ReportFile -Append -Encoding UTF8
+        # Run and RunOnce are the same ASEP in two flavours and an attacker
+        # picks whichever is unwatched, so the list covers both under each hive
+        # and under the 32-bit Wow6432Node view. HKCU RunOnce and the 32-bit
+        # RunOnce were missing, which meant two standard persistence locations
+        # produced no line in the report at all - and a blank report reads as
+        # 'nothing there', not as 'never looked'.
         $runKeys = @(
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
             'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run',
             'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
-            'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run'
+            'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run',
+            'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\RunOnce'
         )
+        # HKCU: is the hive of whoever is RUNNING the collector. Under SYSTEM,
+        # or under a responder's own admin account, that is not the compromised
+        # user, and this module then reports on a hive nobody cares about while
+        # looking like it covered per-user persistence. Sweeping HKU\* instead
+        # means mounting other users' NTUSER.DAT on a live host, which is a
+        # scope decision with evidence-integrity consequences and not a bug fix
+        # (PE-2). Until it is taken, the limit is named in the evidence rather
+        # than left for the reader to infer from an empty section.
+        Add-Report ("`n(The HKCU keys below are the hive of the collecting user '{0}' ONLY. Other users' Run/RunOnce keys are NOT collected - see PE-2 in tests/WINDOWS_STATIC_REVIEW.md.)" -f $env:USERNAME)
         foreach ($k in $runKeys) { if (Test-PathSafe $k) { Add-Report "`n[$k]"; (Get-ItemProperty $k -ErrorAction SilentlyContinue) | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8 } }
         Add-Report "`n-- Scheduled tasks (non-Microsoft) --"
+        # Without its ACTION a task cannot be triaged from the report at all: an
+        # innocuous TaskName says nothing about what the task runs, so every
+        # non-Microsoft task sent the analyst back to the host. The non-exec
+        # action types (ComHandler, and the deprecated mail/message ones) have
+        # no Execute and are named by what they are instead of coming out blank.
         Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Microsoft\*' } |
-            Select-Object TaskName, TaskPath, State | Format-Table -AutoSize | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
+            Select-Object TaskName, TaskPath, State, @{ Name = 'Action'; Expression = {
+                (@(foreach ($a in @($_.Actions)) {
+                    if     ($a.Execute) { ("{0} {1}" -f $a.Execute, $a.Arguments).Trim() }
+                    elseif ($a.ClassId) { "COM:$($a.ClassId)" }
+                    else                { '(non-exec action)' }
+                }) -join ' ; ')
+            } } | Format-Table -AutoSize | Out-String -Width 4096 | Out-File $script:ReportFile -Append -Encoding UTF8
         # -- Additional autostart/execution points (ASEPs) --
         Add-Report "`n-- Additional ASEPs (IFEO / AppInit / AppCert / Winlogon / LSA / Print) --"
         $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'
@@ -672,9 +770,22 @@ function Collect-Shares {
 function Collect-Firewall {
     Add-Section '11 Firewall profiles & enabled rules'
     try {
-        Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction, DefaultOutboundAction | Format-Table -AutoSize | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
-        Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object Enabled -eq 'True' | Select-Object DisplayName, Direction, Action, Profile | Out-String | Out-File (Join-Path $script:OutDir 'firewall_rules.txt') -Encoding UTF8
-        Add-Report 'Enabled firewall rules saved to firewall_rules.txt.'
+        # A missing NetSecurity module is a CommandNotFoundException, which
+        # -ErrorAction cannot suppress, so it used to abort the whole module and
+        # the operator got neither the profiles nor the rules - on a host where
+        # netsh would have answered both questions. netsh prints localised text,
+        # which is why it is the fallback and not the primary source, but
+        # localised text an analyst can read beats an empty section.
+        try {
+            Get-NetFirewallProfile -ErrorAction Stop | Select-Object Name, Enabled, DefaultInboundAction, DefaultOutboundAction | Format-Table -AutoSize | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
+            Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object Enabled -eq 'True' | Select-Object DisplayName, Direction, Action, Profile | Out-String | Out-File (Join-Path $script:OutDir 'firewall_rules.txt') -Encoding UTF8
+            Add-Report 'Enabled firewall rules saved to firewall_rules.txt.'
+        } catch {
+            Add-Note ("NetSecurity cmdlets unavailable ({0}); falling back to netsh." -f $_.Exception.Message)
+            (netsh advfirewall show allprofiles 2>&1) | Out-File $script:ReportFile -Append -Encoding UTF8
+            (netsh advfirewall firewall show rule name=all 2>&1) | Out-File (Join-Path $script:OutDir 'firewall_rules.txt') -Encoding UTF8
+            Add-Report 'Firewall profiles and rules collected via netsh (localised text - NetSecurity was unavailable).'
+        }
     } catch { Add-Err "Firewall failed: $_" }
 }
 
@@ -912,6 +1023,18 @@ function Collect-Deleted {
 function Collect-ShadowCopies {
     Add-Section '24 Volume Shadow Copies'
     try { (vssadmin list shadows 2>&1) | Out-File $script:ReportFile -Append -Encoding UTF8 } catch { Add-Err "ShadowCopies failed: $_" }
+    # vssadmin emits LOCALISED console text and nothing else, so on a Mongolian,
+    # Russian or Japanese Windows the only record of which shadow copies existed
+    # is unparseable by anything downstream - and shadow copies are often where
+    # the one clean copy of a tampered file lives. Win32_ShadowCopy carries the
+    # same facts as structured, locale-independent data. Kept in its OWN try so
+    # neither source can take the other down with it.
+    try {
+        Add-Report "`n-- Win32_ShadowCopy (structured, locale-independent) --"
+        Get-CimInstance Win32_ShadowCopy -ErrorAction Stop |
+            Select-Object ID, InstallDate, VolumeName, DeviceObject |
+            Format-Table -AutoSize | Out-String -Width 4096 | Out-File $script:ReportFile -Append -Encoding UTF8
+    } catch { Add-Note "Win32_ShadowCopy query failed: $_" }
 }
 
 function Collect-EventLogs {

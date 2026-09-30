@@ -18,17 +18,33 @@ It cannot be *run*: `Get-CimInstance`, `Get-WinEvent`, the registry providers,
 
 ### What was actually executed for this review
 
-| Check | Result |
-|---|---|
-| AST parse (`[Parser]::ParseFile`) | 0 errors |
-| PSScriptAnalyzer, repo settings | 0 errors, 11 warnings — all `PSAvoidUsingEmptyCatchBlock` |
-| `bash tests/run-tests.sh` | 42 passed / 0 failed |
-| `pwsh -NoProfile -File tests/Invoke-Tests.ps1` | 98 passed / 0 failed |
-| `pwsh -File tests/Test-ServicePath.ps1` (new) | 14 passed / 0 failed |
-| `pwsh -File ./Tatar.ps1 -All` on Linux | 11 modules OK, 19 error — the same set as before the fixes |
+| Check | First pass | Second pass |
+|---|---|---|
+| AST parse (`[Parser]::ParseFile`) | 0 errors | 0 errors |
+| PSScriptAnalyzer, repo settings | 0 errors, 11 warnings — all `PSAvoidUsingEmptyCatchBlock` | 0 errors, 11 warnings — the same 11 |
+| `bash tests/run-tests.sh` | 42 passed / 0 failed | 42 passed / 0 failed |
+| `pwsh -NoProfile -File tests/Invoke-Tests.ps1` | 98 passed / 0 failed | 98 passed / 0 failed |
+| `pwsh -File tests/Test-ServicePath.ps1` | 14 passed / 0 failed | 16 passed / 0 failed |
+| `pwsh -File tests/Test-StaticReviewFixes.ps1` (new) | — | 15 passed / 0 failed |
+| `python3 .github/scripts/check_docs_parity.py` | — | OK |
+| `python3 .github/scripts/check_readme_parity.py` | — | OK |
+| `pwsh -File ./Tatar.ps1 -All` on Linux | 11 modules OK, 19 error — the same set as before the fixes | not re-run |
 
-**Nothing in the 18 modules was executed.** Every fix below is written blind and needs
-the Windows confirmation named in its row.
+**Nothing in the 18 modules was executed, in either pass.** Every fix below is written
+blind and needs the Windows confirmation named in its row.
+
+### The second pass
+
+The first pass fixed 16 findings and left 12 with a named next step. The second pass
+went back through those 12 and closed the part of each one that does not need a Windows
+host. **Six** are now fully fixed, **three** are partly fixed with the remainder stated,
+and **three** are left open because closing them is a product decision, not a repair.
+Each row below says which, and the per-module sections say what changed.
+
+The rule applied: a logic error, an absent-vs-zero counter, a discarded exception, a
+saturating counter or a missing list entry is a defect and was fixed. Deciding whether
+`WINDOWS_TEST_PLAN.md` or the code is the intended contract, and whether the collector
+may mount other users' `NTUSER.DAT` on a live host, is not the reviewer's call.
 
 ### The 11 empty `catch` blocks are intentional
 
@@ -82,21 +98,30 @@ review found nothing to fix.
 | F-1 | `fsartifacts` | Amcache and USN journal hardcode `C:` | Medium | yes |
 | M-1 | `mft` | `fsutil` hardcodes `C:` | Medium | yes |
 | TL-2 | `timeline` | Prefetch hardcodes `C:\Windows` | Medium | yes |
-| N-2 | `network` | `netstat` fallback discards the reason and leaves two counters unset | Medium | **no** |
-| SE-1 | `sessions` | `RecentFailedLogons` is capped at 15 and absent when the query fails | Medium | **no** |
-| SE-2 | `sessions` | "no matching events" reported as "not available / access denied" | Medium | **no** |
-| PE-2 | `persistence` | only the collecting user's `HKCU`; no `HKU\*` sweep | Medium | **no** |
-| PE-3 | `persistence` | `HKCU` `RunOnce` and `Wow6432Node\RunOnce` not collected | Medium | **no** |
-| PE-4 | `persistence` | scheduled tasks collected without their actions | Medium | **no** |
-| D-1 | `drivers` | plan promises unsigned drivers flagged; no signature check exists | Medium | **no** |
-| SH-1 | `shadow` | `vssadmin` text only, which is localised and unparseable | Medium | **no** |
-| SS-1 | `shares` | plan promises share permissions; only name/path/description collected | Low | **no** |
-| SI-1 | `sysinfo` | plan promises `systeminfo` and env; neither is collected | Low | **no** |
-| FW-1 | `firewall` | no `netsh` fallback if the `NetSecurity` module is absent | Low | **no** |
-| U-2 | `users` | `Accounts` stat absent when `Get-LocalUser` returns nothing | Low | **no** |
+| N-2 | `network` | `netstat` fallback discards the reason and leaves two counters unset | Medium | **partly** (2nd pass) |
+| SE-1 | `sessions` | `RecentFailedLogons` is capped at 15 and absent when the query fails | Medium | **partly** (2nd pass) |
+| SE-2 | `sessions` | "no matching events" reported as "not available / access denied" | Medium | yes (2nd pass) |
+| PE-2 | `persistence` | only the collecting user's `HKCU`; no `HKU\*` sweep | Medium | **partly** (2nd pass) |
+| PE-3 | `persistence` | `HKCU` `RunOnce` and `Wow6432Node\RunOnce` not collected | Medium | yes (2nd pass) |
+| PE-4 | `persistence` | scheduled tasks collected without their actions | Medium | yes (2nd pass) |
+| D-1 | `drivers` | plan promises unsigned drivers flagged; no signature check exists | Medium | **no — open** |
+| SH-1 | `shadow` | `vssadmin` text only, which is localised and unparseable | Medium | yes (2nd pass) |
+| SS-1 | `shares` | plan promises share permissions; only name/path/description collected | Low | **no — open** |
+| SI-1 | `sysinfo` | plan promises `systeminfo` and env; neither is collected | Low | **no — open** |
+| FW-1 | `firewall` | no `netsh` fallback if the `NetSecurity` module is absent | Low | yes (2nd pass) |
+| U-2 | `users` | `Accounts` stat absent when `Get-LocalUser` returns nothing | Low | yes (2nd pass) |
 
-16 fixed, 12 recorded and left. Nothing was found in `process` or `services` — see
+**22 fixed, 3 partly fixed, 3 open.** *Partly* always means the same thing here: the
+mechanical half is in and the remaining half is named in the module's section — it is
+never a euphemism for "mostly done". Nothing was found in `process` or `services` — see
 those sections, which say so plainly.
+
+The three open findings are open for one reason between them: **`WINDOWS_TEST_PLAN.md`
+promises collection the code does not do, and nobody has said which document is the
+contract.** D-1 (unsigned drivers), SS-1 (share ACLs) and SI-1 (`systeminfo` + env) are
+the same question three times. Answering it is a product decision and is left to the
+maintainer; the alternative — writing the collection to match the plan — silently makes
+the plan authoritative and adds three unexercised code paths to a triage tool at once.
 
 ---
 
@@ -113,13 +138,18 @@ hardcoded paths; whether the artifacts match what `WINDOWS_TEST_PLAN.md` promise
 
 **Found.**
 
-- **SI-1 (Low, documentation).** The plan's section F expects "OS build, hotfixes,
-  **env**, **`systeminfo` output**". Neither the environment block nor `systeminfo` is
-  collected. A tester following the plan will mark this module failed against code that
-  is behaving as written. Not fixed: adding collection is a coverage change that has to
-  be exercised on Windows, and it is not clear which of the two documents is the
-  intended contract — that is the product decision, so the mismatch is recorded rather
-  than guessed at.
+- **SI-1 (Low, documentation — STILL OPEN, product decision).** The plan's section F
+  expects "OS build, hotfixes, **env**, **`systeminfo` output**". Neither the
+  environment block nor `systeminfo` is collected. A tester following the plan will
+  mark this module failed against code that is behaving as written.
+
+  Still open after the second pass, and for the reason given under SS-1, not for lack
+  of a Windows host: `Get-ChildItem Env:` would run anywhere. The open question is
+  which document is the contract. There is a second reason to leave it to the owner
+  here — a full environment block routinely carries credentials and tokens that
+  processes were started with, so dumping it into `TATAR_Report_*.txt` changes what
+  the output is safe to hand to a third party. That belongs in `SECURITY.md` and in
+  someone's deliberate decision, not in a review's tidy-up.
 - *(observation, not a defect)* The six calls run in sequence inside one `try`. If
   `Get-TimeZone` throws, `Get-HotFix` never runs. In practice `Get-TimeZone` does not
   throw on a supported Windows, so this is noted, not fixed.
@@ -141,7 +171,7 @@ custom hosts entries.
   host whose `%SystemRoot%` is not `C:\Windows` the file is not read, `hosts.txt` is
   written empty, and the custom-entry check — one of the cheapest high-signal checks the
   tool has — silently passes. Now `Join-Path $script:SysRoot 'System32\drivers\etc\hosts'`.
-- **N-2 (Medium, NOT fixed — needs Windows).** The fallback is
+- **N-2 (Medium, PARTLY fixed on the second pass).** The fallback is
   `catch { cmd /c "netstat -ano" | Out-File ... }`. Two problems, neither an empty catch:
   1. The exception is discarded. The operator sees `netstat` output and no statement
      that `Get-NetTCPConnection` failed or why — and the two shapes (not elevated
@@ -152,10 +182,19 @@ custom hosts entries.
      loses two counters that the README documents as the cross-platform pair, and a
      dashboard reads "no listening ports" rather than "not measured".
 
-  Not fixed because the right repair is to parse `netstat -ano` for the same two
-  counters and `Add-Note` the original reason, and neither the parse nor the exception
-  shape can be checked from here. `netstat` output is also localised, which has to be
-  confirmed against a non-English Windows before anything parses it.
+  **Second pass — (1) is fixed, (2) is not.** The catch now `Add-Note`s the exception
+  message before falling back, so the report and `tatar.log` both say that
+  `Get-NetTCPConnection` failed and why; that needed no Windows host, it only needed
+  the variable not to be thrown away.
+
+  (2) is deliberately still absent rather than zeroed. Writing `0` would have closed
+  the row and been **wrong** — a dashboard would then read "no listening ports" off a
+  host where the ports were never counted, which is the exact failure the finding
+  objects to. What went in instead is a second `Add-Note` stating that the two
+  counters were not measured, so the gap is visible in the evidence rather than only
+  as a missing JSON key. Parsing the real numbers back out of `netstat -ano` is still
+  the repair, and it still needs a non-English Windows first: `netstat` localises its
+  state column, so `LISTENING` is not a literal to match on.
 
 *(`cmd /c` is redundant — `netstat.exe` is directly invocable — but it is harmless and
 was left alone.)*
@@ -193,20 +232,48 @@ plus a finding when 4625 hits the 15-event cap.
 
 **Found.**
 
-- **SE-1 (Medium, NOT fixed — needs Windows).** `RecentFailedLogons` is
+- **SE-1 (Medium, PARTLY fixed on the second pass).** `RecentFailedLogons` is
   `@($evts).Count` where `$evts` came from `-MaxEvents 15`. The counter therefore
   saturates at 15 and cannot express "4,000 failed logons", which is exactly the case
   an analyst is looking for. It is also never set when the query throws, so the key is
   *absent* from `summary.json` rather than `0` — indistinguishable from "no failures"
-  for anything consuming the JSON. Fixing it properly means a second, count-only
-  `Get-WinEvent` query, whose cost on a large Security log has to be measured on
-  Windows before it goes in a triage tool.
-- **SE-2 (Medium, NOT fixed — needs Windows).** The inner catch reports
+  for anything consuming the JSON.
+
+  **Second pass.** The absent-vs-zero half is fixed, using SE-2's classification: a
+  query that ran and matched nothing is a genuine zero and now sets the counter to
+  `0`, while a query that actually *failed* leaves the key absent **and** writes a
+  note saying it was not measured. Those are two different facts and the summary no
+  longer collapses them into one missing key.
+
+  The saturation half is not fixed, because an honest count needs a second, count-only
+  `Get-WinEvent` query whose cost on a multi-gigabyte Security log has to be measured
+  on Windows before it goes into a triage tool. What did change is that the cap stopped
+  being invisible: `15` was written three times (`-MaxEvents`, the report heading and
+  the `-ge 15` test) and is now one `$evtCap`, and hitting it writes a note that says
+  the true 4625 count is that value *or higher*. The number in `summary.json` is still
+  capped — a consumer must not treat it as a total — but nothing in the evidence now
+  implies otherwise.
+- **SE-2 (Medium, FIXED on the second pass).** The inner catch reported
   `"(event $id not available / access denied)"` for *every* failure. `Get-WinEvent
   -ErrorAction Stop` also throws when the log simply contains no matching events, which
-  is a clean result. The operator is told they have an access problem when they do not.
-  The repair is to branch on `$_.FullyQualifiedErrorId` (`NoMatchingEventsFound`), and
-  the exact id must be confirmed on Windows rather than assumed.
+  is a clean result. The operator was told they had an access problem when they did
+  not — and the natural response to that message is to re-run the whole collection
+  elevated, on a host where nothing was wrong.
+
+  Split into two branches by a new pure helper, `Test-NoMatchingEvents`, which reads
+  `$_.FullyQualifiedErrorId` for `NoMatchingEventsFound` and falls back to the
+  exception text. **The error id is still unconfirmed** — there is no `Get-WinEvent`
+  here to throw one — so the fix is built not to depend on the guess: the message test
+  behind it catches a host whose id differs, and the other branch now prints the real
+  exception message instead of inventing a cause. If the id is wrong the operator gets
+  the truth; previously they got a fabrication either way.
+
+  `Test-NoMatchingEvents` takes only an `ErrorRecord`, so unlike the module around it
+  it is testable here. `tests/Test-StaticReviewFixes.ps1` drives it from
+  `tests/fixtures/winevent-error-cases.tsv` with both shapes — the empty log, access
+  denied, a different `Get-WinEvent` error id, an RPC failure, and a null record — and
+  was checked against a copy of the collector with the old always-access-denied
+  behaviour restored: **6 of 15 cases fail** there.
 
 *(`quser` is absent on Windows Home editions; the surrounding `2>&1` keeps that from
 aborting the module, and the text lands in the report. Left alone.)*
@@ -245,9 +312,16 @@ Review finding for non-built-in Administrators members.
   `Get-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-544')`.
   **Windows confirmation required:** that `Get-LocalGroupMember` exposes the `-SID`
   parameter set on both PowerShell 5.1 and 7 — it is documented, but it was not run.
-- **U-2 (Low, NOT fixed).** `if ($lu) { $script:Stats['Accounts'] = ... }` leaves the
-  key absent rather than `0` when `Get-LocalUser` yields nothing. Same absent-vs-zero
-  shape as SE-1; grouped with it so both are decided together.
+- **U-2 (Low, FIXED on the second pass).** `if ($lu) { $script:Stats['Accounts'] = ... }`
+  left the key absent rather than `0` when `Get-LocalUser` yielded nothing. Same
+  absent-vs-zero shape as SE-1 and fixed the same way, but the `users` case was worse
+  than the summary row suggested: `-ErrorAction SilentlyContinue` turns a *failed*
+  query into `$null` too, so the guard could not tell "this host has no local accounts"
+  from "the query never ran". `Get-LocalUser` genuinely fails on a domain controller,
+  so that is not hypothetical. Now `-ErrorAction Stop` inside its own `try`: a result
+  that came back sets the counter, `0` included; a failure leaves it absent and writes
+  a note saying `Accounts` was not measured. The two states are now distinguishable in
+  `summary.json`, which is the whole point of the finding.
 
 *(`net localgroup administrators` on the line above is localised too. It is a raw text
 dump whose failure is visible in the report, and it drives no finding, so it was left
@@ -271,21 +345,47 @@ the IFEO / AppInit_DLLs / AppCertDlls / Winlogon / LSA / Print-monitor ASEPs.
   A false High in the Winlogon path is expensive — it is a credible ransomware-precursor
   signature and will start an escalation. The expected value is now built from
   `$script:SysRoot` via `[regex]::Escape`.
-- **PE-2 (Medium, NOT fixed).** Only `HKCU:` — the hive of whoever is running the
-  collector — is read. Run under SYSTEM or as a responder's admin account, per-user
-  persistence for the *compromised* user is invisible. The fix is an `HKU\*` sweep with
-  the unloaded profiles mounted, which is real collection work needing a Windows host
-  and a decision about loading `NTUSER.DAT` on a live system.
-- **PE-3 (Medium, NOT fixed).** `$runKeys` covers HKCU Run, HKLM Run, HKLM RunOnce and
-  HKLM `Wow6432Node` Run. It omits **HKCU `RunOnce`** and **HKLM `Wow6432Node\RunOnce`**.
-  Both are standard persistence locations. This is two strings in a list that is already
-  iterated under a `Test-PathSafe` guard, so it is near-zero risk — but it is a
-  *coverage* change, not a defect repair, and the reviewer's remit here was the latter.
-  Recommended as the first follow-up.
-- **PE-4 (Medium, NOT fixed).** Scheduled tasks are collected as `TaskName`, `TaskPath`,
-  `State` only. Without the actions, a task named innocuously cannot be triaged from the
-  report at all — the analyst has to go back to the host. `Get-ScheduledTask | Select
-  -Expand Actions` is the shape, but it changes output volume and needs Windows.
+- **PE-2 (Medium, PARTLY fixed on the second pass — the rest is a PRODUCT DECISION).**
+  Only `HKCU:` — the hive of whoever is running the collector — is read. Run under
+  SYSTEM or as a responder's admin account, per-user persistence for the *compromised*
+  user is invisible. The fix is an `HKU\*` sweep with the unloaded profiles mounted.
+
+  **That sweep was not written, and should not be written by a reviewer.** Mounting
+  another user's `NTUSER.DAT` on a live host writes to the hive, changes its
+  timestamps, and can collide with a profile the OS is already loading — it is a
+  deliberate trade of evidence integrity for coverage, and whoever owns this tool makes
+  that call, not whoever happens to be reading the code. It also needs a Windows host
+  to write at all.
+
+  What *was* fixed is the part that misleads today: the report's HKCU block now names
+  the collecting user and states outright that other users' `Run`/`RunOnce` keys were
+  not collected. Before, an empty section read as "no per-user persistence" when it
+  meant "one hive was looked at, possibly the wrong one". A stated limit is not the
+  sweep, but it stops the evidence from overclaiming while the decision is pending.
+- **PE-3 (Medium, FIXED on the second pass).** `$runKeys` covered HKCU Run, HKLM Run,
+  HKLM RunOnce and HKLM `Wow6432Node` Run. It omitted **HKCU `RunOnce`** and **HKLM
+  `Wow6432Node\RunOnce`**, both standard persistence locations — so two ASEPs produced
+  no line in the report, and a blank report reads as "nothing there", not as "never
+  looked". Both are now in the list, which is iterated under the existing
+  `Test-PathSafe` guard, so a hive that does not exist is skipped exactly as before.
+
+  Guarded by `tests/Test-StaticReviewFixes.ps1`, which reads the literal out of the
+  collector source and asserts all six keys. Quoted-and-exact, so `Run` cannot be
+  satisfied by the `RunOnce` entry that contains it as a prefix; against the pre-fix
+  list, the two missing keys fail.
+- **PE-4 (Medium, FIXED on the second pass).** Scheduled tasks were collected as
+  `TaskName`, `TaskPath`, `State` only. Without the actions, a task named innocuously
+  cannot be triaged from the report at all — the analyst has to go back to the host,
+  which on someone else's network may mean going back the next day. An `Action` column
+  is now projected from `$_.Actions`: `Execute` plus `Arguments` for an exec action,
+  the `ClassId` for a ComHandler, and a literal `(non-exec action)` for the deprecated
+  mail/message types, which have neither and would otherwise come out blank. Several
+  actions on one task are joined with ` ; `. `Out-String -Width 4096` matches what the
+  rest of the file already does for wide tables.
+
+  **Windows confirmation required:** the output volume. This is the one second-pass fix
+  whose risk is not correctness but size — a host with many non-Microsoft tasks carrying
+  long command lines will grow this section, and nobody has seen it yet.
 - *(Low, not fixed)* `$acn` filters AppCertDlls value names with `-notmatch '^PS'`,
   which is case-insensitive, so a real registry value named e.g. `psmon` would be
   filtered out with the `PSPath`/`PSDrive` noise. Vanishingly unlikely; recorded only.
@@ -299,9 +399,17 @@ Run and the `Windows` (AppInit) key.
 
 **Found.**
 
-- **SS-1 (Low, documentation).** The plan's section F expects "SMB shares **and
-  permissions**". No ACL is collected; `Get-SmbShareAccess` is not called. Same
-  document-vs-code mismatch as SI-1, recorded rather than guessed at.
+- **SS-1 (Low, documentation — STILL OPEN, product decision).** The plan's section F
+  expects "SMB shares **and permissions**". No ACL is collected; `Get-SmbShareAccess`
+  is not called. Same document-vs-code mismatch as SI-1 and D-1.
+
+  Deliberately not closed on the second pass. `Get-SmbShare | Get-SmbShareAccess` is
+  one line and would have made the row go green, but it answers the wrong question:
+  the open item is *which document is the contract*, and quietly adding the collection
+  decides that in favour of the plan without anyone saying so. Either the plan is
+  authoritative — in which case D-1, SS-1 and SI-1 are one piece of work, sized and
+  exercised together on Windows — or the code is, and the plan's section F is the thing
+  that needs the edit. **Owner's call.**
 
 **Nothing else found.** `Get-SmbShare` failing on an old host degrades to `net share`,
 which is present everywhere — the fallback is already correct.
@@ -313,12 +421,25 @@ which is present everywhere — the fallback is already correct.
 
 **Found.**
 
-- **FW-1 (Low, NOT fixed).** `Get-NetFirewallProfile` is called with no `-ErrorAction`,
-  unlike `Get-NetFirewallRule` on the next line. If the `NetSecurity` module is
-  unavailable the whole module aborts into `Add-Err` and **neither** the profiles nor
-  the rules are collected, where `netsh advfirewall show allprofiles` would still have
-  worked. On every currently-supported Windows `NetSecurity` is present, so this is a
-  robustness gap, not a live defect. A `netsh` fallback is the fix and needs Windows.
+- **FW-1 (Low, FIXED on the second pass).** `Get-NetFirewallProfile` was called with no
+  `-ErrorAction`, unlike `Get-NetFirewallRule` on the next line. If the `NetSecurity`
+  module was unavailable the whole module aborted into `Add-Err` and **neither** the
+  profiles nor the rules were collected, where `netsh advfirewall show allprofiles`
+  would still have worked. On every currently-supported Windows `NetSecurity` is
+  present, so this is a robustness gap, not a live defect.
+
+  Both queries now sit in an inner `try` with a `netsh` fallback for each — profiles to
+  the report, `firewall firewall show rule name=all` to `firewall_rules.txt`, the same
+  file the cmdlet path writes. Note that adding `-ErrorAction` alone would have fixed
+  nothing here: a missing module raises `CommandNotFoundException`, which is not a
+  cmdlet error and which `-ErrorAction` does not suppress. `netsh` text is **localised**
+  and that is why it is the fallback rather than the source — but localised text an
+  analyst can read beats an empty section, which is the choice this module actually
+  faces.
+
+  **Windows confirmation required:** that `netsh advfirewall` still exists and accepts
+  these arguments on the target build. It is deprecated in favour of `NetSecurity` and
+  has been for years, which is the reverse of the situation this fallback assumes.
 
 *(`Where-Object Enabled -eq 'True'` compares the `Enabled` enum against a string; that
 coercion is valid and was verified as intentional, not a bug.)*
@@ -329,12 +450,23 @@ coercion is valid and was verified as intentional, not a bug.)*
 
 **Found.**
 
-- **D-1 (Medium, NOT fixed).** The plan's section F expects "driver list, **unsigned
-  drivers flagged**". There is no signature check anywhere in the module and no finding
-  is ever raised. Unsigned or revoked drivers are the point of collecting drivers at all
-  (BYOVD), so this is the largest single capability gap found in the review. The fix is
-  `Get-AuthenticodeSignature` over the resolved driver paths, which needs a Windows host
-  both to write and to cost — it is hundreds of files per run.
+- **D-1 (Medium, STILL OPEN — needs a Windows host *and* a decision).** The plan's
+  section F expects "driver list, **unsigned drivers flagged**". There is no signature
+  check anywhere in the module and no finding is ever raised. Unsigned or revoked
+  drivers are the point of collecting drivers at all (BYOVD), so this is the largest
+  single capability gap found in the review. The fix is `Get-AuthenticodeSignature`
+  over the resolved driver paths, which needs a Windows host both to write and to
+  cost — it is hundreds of files per run.
+
+  Nothing mechanical was available to fix here on the second pass. It is not one
+  change but three, and each needs Windows: `Win32_SystemDriver.PathName` arrives in
+  kernel forms (`\??\C:\...`, `\SystemRoot\...`) that have to be normalised before any
+  file is opened; `Get-AuthenticodeSignature` has to be run to know what it costs over
+  a few hundred drivers on a host already under investigation; and a new **High**
+  finding has to be defined, which means a new `Get-Technique` branch and a new row in
+  `docs/MITRE_ATTACK.md` that `check_docs_parity.py` will then hold everyone to.
+  Writing any of that blind would put an unexercised High-severity finding into a
+  triage tool — the one class of change this review exists to prevent.
 
 **Nothing else found.** `Win32_SystemDriver` is current and present on Server Core.
 
@@ -415,16 +547,22 @@ routes the text away.
 
 **Found.**
 
-- **SH-1 (Medium, NOT fixed).** The module captures **localised console text and
-  nothing else**. On a Mongolian, Russian or Japanese Windows the output is in that
-  language, so no downstream tooling can read it, and the collector keeps no structured
-  record of which shadow copies existed — which matters, because shadow copies are
-  often where the only clean copy of a tampered file lives. `Get-CimInstance
+- **SH-1 (Medium, FIXED on the second pass).** The module captured **localised console
+  text and nothing else**. On a Mongolian, Russian or Japanese Windows the output is in
+  that language, so no downstream tooling can read it, and the collector kept no
+  structured record of which shadow copies existed — which matters, because shadow
+  copies are often where the only clean copy of a tampered file lives. `Get-CimInstance
   Win32_ShadowCopy` returns `ID`, `InstallDate`, `VolumeName` and `DeviceObject` as
-  structured, locale-independent data and is the natural companion. This is a
-  two-line addition inside the existing `try`, but it is new collection with an output
-  shape nobody has seen, so it is recorded for the Windows pass rather than written
-  blind. **Recommended as the second follow-up, after PE-3.**
+  structured, locale-independent data.
+
+  Added, in its **own** `try` rather than inside the existing one, so neither source
+  can take the other down: `vssadmin` failing still leaves the structured record, and
+  a `Win32_ShadowCopy` failure degrades to a note instead of an error. `vssadmin` was
+  kept — it reports things the CIM class does not, such as the provider — so this is an
+  addition, not a replacement.
+
+  **Windows confirmation required:** the output shape, which nobody has seen. The risk
+  is presentational only; the query cannot fail the module.
 
 **Nothing else found.** `vssadmin list shadows` (as opposed to `create`) is available on
 client SKUs, so the command choice is right.
@@ -577,23 +715,49 @@ The test was verified to have teeth by running it against a copy of the collecto
 the original extraction restored — **5 of 14 cases fail**, including both `svchost`
 forms. A test that cannot fail proves nothing, so this was checked rather than assumed.
 
+## The second pass's helper and its test
+
+`Test-NoMatchingEvents` (SE-2) is a pure predicate over an `ErrorRecord`, so like
+`Get-ServiceImagePath` it is testable here even though the module that calls it is not.
+`tests/Test-StaticReviewFixes.ps1` lifts it out of `Tatar.ps1` by text — dot-sourcing
+would run a collection — and drives it from `tests/fixtures/winevent-error-cases.tsv`.
+The same file also asserts the PE-3 Run-key list by reading the literal out of the
+source, because a list of registry paths has no callable surface to test.
+
+There is deliberately **no `.sh` counterpart**, for the same reason `Test-ServicePath.ps1`
+has none: a `Get-WinEvent` error record and an `HKCU` path have no Linux equivalent, so
+a shared table would assert nothing.
+
+The test was verified to have teeth by running it against a copy of the collector with
+both pre-fix behaviours restored — the always-access-denied classifier and the
+four-entry Run-key list. **6 of 15 cases fail**, which is the four empty-log cases and
+the two missing registry keys. A test that cannot fail proves nothing, so this was
+checked rather than assumed.
+
 ## What is NOT fixed, and why
 
-Twelve findings are recorded and left. They fall into three groups:
+After the second pass, **six** findings are open or partly open:
 
-1. **Needs a Windows host to write or to verify** — N-2, SE-1, SE-2, D-1, FW-1. Each
-   depends on an exception shape, a localised output format or a runtime cost that
-   cannot be observed here.
-2. **Coverage changes, not defect repairs** — PE-3, PE-4, SH-1, SS-1, SI-1. Each adds
-   collection whose output nobody has yet seen. PE-3 (two registry strings) and SH-1
-   (a `Win32_ShadowCopy` query) are the cheapest and are the recommended first two
-   follow-ups.
-3. **Needs a product decision** — PE-2 (`HKU\*` sweep: loading other users' `NTUSER.DAT`
-   on a live host is a deliberate choice with evidence-integrity consequences), and the
-   SI-1/SS-1/D-1 question of whether `WINDOWS_TEST_PLAN.md` or the code is the intended
-   contract.
+1. **Needs a Windows host to finish** — N-2 (parse the two counters out of `netstat`;
+   its state column is localised), SE-1 (an uncapped 4625 count needs a second query
+   whose cost has to be measured), D-1 (driver signatures: path normalisation, runtime
+   cost over hundreds of files, and a new High finding, all unexercised).
+2. **Needs a product decision** — PE-2 (`HKU\*` sweep: loading other users'
+   `NTUSER.DAT` on a live host trades evidence integrity for coverage), and the
+   SI-1 / SS-1 / D-1 question of whether `WINDOWS_TEST_PLAN.md` or the code is the
+   intended contract. D-1 appears in both groups because it needs both.
+
+Six more were fixed on the second pass — SE-2, PE-3, PE-4, SH-1, FW-1, U-2 — and three
+carry a named remainder: N-2, SE-1, PE-2.
 
 None is blocked in the `BLOCKED.md` sense — each has a clear next step, named above.
+
+**Four second-pass fixes still need Windows confirmation** even though they are counted
+as fixed, and each says so in its own section: SE-2's error id, PE-4's output volume,
+SH-1's output shape, FW-1's `netsh` argument forms. None of the four can produce a wrong
+*finding* — the worst case is a cosmetic or presentational surprise — which is why they
+went in rather than waiting. Nothing that could raise or suppress a finding was written
+blind on this pass.
 
 ---
 
@@ -605,15 +769,15 @@ neither list. It does fail on Linux — `New-Object -ComObject` is unavailable �
 "Windows APIs required" set is really **19**. `deleted` was outside this review's remit
 and was not examined; it should be added to the plan's list and reviewed.
 
-**2. The same hardcoded-drive defect exists outside the 18 modules.** `$script:SysRoot`
-is now available script-wide, but it was applied only within scope. Two occurrences
-remain, both the same class as N-1/TL-2 and both a one-line change:
-
-| File position | Module | Literal |
-|---|---|---|
-| `Collect-Prefetch` | `prefetch` | `$pf = 'C:\Windows\Prefetch'` |
-| `Collect-Hives` | `hives` | `Get-ChildItem 'C:\Users' -Directory` |
+**2. ~~The same hardcoded-drive defect exists outside the 18 modules.~~ Closed.** This
+note named two occurrences outside the review's scope — `Collect-Prefetch`'s
+`$pf = 'C:\Windows\Prefetch'` and `Collect-Hives`'s `Get-ChildItem 'C:\Users'`. Both
+were fixed in `d5010bd` ("stop `Join-Path` resolving drives, and finish the
+hardcoded-`C:` sweep") and now read `Join-WinPath $script:SysRoot 'Prefetch'` and
+`Join-WinPath $script:SysDrive 'Users'`. Re-checked on the second pass: the only
+remaining `'C:` literals in `Tatar.ps1` are the two documented `$script:SysRoot` /
+`$script:SysDrive` fallbacks, the `-OutputPath` default, and three comments.
 
 `prefetch` and `hives` are both in the plan's "executed without error on Linux" list,
-which is precisely why the defect survived: the code path ran, found nothing, and threw
-no error. Worth fixing in the same pass as PE-3.
+which is precisely why the defect survived as long as it did: the code path ran, found
+nothing, and threw no error.

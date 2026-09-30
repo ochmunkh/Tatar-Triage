@@ -132,6 +132,14 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Test-ServicePath.ps1
 
+      # The Windows-only modules never execute in CI's Linux job and only
+      # partly in this one, so the parts of the WINDOWS_STATIC_REVIEW fixes
+      # that are pure - the Get-WinEvent failure classifier, the Run-key list -
+      # are unit tested directly. See tests/WINDOWS_STATIC_REVIEW.md.
+      - name: Static-review fix unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-StaticReviewFixes.ps1
+
       - name: Contract tests
         shell: pwsh
         run: pwsh -File tests/Invoke-Tests.ps1
