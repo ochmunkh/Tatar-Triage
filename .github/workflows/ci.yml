@@ -46,6 +46,11 @@ jobs:
       - name: Allowlist path-extraction unit tests
         run: bash tests/test-allowlist-path.sh
 
+      # The two language halves of README.md drift apart. This compares their
+      # STRUCTURE against a recorded baseline and fails naming the mismatch.
+      - name: README bilingual parity
+        run: python3 .github/scripts/check_readme_parity.py
+
       - name: Contract tests
         run: bash tests/run-tests.sh
 
