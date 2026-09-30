@@ -189,7 +189,9 @@ def main(argv):
     # renamed heading into a confusing "Module column names 12 names" failure instead of
     # naming the real cause. Check the markers exist first and say so plainly.
     for marker in ("\n## By tactic (Linux", "\n### Raised by the IOC engine",
-                   "\n## Evidence / execution-history sources"):
+                   "\n## Evidence / execution-history sources",
+                   "\n### Tactic-аар (Linux", "\n#### IOC engine",
+                   "\n### Нотолгоо / гүйцэтгэлийн түүхийн эх сурвалж"):
         if marker not in mitre:
             fail("docs/MITRE_ATTACK.md: the '%s' heading was renamed or removed, so the "
                  "Module-column checks below cannot be scoped correctly - update "
@@ -201,8 +203,19 @@ def main(argv):
     # retired module could sit in it indefinitely - the same defect check 4 exists to catch.
     # Its artifacts (prefetch, Amcache/LNK, Recycle Bin, MFT) are all Windows-side.
     ev_sec = slice_block(mitre, "## Evidence / execution-history sources", "\n---")
+
+    # The Mongolian half carries the SAME tables. Without checking it too, a
+    # module renamed in code would break the English tables and leave the
+    # Mongolian ones quietly wrong -- which is the drift this whole script
+    # exists to catch, just in the other language.
+    mn_win = slice_block(mitre, "### Tactic-аар (Windows", "\n### Tactic-аар (Linux")
+    mn_lin = slice_block(mitre, "### Tactic-аар (Linux", "\n#### IOC engine")
+    mn_ev = slice_block(mitre, "### Нотолгоо / гүйцэтгэлийн түүхийн эх сурвалж", "\n*ATT&CK")
     for where, section, code_mods in (("Windows", win_sec, win), ("Linux", lin_sec, lin),
-                                      ("Evidence / execution-history sources", ev_sec, win)):
+                                      ("Evidence / execution-history sources", ev_sec, win),
+                                      ("Windows (Монгол)", mn_win, win),
+                                      ("Linux (Монгол)", mn_lin, lin),
+                                      ("Нотолгоо (Монгол)", mn_ev, win)):
         if not section:
             fail("docs/MITRE_ATTACK.md: the '%s' section was not found"
                  % (("## " + where) if where.startswith("Evidence")

@@ -19,9 +19,10 @@ count.
 | Section | File | Words | Note |
 |---|---|---:|---|
 | ~~*(whole file)*~~ | ~~`linux/README.md`~~ | ~~1,360~~ | **DONE — written 2026-09-30.** The file now carries a full `🇲🇳 Монгол хувилбар` half: requirements, usage, the flag table, exit codes, the module list, allowlist/IOC, the output tree, the leads-not-verdicts warning, the ATT&CK table, handling notes and limitations. Held to an **exact mirror** — no accepted delta — by `.github/scripts/check_readme_parity.py linux/README.md`, and its Mongolian module list is checked against `MOD_NAMES` by `check_docs_parity.py`. Both run in CI. |
-| *(whole file)* | `docs/MITRE_ATTACK.md` | 940 | The technique mapping an analyst consults to interpret a finding. Mostly tables of IDs and short descriptions, so it is smaller than the count suggests. **Now the highest-value gap left**, since the Linux README is done. |
+| ~~*(whole file)*~~ | ~~`docs/MITRE_ATTACK.md`~~ | ~~940~~ | **DONE — written 2026-10-01.** Full `🇲🇳 Монгол хувилбар` half: the guidance-not-proof warning, every tactic table for both platforms, the IOC-engine mapping and the evidence sources. Module names and ATT&CK IDs stay English — they are identifiers, not prose. `check_docs_parity.py` now validates the Mongolian Module columns against the code too, so the two halves cannot drift apart from it. |
 
-**Subtotal ≈ 940 words** remaining, down from ≈ 2,300.
+**Nothing high-priority remains.** Everything a responder reads mid-incident is
+now in both languages.
 
 ## Medium — the recorded README backlog
 
