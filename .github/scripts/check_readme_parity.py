@@ -84,7 +84,12 @@ ACCEPTED_DELTA_BY_FILE = {
     "README.md": {
         "headings": 10,      # EN 35 vs MN 25 -- the condensed changelog + Legal
         "table_rows": 0,     # in sync
-        "code_blocks": 0,    # in sync
+        # -1: the Mongolian half is MORE complete here. Its "Ашиглах" section
+        # documents Windows AND Linux usage inline (a powershell block and a
+        # bash block), while the English "Usage" covers Windows only and defers
+        # Linux to linux/README.md. A negative entry is a Mongolian surplus and
+        # is allowed -- the check compares structure, not which language leads.
+        "code_blocks": -1,
     },
     # Written 2026-09-30 as a full mirror: the Linux collector had no Mongolian
     # documentation at all, which docs/TRANSLATION_NEEDED.md called the largest
