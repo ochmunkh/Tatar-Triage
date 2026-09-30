@@ -138,6 +138,13 @@ def main(argv):
         ("linux/README.md '## Modules'", first_list(
             slice_block(lreadme, "\n## Modules (order of volatility)\n", "\nCoverage"),
             "linux/README.md '## Modules (order of volatility)'"), lin),
+        # The Mongolian half of linux/README.md carries the same list, so it can
+        # go stale exactly the way every other duplicated module list in this
+        # repo already has. Checked from the day it was written rather than
+        # after the first "fix the stale Mongolian list" commit.
+        ("linux/README.md '## Модулиуд'", first_list(
+            slice_block(lreadme, "\n## Модулиуд (volatility-ийн дарааллаар)\n", "\nХамрах"),
+            "linux/README.md '## Модулиуд (volatility-ийн дарааллаар)'"), lin),
     ):
         if listed_mods is None:
             continue

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Check that the two language halves of README.md have the same STRUCTURE.
+"""Check that the two language halves of a bilingual README have the same
+STRUCTURE.
 
 Both halves are hand-maintained, and in practice one gets updated and the other
 forgotten -- this repo's git history carries several "fix the stale Mongolian
@@ -9,8 +10,14 @@ section added on one side belongs on the other too.
 
 Compared: heading counts per level, table rows, fenced code blocks.
 
-Usage:  python3 scripts/check-readme-parity.py [README.md]
+Usage:  python3 .github/scripts/check_readme_parity.py [README.md]
+        python3 .github/scripts/check_readme_parity.py linux/README.md
 Exit :  0 in sync, 1 drifted, 2 could not read the file / find the sections.
+
+The accepted asymmetry is PER FILE (see ACCEPTED_DELTA): README.md carries a
+recorded English-only surplus, linux/README.md is a 1:1 mirror. A file that is
+not listed is held to an exact mirror, which is the right default -- a new
+bilingual document should not inherit another one's backlog.
 """
 
 import re
@@ -70,11 +77,27 @@ LABELS = {
 # The version history is deliberately last in the queue: docs/TRANSLATION_NEEDED.md
 # ranks translating past release notes below every operator-facing document, and
 # linux/README.md above all of them.
-ACCEPTED_DELTA = {
-    "headings": 10,      # EN 35 vs MN 25 -- the condensed changelog + Legal
-    "table_rows": 0,     # in sync
-    "code_blocks": 0,    # in sync
+# Keyed by the file's repo-relative path. A file that is NOT listed is held to
+# an exact mirror (all zeros), so a new bilingual document starts with no
+# backlog instead of silently inheriting this one's.
+ACCEPTED_DELTA_BY_FILE = {
+    "README.md": {
+        "headings": 10,      # EN 35 vs MN 25 -- the condensed changelog + Legal
+        "table_rows": 0,     # in sync
+        "code_blocks": 0,    # in sync
+    },
+    # Written 2026-09-30 as a full mirror: the Linux collector had no Mongolian
+    # documentation at all, which docs/TRANSLATION_NEEDED.md called the largest
+    # genuine gap in the repo -- a Mongolian-speaking responder on a Linux host
+    # was the only user of this toolkit with nothing in their language. Starting
+    # it at zero is the point; there is no backlog to record.
+    "linux/README.md": {
+        "headings": 0,
+        "table_rows": 0,
+        "code_blocks": 0,
+    },
 }
+NO_DELTA = {k: 0 for k in LABELS}
 
 
 def measure(body: str) -> dict:
@@ -101,6 +124,14 @@ def main(argv) -> int:
         print("check-readme-parity: no such file: %s" % path, file=sys.stderr)
         return 2
 
+    # The baseline is per file. Look it up by the repo-relative path so that
+    # "linux/README.md" and "./linux/README.md" resolve to the same entry.
+    try:
+        key = path.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        key = path.as_posix()
+    accepted = ACCEPTED_DELTA_BY_FILE.get(key, NO_DELTA)
+
     src = path.read_text(encoding="utf-8")
     m = MN_HEADING.search(src)
     if not m:
@@ -118,8 +149,8 @@ def main(argv) -> int:
 
     # Discount the recorded English-only sections, and verify each one is really
     # still there -- a stale allowlist entry would quietly mask new drift.
-    for key, delta in ACCEPTED_DELTA.items():
-        en[key] -= delta
+    for k, delta in accepted.items():
+        en[k] -= delta
 
     problems = [
         "  %-16s EN=%-4d MN=%-4d (differ by %d)" % (LABELS[k], en[k], mn[k], abs(en[k] - mn[k]))
@@ -132,25 +163,26 @@ def main(argv) -> int:
     )
 
     if not problems:
+        surplus = ", ".join("%s=%d" % (k, v) for k, v in accepted.items() if v)
         print(
-            "check-readme-parity: OK -- structure matches the recorded baseline "
-            "(accepted English-only surplus: %s)"
-            % ", ".join("%s=%d" % (k, v) for k, v in ACCEPTED_DELTA.items() if v)
+            "check-readme-parity: %s OK -- %s"
+            % (key, ("accepted English-only surplus: " + surplus) if surplus
+               else "the two halves are an exact mirror")
         )
         print(summary)
         return 0
 
     print(
-        "check-readme-parity: THE TWO LANGUAGE HALVES MOVED APART FROM THE "
-        "RECORDED BASELINE",
+        "check-readme-parity: %s -- THE TWO LANGUAGE HALVES MOVED APART FROM "
+        "THE RECORDED BASELINE" % key,
         file=sys.stderr,
     )
     print("\n".join(problems), file=sys.stderr)
     print(
         "\n  A section, table or code block added on one side belongs on the other.\n"
         "  Do NOT machine-translate: the Mongolian half is written, not generated.\n"
-        "  If the new asymmetry is deliberate, update ACCEPTED_DELTA in this script\n"
-        "  and say why in the commit message.\n"
+        "  If the new asymmetry is deliberate, update this file's entry in\n"
+        "  ACCEPTED_DELTA_BY_FILE and say why in the commit message.\n"
         + summary,
         file=sys.stderr,
     )

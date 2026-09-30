@@ -169,3 +169,172 @@ MIT (see repository `LICENSE`).
 ## Author
 
 **Enkhbat.O** — Security Analyst
+
+---
+
+<a id="монгол"></a>
+
+## 🇲🇳 Монгол хувилбар
+
+> Хурдан, нэг файлтай, read-only-first Linux DFIR triage — Windows edition-тэй ижил гаралттай.
+
+`tatar-linux.sh` бол Windows-ийн `Tatar.ps1` collector-ийн Linux хос. Linux хостыг хурдан, read-only-first байдлаар triage хийж, Windows edition-тэй **яг ижил, шинжээч-төвтэй гаралт** үүсгэнэ — `summary.json` schema нь ижил тул Windows, Linux хостын finding нэг л SIEM / pipeline руу ордог.
+
+Ганц Bash файл, суулгах шаардлагагүй, coreutils-аас өөр хамааралгүй. Хост дээр (эсвэл USB-д) хуулж аваад шууд ажиллуулна.
+
+---
+
+## Шаардлага
+
+- Bash 4+ (5.x зөвлөнө) ба стандарт coreutils
+- Debian / Ubuntu **эсвэл** RHEL / CentOS / Fedora (бусад distro ихэвчлэн бас ажиллана)
+- **root** зөвлөж байна — зарим artifact (`/etc/shadow`, процессын бүтэн exe link, бүх лог) эрх шаарддаг
+- Сонголтоор: `python3` (зөвхөн JSON-ийг цэвэр escape хийхэд ашиглана; `sed` fallback дотор нь бий)
+
+---
+
+## Ашиглах
+
+```bash
+# нэг удаа executable болгоно
+chmod +x tatar-linux.sh
+
+# бүгдийг ажиллуулах (volatility-ийн дарааллаар)
+sudo ./tatar-linux.sh --all
+
+# модулиудыг харах (цуглуулга хийхгүй)
+./tatar-linux.sh --list
+
+# диск хүрэхээс өмнө төлөвлөгөөг шалгах: гаралтын зам, модулийн дараалал, аль
+# gated үйлдэл асаалттай, allowlist / IOC уншигдаж байгаа эсэх. Юу ч бичихгүй.
+sudo ./tatar-linux.sh --all --dry-run --output /mnt/usb/evidence --allowlist allowlist.json
+
+# зөвхөн сонгосон модулиуд
+sudo ./tatar-linux.sh --modules network,process,persistence,sshkeys
+
+# гадаад зөөвөрлөгч рүү бүтэн run, case мета, шахаж хэшлэсэн
+sudo ./tatar-linux.sh --all --output /mnt/usb/evidence \
+     --caseid IR-2026-014 --examiner "Enkhbat.O" --compress
+
+# v1.2: allowlist-ээр дуу чимээг тайрч, нотолгоог IOC feed-тэй тулгана
+sudo ./tatar-linux.sh --all --allowlist allowlist.json --ioc ioc.json --output /mnt/usb/evidence
+
+# автомат / алсын run: консол гаралтгүй, exit code-оор шалгана
+sudo ./tatar-linux.sh --all --silent --output /mnt/usb/evidence
+if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
+```
+
+### Флагууд
+
+| Флаг | Тайлбар |
+|--------|-------------|
+| `--all` | Бүх модулийг ажиллуулна |
+| `--modules a,b,c` | Зөвхөн нэрлэсэн модулиудыг ажиллуулна |
+| `--list` | Модулиудыг жагсаагаад гарна |
+| `--help` | Тусламж хэвлээд гарна |
+| `--output <зам>` | Гаралтын үндсэн хавтас (default `/tmp/forensic`; **гадаад зөөвөрлөгчийг илүүд үз**) |
+| `--caseid <id>` | Chain of custody-д бичих case / incident ID |
+| `--examiner <нэр>` | Chain of custody-д бичих шинжээчийн нэр |
+| `--compress` | Төгсгөлд нь гаралтыг `tar.gz` болгож SHA-256 авна |
+| `--silent` / `--quiet` | Консолын **бүх** гаралтыг дарна (SSH / cron / алсын run-д) |
+| `--dry-run` / `--preview` | Тодорхойлсон гаралтын хавтас, модулиудыг ажиллах дарааллаар нь, аль gated үйлдэл асаалттайг, allowlist / IOC feed уншигдаж байгаа эсэхийг хэвлээд `0`-ээр гарна — **юу ч үүсгэхгүй, юу ч бичихгүй** |
+| `--dump-deleted` | Ажиллаж байгаа устгагдсан binary-г `/proc/PID/exe`-ээс сэргээнэ (opt-in; **default-оор унтраалттай**, read-only-first) |
+| `--allowlist <json>` | **v1.2** Мэдэгдэж байгаа цэвэр finding-ийг зам, SHA-256, эсвэл dpkg/rpm багцын эзэмшлээр нууна (доор үз) |
+| `--ioc <json>` | **v1.2** Finding болон цуглуулсан нотолгоог офлайн IOC feed-тэй тулгана (доор үз) |
+
+### Exit code
+
+| Code | Утга |
+|------|---------|
+| `0` | Цуглуулга амжилттай дууссан |
+| `1` | Fatal / usage алдаа (юу ч сонгоогүй, утга шаардах флаг утгагүй, гаралтын хавтас үүсгэж чадаагүй, хүчинтэй модуль алга) |
+| `2` | Цуглуулга дууссан ч нэг буюу хэд хэдэн алхам алдаа бүртгүүлсэн — `tatar.log`-ийг шалга. Уншигдахгүй `--allowlist` / `--ioc` зам, танигдахгүй флаг, байхгүй модулийн нэр энд унана. |
+
+---
+
+## Модулиуд (volatility-ийн дарааллаар)
+
+`sysinfo` · `network` · `process` · `sessions` · `users` · `services` · `persistence` · `apps` · `suid` · `sshkeys` · `bashhistory` · `kernelmods` · `indicators` · `hashes` · `logs` · `timeline` · `containers` · `integrity`
+
+Хамрах хүрээ: систем/kernel мэдээлэл, сүлжээний socket · routing · DNS, **`/tmp`-ээс ажиллаж буй ба устгагдсан binary-г илрүүлдэг** process tree, нэвтрэлт (`who`/`last`/`lastb`, auth лог), хэрэглэгч/бүлэг/sudo (**UID-0 ба хоосон нууц үгийн шалгалт**), systemd service ба enabled unit, persistence (cron, systemd timer, `rc.local`, profile скрипт), суулгасан багц (`dpkg`/`rpm`), **SUID/SGID** жагсаалт, SSH түлхүүр ба `sshd_config`, shell history, kernel модуль ба taint, сэжигтэй индикатор (бүгд бичиж чадах системийн файл, `/tmp`·`/dev/shm`·`/var/tmp` доторх exec, `/etc`-д саяхан орсон өөрчлөлт, immutable файл), ажиллаж буй binary-ийн SHA-256, чухал логийн хуулбар, файлын өөрчлөлтийн хөнгөн timeline. **v1.1**-д container / cloud context (`containers`), критикал файлын SHA-256 integrity baseline (`integrity`), established холболтын тоо, ажиллаж байгаа устгагдсан binary-г сэргээх сонголт (`--dump-deleted`) нэмэгдсэн.
+
+---
+
+## Allowlist ба IOC (v1.2)
+
+Хоёр нэмэлт JSON оролт, хоёул офлайн. Жишээ файлууд repository-ийн үндсэн хавтсанд байна: [`allowlist.sample.json`](../allowlist.sample.json) ба [`ioc.sample.json`](../ioc.sample.json).
+
+**`--allowlist <json>`** нь мэдэгдэж байгаа цэвэр finding-ийг `suppressed` гэж тэмдэглэнэ — тэдгээр нь `suppressReason`-тойгоо `summary.json` / `findings.json`-д аудитын төлөө үлдэх ба зөвхөн үндсэн жагсаалтаас гарна. Тулгалт нь `paths[]` (glob, жишээ нь `/usr/lib/*`), `hashes[]` (binary-ийн SHA-256), эсвэл `"packageOwned": true` үед finding-ийн binary-г `dpkg -S` / `rpm -qf` эзэмшдэг эсэхээр (vendor-д итгэсэн) явагдана. Windows-д л хамаарах `publishers[]` түлхүүрийг Linux дээр үл тоомсорлоно — тиймээс нэг allowlist файл хоёр edition-д хоёуланд нь тохирно.
+
+**`--ioc <json>`** бол known-bad feed: `hashes[]` (зөвхөн SHA-256), `ips[]`, `domains[]`, `filenames[]`. *Pass A* нь одоо байгаа finding-уудыг `iocMatch`-аар тэмдэглэнэ; IOC таарвал **allowlist-ийг давж**, нууцалсан finding дахин идэвхжиж `High` / confidence `0.95` болно. *Pass B* нь цуглуулсан нотолгооны хаанаас ч (процесс, socket, хэшлэсэн binary, timeline) олдсон IOC-д зориулж шинэ finding үүсгэх ба Pass A-тай давхцуулахгүй, technique-ийг indicator-ийн төрлөөр тавина — IP → `T1071`, domain → `T1071.004`, filename → `T1204.002`, hash → `T1588.001`.
+
+Хоёр замыг **цуглуулга эхлэхээс өмнө** шалгана. Уншигдахгүй замыг чимээгүй өнгөрөөхгүй: консол дээр сануулж, error бүртгэж, exit code-ийг `2` болгоно.
+
+Finding нь өөрийн нэрлэсэн **бүх** зам цэвэр гэж батлагдсан үед л suppressed болно. Нэг л token-оор дүгнэдэг байсан үед `/tmp` доторх файлуудын тухай нэгтгэсэн finding далдлагдаж байсан — учир нь `dpkg -S /tmp` нь `base-files` гэж хариулдаг; одоо хавтас багцын эзэмшлийн дүрмийг хэзээ ч хангахгүй.
+
+Finding-ууд v2 талбаруудыг (`id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`) авч явах ба summary-д `activeFindingsCount` / `suppressedCount` нэмэгдэнэ (`schemaVersion 1.2`, хуучинтайгаа нийцтэй).
+
+---
+## Гаралт
+
+```
+<output>/<host>_<YYYY-MM-DD_HH-MM-SS>/
+├─ TATAR_Report_<host>_<stamp>.txt   # нэгдсэн, хүн уншихад зориулсан тайлан
+├─ summary.txt                       # шинжээч-төвтэй triage дүгнэлт + findings
+├─ summary.json                      # машин уншихуйц (нэгдсэн schema, SIEM/автоматжуулалт)
+├─ findings.json                     # findings-only feed (SOAR / SIEM)
+├─ tatar.log                         # гүйцэтгэлийн лог: START/OK/WARN/FAILED (manifest-д ороогүй)
+│                                    # FAILED = тухайн модулийн үндсэн artifact ДУТУУ байна
+├─ chain_of_custody.txt              # case / examiner / цаг / скриптийн SHA-256
+├─ manifest_sha256.txt               # цуглуулсан файл бүрийн SHA-256
+├─ binary_hashes.txt                 # ажиллаж буй binary-ийн SHA-256 (VT/IOC)
+├─ timeline.csv                      # саяхны файлын өөрчлөлт
+└─ logs/                             # уншигдахаар байсан auth/syslog/wtmp/btmp-ийн хуулбар
+```
+
+`summary.json` нь Windows edition-тэйгээ таарна (`platform`, `host`, `os`, `stats`, `severity/category/message/detail` ба v2 талбарууд `id/confidence/suppressed/suppressReason/iocMatch`-тай `findings[]`) — тиймээс нэг parser хоёуланг уншина: `stats`-ийн түлхүүрүүд болон тэдгээрийн тоон төрөл хоёр платформ дээр ижил, мөн хоёр edition `manifest_sha256.txt`, `binary_hashes.txt`, `tatar.log`-ийг ижил нэрээр, ижил форматаар бичнэ. Schema: [`schema/summary.schema.json`](../schema/summary.schema.json), SOAR feed-д нь [`schema/findings.schema.json`](../schema/findings.schema.json).
+
+---
+
+## Finding бол сэжүүр, эцсийн дүгнэлт биш
+
+Нэгтгэсэн **сэжигтэй finding**-үүдийн жагсаалт нь эвристик pattern match дээр тогтдог — UID-0 account, хоосон нууц үг, `/tmp`-ээс эсвэл устгагдсан binary-аас ажиллаж буй процесс, стандарт замаас гадуурх SUID, сэжигтэй cron/history команд, `root`-ийн `authorized_keys`, бүгд бичиж чадах системийн файл гэх мэт. Хууль ёсны программ, админы ердийн ажил ч эдгээрийг мөн асааж болно. **Дүгнэлт гаргахаасаа өмнө сэжүүр бүрийг бүтэн тайлантай тулгаж үргэлж баталгаажуул.**
+
+---
+
+## MITRE ATT&CK (түүвэр)
+
+| Модуль / artifact | Technique |
+|---|---|
+| `process` (`/tmp`-ээс ажиллаж буй, устгагдсан binary) | T1059 · T1620 (reflective/fileless) |
+| `persistence` (cron / systemd / rc.local) | T1053.003 · T1053.006 · T1037 |
+| `users` (UID 0 / хоосон нууц үг) | T1136 · T1078 |
+| `suid` | T1548.001 (setuid/setgid) |
+| `sshkeys` (authorized_keys) | T1098.004 |
+| `bashhistory` | T1552.003 |
+| `indicators` (бүгд бичиж чадах, `/tmp` доторх exec) | T1036 · T1222 |
+| `network` / `/etc/hosts` | T1071 · T1565.001 |
+
+---
+
+## Анхаарах зүйлс
+
+- **Гадаад зөөвөрлөгч рүү бичихийг зөвлөнө** (`--output /mnt/usb/evidence`). Хостын диск рүү бичвэл устсан файлын ул мөрийг дарж бичиж болзошгүй.
+- Цуглуулга дуусахаас өмнө хостыг **restart хийхгүй**.
+- Гаралт нь эмзэг мэдээлэл (лог, түлхүүр, history) агуулж болзошгүй. Шифрлэж, аюулгүй дамжуул.
+- Ил тод байхаар зохиогдсон — скриптийг нь уншиж шалга, SHA-256-ийг нь нийтэл, EDR/AV-гаа унтраах биш allow-list хий.
+
+## Хязгаарлалт
+
+- Үндсэн triage хүрээ (18 модуль); бүрэн super-timeline, санах ойн acquisition хараахан биш.
+- `$MFT`-тэй дүйцэхүйц гүн файлын системийн parse хийхгүй (түүнд тусгай хэрэгсэл ашигла).
+- Domain / LDAP-д холбогдсон хост: зөвхөн локал `/etc/passwd` (directory enumeration хийхгүй).
+- RHEL-ийн логийн зам (`/var/log/secure`, `/var/log/messages`) ба `rpm`-ийг дэмжинэ; маш хуучин / минимал distro дээр зарим хэрэгсэл байхгүй байж болно (тухайн алхам эвтэйхэн доройтож, лог дээр бүртгэгдэнэ).
+
+## Лиценз
+
+MIT (repository-ийн `LICENSE`-г үзнэ үү).
+
+## Зохиогч
+
+**Enkhbat.O** — Security Analyst

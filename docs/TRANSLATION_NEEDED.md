@@ -18,10 +18,10 @@ count.
 
 | Section | File | Words | Note |
 |---|---|---:|---|
-| *(whole file)* | `linux/README.md` | 1,360 | **The Linux collector has no Mongolian documentation at all.** The Windows side is covered by the README's `Монгол хувилбар` half; the Linux collector's usage, modules, flags and output contract exist only in English. This is the largest genuine gap in the repo. |
-| *(whole file)* | `docs/MITRE_ATTACK.md` | 940 | The technique mapping an analyst consults to interpret a finding. Mostly tables of IDs and short descriptions, so it is smaller than the count suggests. |
+| ~~*(whole file)*~~ | ~~`linux/README.md`~~ | ~~1,360~~ | **DONE — written 2026-09-30.** The file now carries a full `🇲🇳 Монгол хувилбар` half: requirements, usage, the flag table, exit codes, the module list, allowlist/IOC, the output tree, the leads-not-verdicts warning, the ATT&CK table, handling notes and limitations. Held to an **exact mirror** — no accepted delta — by `.github/scripts/check_readme_parity.py linux/README.md`, and its Mongolian module list is checked against `MOD_NAMES` by `check_docs_parity.py`. Both run in CI. |
+| *(whole file)* | `docs/MITRE_ATTACK.md` | 940 | The technique mapping an analyst consults to interpret a finding. Mostly tables of IDs and short descriptions, so it is smaller than the count suggests. **Now the highest-value gap left**, since the Linux README is done. |
 
-**Subtotal ≈ 2,300 words**, and the first 1,360 are the ones that matter.
+**Subtotal ≈ 940 words** remaining, down from ≈ 2,300.
 
 ## Medium — the recorded README backlog
 
@@ -69,8 +69,12 @@ copy of it, and `linux/README.md` is worth more than both.
 
 ## Deliberately *not* a gap
 
-- **`README.md`** and **`CONTRIBUTING.md`** carry Mongolian halves already; the
-  README's structure is gated in CI by `check_readme_parity.py`.
+- **`README.md`**, **`linux/README.md`** and **`CONTRIBUTING.md`** carry
+  Mongolian halves already; the two READMEs' structure is gated in CI by
+  `check_readme_parity.py`, which keeps a **per-file** baseline — `README.md`
+  has a recorded surplus, `linux/README.md` must stay an exact mirror, and a
+  bilingual file that is not listed is held to an exact mirror by default, so
+  the next one cannot inherit a backlog it did not earn.
 - **`SECURITY.md`** is already mixed Mongolian/English.
 - **`Tatar.ps1` and `linux/tatar-linux.sh` code comments** are English
   throughout, consistently, and were left that way — changing the convention is
@@ -78,6 +82,12 @@ copy of it, and `linux/README.md` is worth more than both.
 
 ## If you translate one thing
 
-`linux/README.md`. The Windows collector has Mongolian documentation and the
-Linux one has none, so a Mongolian-speaking responder on a Linux host is the
-only user of this toolkit with nothing in their language.
+~~`linux/README.md`.~~ **Done, 2026-09-30.** The Windows collector had Mongolian
+documentation and the Linux one had none, which left a Mongolian-speaking
+responder on a Linux host as the only user of this toolkit with nothing in
+their language. That is closed, and closed as an exact mirror rather than as a
+second backlog.
+
+Next: **`docs/MITRE_ATTACK.md`** — the document an analyst opens *after* a
+finding fires, to decide what it means. Both READMEs now point at it in
+Mongolian from a Mongolian sentence, and it answers in English.
