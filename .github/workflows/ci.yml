@@ -28,15 +28,8 @@ jobs:
           test -s "$d/summary.json"   || { echo "summary.json missing"; exit 1; }
           test -s "$d/findings.json"  || { echo "findings.json missing"; exit 1; }
           python3 -m pip install --quiet jsonschema
-          python3 - "$d/summary.json" schema/summary.schema.json <<'PY'
-          import json, sys
-          from jsonschema import validate
-          inst   = json.load(open(sys.argv[1], encoding="utf-8"))
-          schema = json.load(open(sys.argv[2], encoding="utf-8"))
-          validate(instance=inst, schema=schema)
-          print("OK: summary.json validates against schema", inst.get("schemaVersion"))
-          PY
-          python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8')); print('OK: findings.json is valid JSON')" "$d/findings.json"
+          python3 .github/scripts/validate_summary.py "$d/summary.json"  schema/summary.schema.json
+          python3 .github/scripts/validate_summary.py "$d/findings.json" schema/findings.schema.json
 
       - name: Allowlist + IOC run (v1.2 engines) + schema validation
         run: |
@@ -44,24 +37,14 @@ jobs:
               --allowlist allowlist.sample.json --ioc ioc.sample.json --output /tmp/tt2 || true
           d="$(find /tmp/tt2 -mindepth 1 -maxdepth 1 -type d | head -n1)"
           test -s "$d/summary.json" || { echo "summary.json missing (allowlist/ioc run)"; exit 1; }
-          python3 - "$d/summary.json" schema/summary.schema.json <<'PY'
-          import json, sys
-          from jsonschema import validate
-          inst   = json.load(open(sys.argv[1], encoding="utf-8"))
-          schema = json.load(open(sys.argv[2], encoding="utf-8"))
-          validate(instance=inst, schema=schema)
-          assert inst["schemaVersion"] == "1.2", inst["schemaVersion"]
-          for k in ("activeFindingsCount", "suppressedCount"):
-              assert k in inst, f"missing {k}"
-          assert inst["activeFindingsCount"] + inst["suppressedCount"] == len(inst["findings"]), "active+suppressed != findings"
-          for f in inst["findings"]:
-              for k in ("id", "confidence", "suppressed"):
-                  assert k in f, f"finding without {k}: {f}"
-          print("OK: allowlist/ioc run validates; active=%d suppressed=%d" % (inst["activeFindingsCount"], inst["suppressedCount"]))
-          PY
+          python3 .github/scripts/validate_summary.py "$d/summary.json"  schema/summary.schema.json
+          python3 .github/scripts/validate_summary.py "$d/findings.json" schema/findings.schema.json
 
       - name: IOC boundary unit tests
         run: bash tests/test-ioc-boundary.sh
+
+      - name: Allowlist path-extraction unit tests
+        run: bash tests/test-allowlist-path.sh
 
       - name: Contract tests
         run: bash tests/run-tests.sh
@@ -71,6 +54,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The schema validator below is Python, and the hosted Windows image only
+      # guarantees `python` / `py -3` - there is no `python3` on PATH there. Pin
+      # an interpreter explicitly so the validation steps cannot take the whole
+      # Windows job red for a reason that has nothing to do with the collector.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
       - name: Parse check (0 syntax errors)
         shell: pwsh
@@ -102,6 +93,12 @@ jobs:
             Get-Content $fp -Raw | ConvertFrom-Json | Out-Null
             "OK: $f is valid JSON"
           }
+          # The flagship producer is held to the SAME schema as the Linux one,
+          # through the same script: until v1.2.6 only Linux was validated, so
+          # the Windows half of the "unified" contract was never checked.
+          python -m pip install --quiet jsonschema
+          python .github/scripts/validate_summary.py (Join-Path $d 'summary.json')  schema/summary.schema.json
+          python .github/scripts/validate_summary.py (Join-Path $d 'findings.json') schema/findings.schema.json
 
       - name: Allowlist + IOC run (v1.2 engines)
         shell: pwsh
@@ -114,12 +111,29 @@ jobs:
           if ($s.version -notmatch '^\d+\.\d+\.\d+$') { throw "tool version missing/invalid: $($s.version)" }
           if (($s.activeFindingsCount + $s.suppressedCount) -ne @($s.findings).Count) { throw 'active+suppressed != findings' }
           foreach ($f in @($s.findings)) { foreach ($k in 'id','confidence','suppressed') { if (-not ($f.PSObject.Properties.Name -contains $k)) { throw "finding without $k" } } }
+          python .github/scripts/validate_summary.py (Join-Path $d 'summary.json')  schema/summary.schema.json
+          python .github/scripts/validate_summary.py (Join-Path $d 'findings.json') schema/findings.schema.json
           "OK: allowlist/ioc run; version=$($s.version) active=$($s.activeFindingsCount) suppressed=$($s.suppressedCount)"
 
       - name: IOC boundary unit tests
         shell: pwsh
         run: pwsh -File tests/Test-IocBoundary.ps1
 
+      - name: Allowlist path-extraction unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-AllowlistPath.ps1
+
       - name: Contract tests
         shell: pwsh
         run: pwsh -File tests/Invoke-Tests.ps1
+
+  docs-parity:
+    name: Docs parity (badges / bilingual module lists / ATT&CK coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every fact this checks is derivable from the collectors, and the git
+      # history shows each one has already needed a dedicated repair commit.
+      - name: Docs match the code
+        run: python3 .github/scripts/check_docs_parity.py .

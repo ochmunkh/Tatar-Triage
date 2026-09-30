@@ -36,6 +36,10 @@ sudo ./tatar-linux.sh --all
 # list available modules (no collection)
 ./tatar-linux.sh --list
 
+# check the plan before touching the disk: output path, module order, armed
+# gated operations, allowlist / IOC readability. Writes nothing.
+sudo ./tatar-linux.sh --all --dry-run --output /mnt/usb/evidence --allowlist allowlist.json
+
 # run selected modules only
 sudo ./tatar-linux.sh --modules network,process,persistence,sshkeys
 
@@ -64,6 +68,7 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 | `--examiner <name>` | Examiner name for chain of custody |
 | `--compress` | `tar.gz` + SHA-256 the output at the end |
 | `--silent` / `--quiet` | Suppress **all** console output (SSH / cron / remote runs) |
+| `--dry-run` / `--preview` | Print the resolved output directory, the module list in run order, which gated operations are armed and whether the allowlist / IOC feeds can be read — then exit `0` **without creating or writing anything** |
 | `--dump-deleted` | Recover deleted running binaries via `/proc/PID/exe` (opt-in; **off by default**, read-only-first) |
 | `--allowlist <json>` | **v1.2** Suppress known-good findings by path glob, SHA-256 or dpkg/rpm package ownership (see below) |
 | `--ioc <json>` | **v1.2** Match findings and collected evidence against an offline IOC feed (see below) |
@@ -73,8 +78,8 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 | Code | Meaning |
 |------|---------|
 | `0` | Collection completed successfully |
-| `1` | Fatal / usage error (nothing selected, output dir cannot be created, no valid modules) |
-| `2` | Collection completed, but one or more steps logged errors — check `tatar.log`. An unreadable `--allowlist` / `--ioc` path lands here. |
+| `1` | Fatal / usage error (nothing selected, a value-taking flag with no value, output dir cannot be created, no valid modules) |
+| `2` | Collection completed, but one or more steps logged errors — check `tatar.log`. An unreadable `--allowlist` / `--ioc` path lands here, as does an unknown option or an unknown module name. |
 
 ---
 
@@ -96,6 +101,8 @@ Two optional JSON inputs, both offline. Sample files live in the repository root
 
 Both paths are checked **before collection starts**. A path that cannot be read is never skipped in silence: it warns on the console, is logged as an error, and forces exit code `2`.
 
+A finding is only suppressed when **every** path it names is known-good. Judging it by one token meant an aggregate about files in `/tmp` was hidden because `dpkg -S /tmp` answers `base-files`, and a directory now never satisfies the package-ownership rule.
+
 Findings carry the v2 fields `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`; summaries gain `activeFindingsCount` / `suppressedCount` (`schemaVersion 1.2`, backward compatible).
 
 ---
@@ -108,6 +115,7 @@ Findings carry the v2 fields `id`, `confidence`, `suppressed`, `suppressReason`,
 ├─ summary.json                      # machine-readable (unified schema, SIEM/automation)
 ├─ findings.json                     # findings-only feed for SOAR / SIEM
 ├─ tatar.log                         # execution log: START/OK/WARN/FAILED (excluded from manifest)
+│                                    # FAILED = that module's primary artifact is MISSING
 ├─ chain_of_custody.txt              # case / examiner / times / script SHA-256
 ├─ manifest_sha256.txt               # SHA-256 of every collected file
 ├─ binary_hashes.txt                 # SHA-256 of running binaries (VT/IOC)
@@ -115,7 +123,7 @@ Findings carry the v2 fields `id`, `confidence`, `suppressed`, `suppressReason`,
 └─ logs/                             # copied auth/syslog/wtmp/btmp where readable
 ```
 
-The `summary.json` matches the Windows edition (`platform`, `host`, `os`, `stats`, `findings[]` with `severity/category/message/detail` plus the v2 fields `id/confidence/suppressed/suppressReason/iocMatch`), so a single parser ingests both. Schema: [`schema/summary.schema.json`](../schema/summary.schema.json).
+The `summary.json` matches the Windows edition (`platform`, `host`, `os`, `stats`, `findings[]` with `severity/category/message/detail` plus the v2 fields `id/confidence/suppressed/suppressReason/iocMatch`), so a single parser ingests both: the `stats` keys and their numeric types are identical on the two platforms, and both editions write `manifest_sha256.txt`, `binary_hashes.txt` and `tatar.log` under the same names and in the same format. Schemas: [`schema/summary.schema.json`](../schema/summary.schema.json) and, for the SOAR feed, [`schema/findings.schema.json`](../schema/findings.schema.json).
 
 ---
 

@@ -4,6 +4,132 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+Closes the seams between the two editions. Nothing here changes what the
+collectors look for — it changes what they *promise*: the "unified" summary.json
+used six different key spellings for the same concepts, the Windows producer was
+never validated against the schema it is the flagship of, an unknown flag was
+swallowed by `-Silent`, and a value-less `--output` wrote the evidence tree to
+`/`. Version numbers are deliberately left alone; bump them at release time.
+
+### Fixed
+- **The evidence manifest never verified.** The consolidated report had its
+  closing `=== Collection finished ===` line appended *after* the manifest had
+  already hashed it, so one entry was wrong on every run, on both platforms.
+  Found while checking that the new Windows manifest is `sha256sum -c`-clean;
+  the trailer is now written before the manifest is built, and both suites
+  assert that every manifest hash still matches its file.
+- **A value-taking flag consumed the next token unguarded.** `--all --output`
+  left the output base empty and built the evidence tree at the filesystem
+  **root** of the suspect host — the one place the tool's own documentation says
+  never to write — and `--output --caseid IR-1` silently dropped the case id
+  from `chain_of_custody.txt` while the collection appeared to succeed. Both
+  editions now reject a missing value with `[x] FATAL: <flag> requires a value`
+  on stderr and exit `1`, the usage-error code the READMEs already document.
+  Windows had the missing-token half of this guard but not the next-token-is-a-
+  flag half: `-OutputPath -CaseId x` created a directory called `-CaseId`.
+- **summary.json was not actually unified.** Five concepts were spelled
+  differently per platform (`RecentFailedLogins`/`RecentFailedLogons`,
+  `LocalUsers`/`Accounts`, `Services`/`RunningServices`,
+  `RecentTempExecutables`/`ExecInTempDirs`, `TcpConnections` vs
+  `ListeningTcpPorts`+`EstablishedConnections`), and Linux quoted every counter
+  while Windows emitted native integers. One canonical key per concept now, a
+  JSON **number** on both platforms, and the agreed keys are listed in the
+  schema (`stats.x-canonicalStatKeys`) and asserted by both test suites, so a
+  seventh spelling cannot be invented by accident. Windows `tool` and Linux
+  `tool` are now the same string too — `platform` is the discriminator.
+- **The Linux collector never emitted the `FAILED` log level** its own header,
+  help text and `summary.txt` tell the analyst to grep for, and discarded every
+  module's exit code. A module that produced none of its evidence read as a
+  clean run, which turns missing evidence into apparent negative evidence. Every
+  `m_*` function now returns a deliberate status and the dispatcher logs
+  `FAILED` and counts an error when a module's primary artifact was not
+  produced. (Two modules end on a `grep` whose "no match" is exit 1, so the
+  naive version of this fix reported FAILED on every healthy host.)
+- **Unknown options and unknown module names were console-only warnings.**
+  `-Silent`/`--silent` exists for WinRM / cron runs where nobody is watching the
+  console — exactly when a misspelled `--modules netwrok` needs to be
+  discoverable. Both are now written to the execution log, counted as errors
+  (exit `2`) and reported in `summary.json` as `modulesSkipped[]`.
+- **The noisiest finding could not be reached by the allowlist.** The
+  temp-executables aggregate named no file, so on Windows no rule could ever
+  match it, and on Linux the only extracted token was the *directory* `/tmp` —
+  which `dpkg -S` reports as owned by `base-files`, so the shipped
+  `allowlist.sample.json` suppressed the whole finding for a reason that had
+  nothing to do with the files it counted. Both editions now put the first ten
+  real paths into `detail`, a finding is suppressed only when **every** path it
+  names is known-good, and a directory never satisfies package ownership.
+- Windows: `Get-LocalUser` was collected and never inspected, and the hosts file
+  was written to `hosts.txt` and never read back, while `docs/MITRE_ATTACK.md`
+  advertised a Windows hosts-tampering check and a non-existent `hosts` module.
+  The same incident produced a High finding on a Linux host and silence on a
+  Windows one.
+
+### Added
+- **`--dry-run` / `-DryRun`** (alias `--preview` / `-Preview`) on both editions:
+  prints the resolved output directory, whether it is on the system drive / root
+  filesystem, privilege status, the module list in run order, which gated
+  operations are armed (`-CollectHives`, `-MemoryDump`, `--dump-deleted`, …) and
+  whether the allowlist / IOC feeds can be read — then exits `0` **without
+  creating or writing anything**. Every one of those inputs was already computed;
+  it just ran after the output directory had been created, i.e. after the first
+  write to the disk the collector exists to preserve.
+- Windows findings for the two checks Linux already had: an enabled local
+  account with **no password required** (High, T1078) and members of local
+  **Administrators** other than the built-in RID-500 account (Review, T1078),
+  plus the `/etc/hosts` analogue — non-default entries in the Windows hosts file
+  (Review, T1565.001).
+- `schema/findings.schema.json` for the SOAR / SIEM feed, whose only check used
+  to be that it parses. Its `findings[]` definition is kept byte-identical to
+  `summary.schema.json` (asserted by `tests/run-tests.sh`) so it validates
+  standalone, and `activeFindingsCount` / `suppressedCount` are now *declared*
+  in both schemas — the `active + suppressed == findings` invariant was enforced
+  in four harnesses and documented in none.
+- `.github/scripts/validate_summary.py`, used by **both** CI jobs: the Windows
+  producer was previously only checked for being parseable JSON, so the flagship
+  collector was never held to the schema it anchors.
+- `docs-parity` CI job (`.github/scripts/check_docs_parity.py`): asserts the
+  module-count badges against the two module registries, that the English and
+  Mongolian module lists name the same modules, that every ATT&CK technique
+  a collector can emit has a row in `docs/MITRE_ATTACK.md` (one-directional —
+  the doc also maps evidence for techniques no finding raises, by design), and
+  that every name in an ATT&CK **Module** column is a real module — the Linux
+  table listed the finding *category* `context` as if it were a module while
+  `containers`, which actually raises it, appeared nowhere, and a technique-id
+  diff cannot see that.
+- `tests/test-allowlist-path.sh` + `tests/Test-AllowlistPath.ps1` over a shared
+  `tests/fixtures/allowlist-path-cases.tsv`: the path extractors decide which
+  files an allowlist can reach at all, and nothing tested them. The table also
+  locks in the warts it found (a URL, a cron schedule and a trailing period all
+  yield tokens) so they cannot change unnoticed.
+- Regression tests on both platforms for the value-less flag (exit 1, nothing
+  written to `/`), the swallowed unknown option / module (exit 2, logged,
+  `modulesSkipped[]`) and the dry run (exit 0, no directory created), plus
+  assertions that a healthy run logs no `FAILED` module and that the manifest
+  it wrote actually verifies.
+- `tests/fixtures/allowlist-positive.json` and a Linux end-to-end test that
+  **raises a finding on purpose** (a process running from `/tmp`) and requires
+  the allowlist to suppress it. Every suppression assertion in the suite used to
+  hold trivially while `suppressedCount` was 0, so the entire v1.2 allowlist
+  engine could have degraded to a no-op with the suite still green.
+
+### Changed
+- **Windows output artifacts are renamed and reformatted for parity** — update
+  any pipeline that globs them: `manifest_sha256.csv` → `manifest_sha256.txt`
+  in `sha256sum` format (LF, no BOM, `<hash>  ./<relative path>`, so
+  `sha256sum -c manifest_sha256.txt` now verifies a Windows evidence folder as
+  well as a Linux one), `binary_hashes.csv` → `binary_hashes.txt`, and
+  `Tatar.log` → `tatar.log` (the two spellings collided when an analyst merged
+  a Windows and a Linux output folder).
+- `Add-Finding` / `add_finding` now fail loudly on an unknown severity instead of
+  silently assigning confidence `0.3` — a value no collector emits and both
+  suites reject, which is why `0.3` is also gone from their allowed sets. `Info`
+  stays in the schema enum as the consumer-facing contract, with a description
+  saying the shipped collectors emit only `High` and `Review`.
+- `docs/banner.src.svg` (was `banner.svg`, referenced by nothing) is documented
+  in CONTRIBUTING as the editable source for `banner.png`.
+
 ## [1.2.5] — 2026-09-28
 
 Fixes four ways the collector could quietly do less than it was asked to. Found

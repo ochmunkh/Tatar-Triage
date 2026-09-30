@@ -19,7 +19,7 @@
     v1.1 additions:
       * summary.txt / summary.json - analyst-first triage summary with an
         aggregated "Suspicious findings" list (leads for REVIEW, not verdicts).
-      * Tatar.log - timestamped execution log (START/OK/WARN/FAILED per module).
+      * tatar.log - timestamped execution log (START/OK/WARN/FAILED per module).
       * -Silent - suppress all console output (banner, progress, status lines)
         for WinRM / scheduled / automated runs. Exit codes: 0 = success,
         1 = fatal / usage error, 2 = completed with collection errors.
@@ -66,7 +66,7 @@
 
 .PARAMETER Silent
     Suppress ALL console output (banner, progress bar, status lines). Everything
-    is still written to files, including Tatar.log. Use for WinRM / scheduled /
+    is still written to files, including tatar.log. Use for WinRM / scheduled /
     remote automation. Alias: -Quiet.
 
 .EXAMPLE
@@ -76,7 +76,7 @@
     .\Tatar.ps1 -Modules network,process,rdp,lateral
 
 .EXAMPLE
-    .\Tatar.ps1 -All -Silent -OutputPath E:\Evidence; if ($LASTEXITCODE -ne 0) { "check Tatar.log" }
+    .\Tatar.ps1 -All -Silent -OutputPath E:\Evidence; if ($LASTEXITCODE -ne 0) { "check tatar.log" }
 
 .EXAMPLE
     .\Tatar.ps1 -List
@@ -84,7 +84,7 @@
 .NOTES
     Author : Enkhbat.O (Security Analyst)  |  TATAR Triage Toolkit v1.2.5
     Requires: Windows 10/11, PowerShell 5.1+ (PS7 compatible). Run as Administrator.
-    Exit codes: 0 = success | 1 = fatal / usage error | 2 = completed with errors (see Tatar.log).
+    Exit codes: 0 = success | 1 = fatal / usage error | 2 = completed with errors (see tatar.log).
     This tool does NOT extract or decrypt saved passwords.
 #>
 
@@ -98,12 +98,30 @@ $ErrorActionPreference = 'Continue'
 $script:ToolVersion = '1.2.5'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
-$All=$false; $List=$false; $Help=$false; $Compress=$false
+$All=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
 $CollectHives=$false; $ExportEvtx=$false; $MemoryDump=$false; $Silent=$false
 $Modules=@(); $OutputPath='C:\Forensic'; $CaseId=''; $Examiner=''; $Allowlist=''; $IOCFile=''; $UnknownOpts=@()
+
+function Read-ArgValue {
+    # A value-taking flag must be followed by an actual value, not by the next
+    # flag and not by nothing at all: '-OutputPath -CaseId IR-1' used to set
+    # $OutputPath = '-CaseId' and then create a directory with that name, and a
+    # trailing '-Modules' silently selected nothing. The usage error goes to
+    # stderr and exits 1 even under -Silent - a WinRM / scheduled run must not
+    # fail mutely - which is the '1 = fatal / usage error' code the README documents.
+    param([string]$Flag, [object]$Value)
+    $v = if ($null -eq $Value) { '' } else { [string]$Value }
+    if ($v -eq '' -or $v.StartsWith('-')) {
+        [Console]::Error.WriteLine("[x] FATAL: $Flag requires a value")
+        exit 1
+    }
+    return $v
+}
+
 for ($k = 0; $k -lt $args.Count; $k++) {
     $tok  = [string]$args[$k]
     $name = $tok.TrimStart('-','/').ToLower()
+    $next = if ($k+1 -lt $args.Count) { $args[$k+1] } else { $null }
     switch ($name) {
         'all'          { $All = $true }
         'list'         { $List = $true }
@@ -117,13 +135,16 @@ for ($k = 0; $k -lt $args.Count; $k++) {
         'silent'       { $Silent = $true }
         'quiet'        { $Silent = $true }
         'q'            { $Silent = $true }
-        'modules'      { if ($k+1 -lt $args.Count) { $Modules = ([string]$args[++$k] -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) } }
-        'outputpath'   { if ($k+1 -lt $args.Count) { $OutputPath = [string]$args[++$k] } }
-        'caseid'       { if ($k+1 -lt $args.Count) { $CaseId = [string]$args[++$k] } }
-        'examiner'     { if ($k+1 -lt $args.Count) { $Examiner = [string]$args[++$k] } }
-        'allowlist'    { if ($k+1 -lt $args.Count) { $Allowlist = [string]$args[++$k] } }
-        'iocfile'      { if ($k+1 -lt $args.Count) { $IOCFile = [string]$args[++$k] } }
-        'ioc'          { if ($k+1 -lt $args.Count) { $IOCFile = [string]$args[++$k] } }
+        'dryrun'       { $DryRun = $true }
+        'dry-run'      { $DryRun = $true }
+        'preview'      { $DryRun = $true }
+        'modules'      { $Modules = ((Read-ArgValue $tok $next) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }); $k++ }
+        'outputpath'   { $OutputPath = Read-ArgValue $tok $next; $k++ }
+        'caseid'       { $CaseId     = Read-ArgValue $tok $next; $k++ }
+        'examiner'     { $Examiner   = Read-ArgValue $tok $next; $k++ }
+        'allowlist'    { $Allowlist  = Read-ArgValue $tok $next; $k++ }
+        'iocfile'      { $IOCFile    = Read-ArgValue $tok $next; $k++ }
+        'ioc'          { $IOCFile    = Read-ArgValue $tok $next; $k++ }
         default        { $UnknownOpts += $tok }
     }
 }
@@ -136,6 +157,7 @@ $script:ErrorCount = 0
 $script:ExecLog    = $null
 $script:Findings   = New-Object System.Collections.Generic.List[object]
 $script:Stats      = [ordered]@{}
+$script:ModulesSkipped = New-Object System.Collections.Generic.List[string]
 
 function Write-Console {
     # Console output wrapper: fully suppressed by -Silent. File output is never affected.
@@ -144,7 +166,7 @@ function Write-Console {
 }
 
 function Write-ExecLog {
-    # P4: execution log (Tatar.log). Levels: INFO / START / OK / WARN / FAILED / ERROR / FATAL
+    # P4: execution log (tatar.log). Levels: INFO / START / OK / WARN / FAILED / ERROR / FATAL
     param([string]$Level, [string]$Msg)
     if (-not $script:ExecLog) { return }
     $t = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
@@ -167,6 +189,8 @@ function Get-Technique {
             else { return @('T1059') }
         }
         'sessions'   { return @('T1110') }
+        'users'      { return @('T1078') }
+        'network'    { return @('T1565.001') }
         'obfscan'    { return @('T1027','T1140') }
         'lateral'    {
             if ($Message -match 'PsExec') { return @('T1569.002','T1021.002') }
@@ -202,8 +226,16 @@ function Add-Finding {
     # P3: aggregated suspicious findings. LEADS for analyst review, NOT verdicts.
     param([string]$Severity = 'Review', [string]$Category, [string]$Message, [string]$Detail = '', [string[]]$Technique)
     if (-not $Technique -or $Technique.Count -eq 0) { $Technique = Get-Technique -Category $Category -Message $Message }
+    # An unknown severity used to become confidence 0.3 in silence - a value no
+    # collector emits and both test suites reject. Fail at the call site instead
+    # of shipping a finding the contract does not allow. (Checked before the id
+    # is issued, so a rejected call does not leave a gap in the TTR-F sequence.)
+    $conf = switch ($Severity) {
+        'High'   { 0.7 }
+        'Review' { 0.4 }
+        default  { throw "Add-Finding: unknown severity '$Severity' (expected High or Review)" }
+    }
     $script:FindingSeq++
-    $conf = switch ($Severity) { 'High' { 0.7 } 'Review' { 0.4 } default { 0.3 } }
     $script:Findings.Add([pscustomobject]@{
         id             = ('TTR-F-{0:D3}' -f $script:FindingSeq)
         severity       = $Severity
@@ -246,6 +278,7 @@ TATAR Triage Toolkit v$($script:ToolVersion) - Windows quick triage collector
 USAGE:
   .\Tatar.ps1 -All                          Run all modules (order of volatility)
   .\Tatar.ps1 -Modules net,process,rdp      Run selected modules
+  .\Tatar.ps1 -All -DryRun                  Preview the plan; write nothing
   .\Tatar.ps1 -List                         List available modules
   .\Tatar.ps1 -Help                         Show this help
 
@@ -258,17 +291,21 @@ OPTIONS:
   -ExportEvtx          Export full .evtx logs
   -MemoryDump          Raw memory image via tools\winpmem.exe (may trigger EDR)
   -Silent              No console output (for WinRM/scheduled runs). Alias: -Quiet
+  -DryRun              Show output dir, module order, gated ops and feed verdicts,
+                       then exit 0 without creating or writing anything. Alias: -Preview
   -Allowlist <json>    Suppress known-good findings (paths[], publishers[], hashes[])
   -IOCFile <json>      Match findings/evidence vs IOCs (hashes[],ips[],domains[],filenames[])
 
 OUTPUT EXTRAS (always written):
   summary.txt / summary.json   Analyst-first triage summary + aggregated findings
-  Tatar.log                    Timestamped execution log (START/OK/WARN/FAILED)
+  tatar.log                    Timestamped execution log (START/OK/WARN/FAILED)
+  manifest_sha256.txt          SHA-256 of every collected file (sha256sum -c format)
 
 EXIT CODES:
-  0 = success   1 = fatal / usage error   2 = completed with errors (see Tatar.log)
+  0 = success   1 = fatal / usage error   2 = completed with errors (see tatar.log)
 
 NOTES:
+  * A value-taking flag rejects a missing value: -OutputPath with no path exits 1.
   * Run PowerShell as Administrator for full collection.
   * Do NOT shut down / restart the host before collection finishes.
   * Transparent by design: code-sign & allow-list this tool; do not evade AV/EDR.
@@ -346,20 +383,37 @@ function Collect-Network {
     try {
         $procMap = @{}
         Get-Process -ErrorAction SilentlyContinue | ForEach-Object { $procMap[$_.Id] = $_.ProcessName }
-        $connCount = 0
+        $listenCount = 0; $estabCount = 0
         try {
             foreach ($c in (Get-NetTCPConnection -ErrorAction Stop)) {
-                $connCount++
+                if     ($c.State -eq 'Listen')      { $listenCount++ }
+                elseif ($c.State -eq 'Established') { $estabCount++ }
                 $pn = if ($procMap.ContainsKey([int]$c.OwningProcess)) { $procMap[[int]$c.OwningProcess] } else { '' }
                 ("{0}:{1} -> {2}:{3} [{4}] PID:{5} {6}" -f $c.LocalAddress,$c.LocalPort,$c.RemoteAddress,$c.RemotePort,$c.State,$c.OwningProcess,$pn) | Out-File $script:ReportFile -Append -Encoding UTF8
             }
-            $script:Stats['TcpConnections'] = $connCount
+            # The same two counters the Linux edition emits (ss -tlnp / ss -tuna),
+            # instead of one Windows-only 'TcpConnections': one dashboard has to
+            # be able to plot "listening ports" across platforms.
+            $script:Stats['ListeningTcpPorts']      = $listenCount
+            $script:Stats['EstablishedConnections'] = $estabCount
         } catch { cmd /c "netstat -ano" | Out-File $script:ReportFile -Append -Encoding UTF8 }
         arp -a | Out-File (Join-Path $script:OutDir 'arp.txt') -Encoding UTF8
         route print | Out-File (Join-Path $script:OutDir 'routes.txt') -Encoding UTF8
         ipconfig /displaydns | Out-File (Join-Path $script:OutDir 'dns_cache.txt') -Encoding UTF8
         ipconfig /all | Out-File (Join-Path $script:OutDir 'ipconfig.txt') -Encoding UTF8
-        Get-Content 'C:\Windows\System32\drivers\etc\hosts' -ErrorAction SilentlyContinue | Out-File (Join-Path $script:OutDir 'hosts.txt') -Encoding UTF8
+        $hostsFile = 'C:\Windows\System32\drivers\etc\hosts'
+        Get-Content $hostsFile -ErrorAction SilentlyContinue | Out-File (Join-Path $script:OutDir 'hosts.txt') -Encoding UTF8
+        # Mirror of the Linux check: the file is already being collected, and a
+        # static host override that silently redirects traffic is one of the
+        # cheapest, highest-signal triage checks there is. Windows collected the
+        # file and never looked at it, while docs/MITRE_ATTACK.md advertised the
+        # check. (Counted like the Linux side: comments, blanks and the loopback
+        # defaults do not count as custom entries.)
+        $hx = @(Get-Content $hostsFile -ErrorAction SilentlyContinue |
+                Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' -and $_ -notmatch '^\s*(127\.0\.0\.1|::1|127\.0\.1\.1)(\s|$)' })
+        if ($hx.Count -gt 0) {
+            Add-Finding -Severity 'Review' -Category 'network' -Message ("hosts file has {0} custom entries" -f $hx.Count) -Detail 'Review hosts.txt in the output folder - static host overrides can redirect traffic (T1565.001)'
+        }
         Add-Report 'Network artifacts saved (arp/routes/dns_cache/ipconfig/hosts).'
     } catch { Add-Err "Network failed: $_" }
 }
@@ -435,7 +489,9 @@ function Collect-Services {
     try {
         $svcs = Get-CimInstance Win32_Service |
             Select-Object Name, DisplayName, State, StartMode, StartName, PathName
-        $script:Stats['Services'] = @($svcs).Count
+        # Canonical key shared with the Linux edition, which counts RUNNING
+        # units - so this counts running services, not every defined service.
+        $script:Stats['RunningServices'] = @($svcs | Where-Object { $_.State -eq 'Running' }).Count
         $svcs | Sort-Object State | Format-Table -AutoSize | Out-String -Width 4096 | Out-File $script:ReportFile -Append -Encoding UTF8
     } catch { Add-Err "Services failed: $_" }
 }
@@ -458,8 +514,29 @@ function Collect-Users {
         (net user 2>&1) | Out-File $script:ReportFile -Append -Encoding UTF8
         (net localgroup administrators 2>&1) | Out-File $script:ReportFile -Append -Encoding UTF8
         $lu = Get-LocalUser -ErrorAction SilentlyContinue | Select-Object Name, Enabled, LastLogon, PasswordLastSet
-        if ($lu) { $script:Stats['LocalUsers'] = @($lu).Count }
+        if ($lu) { $script:Stats['Accounts'] = @($lu).Count }
         $lu | Format-Table -AutoSize | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
+        # Mirrors of the Linux users checks (second UID-0 account / empty
+        # password): this module collected the data and raised nothing, so the
+        # same incident produced a High finding on a Linux host and silence on a
+        # Windows one - not because Windows was clean, but because nobody looked.
+        try {
+            $noPwd = @(Get-CimInstance Win32_UserAccount -Filter "LocalAccount=True" -ErrorAction Stop |
+                       Where-Object { -not $_.Disabled -and -not $_.PasswordRequired })
+            foreach ($u in $noPwd) {
+                Add-Finding -Severity 'High' -Category 'users' -Message ("Enabled local account with NO password required: {0}" -f $u.Name) -Detail 'Logon without a password is possible - see report section 07 and confirm with the account owner'
+            }
+        } catch { Add-Note "Win32_UserAccount query failed: $_" }
+        try {
+            # Anything in local Administrators other than the built-in RID-500
+            # account is worth an analyst's eye; the SID suffix is the only
+            # locale-independent way to recognise that account.
+            $extraAdmins = @(Get-LocalGroupMember -Group 'Administrators' -ErrorAction Stop |
+                             Where-Object { $_.SID -and ($_.SID.Value -notmatch '-500$') })
+            if ($extraAdmins.Count -gt 0) {
+                Add-Finding -Severity 'Review' -Category 'users' -Message ("{0} local Administrators member(s) besides the built-in account" -f $extraAdmins.Count) -Detail (("Members: " + (($extraAdmins | ForEach-Object { $_.Name }) -join ', ')))
+            }
+        } catch { Add-Note "Get-LocalGroupMember Administrators failed: $_" }
     } catch { Add-Err "Users failed: $_" }
 }
 
@@ -821,15 +898,23 @@ function Collect-Indicators {
         foreach ($s in @($oddSvc)) { Add-Finding -Category 'indicators' -Message ("Service with unusual binary path: {0}" -f $s.Name) -Detail $s.PathName }
         Add-Report '-- Executables written to temp locations (last 14 days) --'
         $tmpCount = 0
+        $tmpFirst = New-Object System.Collections.Generic.List[string]
         foreach ($d in @("$env:TEMP","$env:APPDATA","$env:LOCALAPPDATA\Temp")) {
             if (Test-PathSafe $d) {
                 $items = Get-ChildItem $d -Recurse -Include *.exe,*.dll,*.scr -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge (Get-Date).AddDays(-14) } | Select-Object FullName, Length, LastWriteTime
                 $tmpCount += @($items).Count
+                foreach ($it in @($items)) { if ($tmpFirst.Count -lt 10) { $tmpFirst.Add([string]$it.FullName) } }
                 $items | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
             }
         }
-        $script:Stats['RecentTempExecutables'] = $tmpCount
-        if ($tmpCount -gt 0) { Add-Finding -Category 'indicators' -Message ("{0} executable file(s) written to temp/appdata locations in the last 14 days" -f $tmpCount) -Detail 'See report section 28 for full paths - legitimate installers/updaters also appear here' }
+        $script:Stats['ExecInTempDirs'] = $tmpCount
+        if ($tmpCount -gt 0) {
+            # The paths have to be INSIDE the finding: the allowlist, publisher
+            # and hash passes only ever see message+detail, so this aggregate -
+            # the noisiest finding the tool raises, by its own admission - named
+            # no file and could not be reached by any allowlist rule.
+            Add-Finding -Category 'indicators' -Message ("{0} executable file(s) written to temp/appdata locations in the last 14 days" -f $tmpCount) -Detail ("First {0} of {1}: {2} | see report section 28 for all - legitimate installers/updaters also appear here" -f $tmpFirst.Count, $tmpCount, ($tmpFirst -join ' '))
+        }
     } catch { Add-Err "Indicators failed: $_" }
 }
 
@@ -846,9 +931,14 @@ function Collect-Hashes {
                 try { $h = Get-FileHash -LiteralPath $p -Algorithm SHA256 -ErrorAction Stop; [pscustomobject]@{ Path=$p; SHA256=$h.Hash } } catch {}
             }
         }
-        $rows | Sort-Object Path | Export-Csv (Join-Path $script:OutDir 'binary_hashes.csv') -NoTypeInformation -Encoding UTF8
+        # Same filename and same 'sha256sum' format as the Linux edition, so one
+        # VirusTotal / IOC pipeline ingests either platform's feed instead of
+        # needing a CSV parser for one and a text parser for the other.
+        $hashFile  = Join-Path $script:OutDir 'binary_hashes.txt'
+        $hashLines = @($rows | Where-Object { $_ } | Sort-Object Path | ForEach-Object { "{0}  {1}" -f $_.SHA256.ToLower(), $_.Path })
+        [IO.File]::WriteAllText($hashFile, (($hashLines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
         $script:Stats['HashedBinaries'] = @($rows).Count
-        Add-Report ("Hashed {0} binaries -> binary_hashes.csv (feed to VirusTotal / IOC matching)." -f (@($rows).Count))
+        Add-Report ("Hashed {0} binaries -> binary_hashes.txt (feed to VirusTotal / IOC matching)." -f (@($rows).Count))
     } catch { Add-Err "Hashes failed: $_" }
 }
 
@@ -889,6 +979,15 @@ function Get-IocPattern {
         return "(?<![0-9A-Fa-f.:])$e(?![0-9A-Fa-f.:])"       # IPv6 literal
     }
     return "(?<![\w.-])$e(?![\w-])(?!\.[A-Za-z0-9])"         # domain / filename
+}
+
+function Get-PathCandidate {
+    # Every drive-letter path a finding names, de-duplicated. The allowlist,
+    # publisher, hash and IOC passes can only reach files that appear here, so
+    # this is the single definition of "the files this finding is about" - and
+    # the reason a finding that names no file can never be suppressed.
+    param([string]$Text)
+    return @([regex]::Matches([string]$Text, '([A-Za-z]:\\[^"''\r\n]+?\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
 }
 
 function Write-Summary {
@@ -935,7 +1034,8 @@ function Write-Summary {
     $L.Add(("Privileged : {0}" -f $IsAdmin))
     $L.Add(("Environment: virt={0} container={1} runtime={2} secmod={3}" -f $envVirt, $envContainer, $envRuntime, $envSecmod))
     $L.Add(("Modules    : {0}" -f ($ModulesRun -join ', ')))
-    $L.Add(("Errors     : {0} (see Tatar.log)" -f $script:ErrorCount))
+    if ($script:ModulesSkipped.Count -gt 0) { $L.Add(("SKIPPED    : {0} (not a module name - NOTHING was collected for it)" -f ($script:ModulesSkipped -join ', '))) }
+    $L.Add(("Errors     : {0} (see tatar.log)" -f $script:ErrorCount))
     $L.Add('')
     $L.Add('-------------------- QUICK STATS ----------------------------')
     if ($script:Stats.Count -gt 0) {
@@ -951,19 +1051,28 @@ function Write-Summary {
             $alHashes = @($al.hashes | ForEach-Object { "$_".ToLower() })
             foreach ($f in $sorted) {
                 $blob  = "$($f.message) $($f.detail)"
-                $cands = @([regex]::Matches($blob, '([A-Za-z]:\\[^"''\r\n]+?\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
-                foreach ($cp in $cands) {
-                    $hit = $false
-                    foreach ($g in $alPaths) { if ($cp -like $g) { $f.suppressed = $true; $f.suppressReason = "allowlist path: $g"; $hit = $true; break } }
-                    if (-not $hit -and $alPubs.Count -and (Test-Path -LiteralPath $cp)) {
-                        try {
-                            $sig = Get-AuthenticodeSignature -LiteralPath $cp -ErrorAction SilentlyContinue
-                            if ($sig -and $sig.Status -eq 'Valid' -and $sig.SignerCertificate) {
-                                foreach ($pub in $alPubs) { if ($sig.SignerCertificate.Subject -match [regex]::Escape($pub)) { $f.suppressed = $true; $f.suppressReason = "signed: $pub"; $hit = $true; break } }
-                            }
-                        } catch {}
+                $cands = @(Get-PathCandidate $blob)
+                # EVERY path the finding names has to be known-good before the
+                # finding is hidden. Suppressing on the FIRST match meant one
+                # allowlisted updater could hide an aggregate about ten files,
+                # with nothing in the output to say which rule applied to what.
+                if ($cands.Count) {
+                    $allOk = $true; $firstReason = ''
+                    foreach ($cp in $cands) {
+                        $reason = ''
+                        foreach ($g in $alPaths) { if ($cp -like $g) { $reason = "allowlist path: $g"; break } }
+                        if (-not $reason -and $alPubs.Count -and (Test-Path -LiteralPath $cp)) {
+                            try {
+                                $sig = Get-AuthenticodeSignature -LiteralPath $cp -ErrorAction SilentlyContinue
+                                if ($sig -and $sig.Status -eq 'Valid' -and $sig.SignerCertificate) {
+                                    foreach ($pub in $alPubs) { if ($sig.SignerCertificate.Subject -match [regex]::Escape($pub)) { $reason = "signed: $pub"; break } }
+                                }
+                            } catch {}
+                        }
+                        if (-not $reason) { $allOk = $false; break }
+                        if (-not $firstReason) { $firstReason = $reason }
                     }
-                    if ($hit) { break }
+                    if ($allOk) { $f.suppressed = $true; $f.suppressReason = $firstReason }
                 }
                 if (-not $f.suppressed -and $alHashes.Count) {
                     # every SHA-256 mentioned in the finding, not only the first one
@@ -992,7 +1101,7 @@ function Write-Summary {
                     # A finding can name several files ("x.exe launched from y.dll").
                     # Hashing only the first one checked the wrong file, so consider
                     # every path mentioned and skip the ones that are not on disk.
-                    $hp = @([regex]::Matches($blob, '([A-Za-z]:\\[^"''\r\n]+?\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+                    $hp = @(Get-PathCandidate $blob)
                     foreach ($cp in $hp) {
                         if (-not (Test-PathSafe $cp)) { continue }
                         $h = (Get-FileHash -LiteralPath $cp -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
@@ -1020,7 +1129,7 @@ function Write-Summary {
                 $found = $null
                 foreach ($file in $scan) {
                     # Skip our own echo: Pass A writes "IOC match: <indicator>" into a
-                    # finding and Tatar.log can quote an indicator back at us. Matching
+                    # finding and tatar.log can quote an indicator back at us. Matching
                     # those would raise a finding about the tool, not about the host.
                     $m = Select-String -LiteralPath $file.FullName -Pattern (Get-IocPattern $val) -ErrorAction SilentlyContinue |
                          Where-Object { $_.Line -notmatch 'IOC match:' } | Select-Object -First 1
@@ -1075,8 +1184,8 @@ function Write-Summary {
     $L.Add('')
     $L.Add('-------------------- NEXT STEPS ------------------------------')
     $L.Add('  1. Review the findings above against the full TATAR_Report_*.txt')
-    $L.Add('  2. Check Tatar.log for FAILED/WARN collection steps (missing evidence).')
-    $L.Add('  3. Submit binary_hashes.csv to VirusTotal / IOC matching.')
+    $L.Add('  2. Check tatar.log for FAILED/WARN collection steps (missing evidence).')
+    $L.Add('  3. Submit binary_hashes.txt to VirusTotal / IOC matching.')
     $L.Add('  4. Pivot on timeline.csv around any confirmed finding timestamps.')
     $L | Out-File -FilePath (Join-Path $script:OutDir 'summary.txt') -Encoding UTF8
 
@@ -1099,6 +1208,7 @@ function Write-Summary {
         environment     = [pscustomobject]@{ virtualization = $envVirt; container = $envContainer; containerRuntime = $envRuntime; securityModule = $envSecmod }
         errorsLogged    = $script:ErrorCount
         modulesRun      = @($ModulesRun)
+        modulesSkipped  = @($script:ModulesSkipped)
         stats           = [pscustomobject]$script:Stats
         findingsCount        = $sorted.Count
         activeFindingsCount  = $active.Count
@@ -1163,6 +1273,8 @@ $script:Collectors = [ordered]@{
 #  Dispatch
 # =====================================================================
 if (-not $Silent) { Show-Banner }
+# Console hint now, so -Help / -List users see it too; the durable record (log +
+# error count) is written further down, once the exec log and report exist.
 foreach ($u in $UnknownOpts) { Write-Console "[!] Unknown option: $u" 'Yellow' }
 if ($Help) { Show-Help; exit 0 }
 if ($List) {
@@ -1186,15 +1298,59 @@ $hostn = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { [System.Net.Dns]::G
 $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
 $script:OutDir     = Join-Path $OutputPath ("{0}_{1}" -f $hostn, $stamp)
 $script:ReportFile = Join-Path $script:OutDir ("TATAR_Report_{0}_{1}.txt" -f $hostn, $stamp)
+
+# -DryRun: every input an operator wants to check first - the resolved output
+# path, the module order, the armed gated operations, the feed verdicts - is
+# already known here. It used to be printed only AFTER the output directory had
+# been created, i.e. after the first write to the disk being preserved, and
+# -CollectHives / -MemoryDump are documented as EDR-triggering. Print it and
+# stop, touching nothing. Not silenced by -Silent: a preview nobody can see has
+# no purpose. (There is no param() block, so -WhatIf is not available.)
+if ($DryRun) {
+    $unknownMods = @($toRun | Where-Object { -not $script:Collectors.Contains($_) })
+    Write-Host ''
+    Write-Host '=== TATAR DRY RUN - nothing is collected and nothing is written ===' -ForegroundColor Cyan
+    Write-Host ("  {0,-14}: TATAR Triage Toolkit v{1}" -f 'Tool', $script:ToolVersion)
+    Write-Host ("  {0,-14}: {1}" -f 'Host', $hostn)
+    Write-Host ("  {0,-14}: {1} (Administrator)" -f 'Privileged', $isAdmin)
+    Write-Host ("  {0,-14}: {1}" -f 'Output dir', $script:OutDir)
+    if ((Split-Path $OutputPath -Qualifier -ErrorAction SilentlyContinue) -eq $env:SystemDrive) {
+        Write-Host ("  {0,-14}: the output path is on the SYSTEM drive ({1}) - writing evidence there can overwrite deleted-file evidence. Prefer an external drive (-OutputPath E:\Evidence)." -f 'WARNING', $env:SystemDrive) -ForegroundColor Red
+    }
+    Write-Host ("  {0,-14}: {1}" -f 'Case ID', $(if ($CaseId) { $CaseId } else { '(none)' }))
+    Write-Host ("  {0,-14}: {1}" -f 'Examiner', $(if ($Examiner) { $Examiner } else { '(none)' }))
+    Write-Host ("  {0,-14}: {1} module(s) in this order: {2}" -f 'Modules', @($toRun).Count, (@($toRun) -join ' '))
+    if ($unknownMods.Count) { Write-Host ("  {0,-14}: NOT a module, nothing would be collected for it: {1}" -f 'WARNING', ($unknownMods -join ' ')) -ForegroundColor Red }
+    Write-Host ("  {0,-14}: -CollectHives={1} -ExportEvtx={2} -MemoryDump={3} -Compress={4} -Silent={5}" -f 'Gated ops', $CollectHives, $ExportEvtx, $MemoryDump, $Compress, $Silent)
+    foreach ($spec in @(@{ Name = 'Allowlist'; Path = $Allowlist }, @{ Name = 'IOC file'; Path = $IOCFile })) {
+        if (-not $spec.Path)                { Write-Host ("  {0,-14}: (none supplied)" -f $spec.Name) }
+        elseif (Test-PathSafe $spec.Path)   { Write-Host ("  {0,-14}: readable, WILL be applied: {1}" -f $spec.Name, $spec.Path) }
+        else                                { Write-Host ("  {0,-14}: NOT READABLE, would NOT be applied: {1}" -f $spec.Name, $spec.Path) -ForegroundColor Red }
+    }
+    foreach ($u in $UnknownOpts) { Write-Host ("  {0,-14}: unknown option, would be ignored: {1}" -f 'WARNING', $u) -ForegroundColor Red }
+    Write-Host ''
+    Write-Host 'Re-run without -DryRun to collect.'
+    Write-Host ''
+    exit 0
+}
+
 try {
     New-Item -ItemType Directory -Force -Path $script:OutDir -ErrorAction Stop | Out-Null
 } catch {
     if (-not $Silent) { Write-Host "[x] FATAL: cannot create output directory ${script:OutDir}: $_" -ForegroundColor Red }
     exit 1
 }
+# Normalise to a full path now that it exists: the manifest computes paths
+# relative to it, and a .NET file write resolves a relative path against the
+# process directory rather than PowerShell's, so a relative -OutputPath must
+# not leak past this point.
+$script:OutDir     = (Resolve-Path -LiteralPath $script:OutDir).Path
+$script:ReportFile = Join-Path $script:OutDir ("TATAR_Report_{0}_{1}.txt" -f $hostn, $stamp)
 
-# P4: execution log lives next to the evidence, excluded from the manifest (operational log, not evidence)
-$script:ExecLog = Join-Path $script:OutDir 'Tatar.log'
+# P4: execution log lives next to the evidence, excluded from the manifest
+# (operational log, not evidence). Lower case, like the Linux edition: the two
+# spellings collide if an analyst merges a Windows and a Linux output folder.
+$script:ExecLog = Join-Path $script:OutDir 'tatar.log'
 Write-ExecLog 'INFO' ("TATAR Triage Toolkit v$($script:ToolVersion) starting on {0} as {1} (admin={2}, silent={3})" -f $hostn, $env:USERNAME, $isAdmin, $Silent)
 Write-ExecLog 'INFO' ("CaseId='{0}' Examiner='{1}' OutDir={2}" -f $CaseId, $Examiner, $script:OutDir)
 Write-ExecLog 'INFO' ("Modules selected: {0}" -f ($toRun -join ', '))
@@ -1234,12 +1390,20 @@ foreach ($spec in @(@{ Name = 'Allowlist'; Path = $Allowlist }, @{ Name = 'IOC f
         Add-Err ("{0} not readable, so it was NOT applied: {1}" -f $spec.Name, $spec.Path)
     }
 }
+
+# Same class of quiet no-op: an unknown option was a console-only warning, which
+# -Silent swallowed completely - a scheduled / WinRM run with a misspelled flag
+# looked identical to a clean one and still exited 0. Log it and make it count.
+foreach ($u in $UnknownOpts) { Add-Err ("Unknown option ignored: {0}" -f $u) }
+
 $i = 0; $n = $toRun.Count; $ran = 0
 foreach ($m in $toRun) {
     $i++
     if (-not $script:Collectors.Contains($m)) {
+        # A misspelled module name must never read as "collected and empty".
         Write-Console "[!] Unknown module: $m" 'Yellow'
-        Write-ExecLog 'WARN' "Unknown module requested: $m"
+        $script:ModulesSkipped.Add([string]$m)
+        Add-Err ("Unknown module requested, nothing was collected for it: {0}" -f $m)
         continue
     }
     if (-not $Silent) { Write-Progress -Activity 'TATAR Triage' -Status $m -PercentComplete (($i/$n)*100) }
@@ -1283,15 +1447,32 @@ Tool         : TATAR Triage Toolkit v$($script:ToolVersion)
 Write-ExecLog 'INFO' 'Writing summary.txt / summary.json'
 try { Write-Summary -Start $start -End $end -ModulesRun $toRun -IsAdmin $isAdmin } catch { Add-Err "Summary failed: $_" }
 
-try {
-    $manifest = Join-Path $script:OutDir 'manifest_sha256.csv'
-    $exclude  = @($manifest, $script:ExecLog)   # Tatar.log keeps growing after hashing, so it is excluded
-    Get-ChildItem -Path $script:OutDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $exclude -notcontains $_.FullName } |
-        Get-FileHash -Algorithm SHA256 -ErrorAction SilentlyContinue | Select-Object Hash, Path | Export-Csv -Path $manifest -NoTypeInformation -Encoding UTF8
-    Write-ExecLog 'INFO' "Manifest written: $manifest"
-} catch { Add-Err "Manifest failed: $_" }
-
+# The report trailer has to be written BEFORE the manifest hashes the report:
+# appending to an already-hashed file left one entry permanently wrong.
 Add-Report "`n=== Collection finished: $($end.ToString('o')) ==="
+
+try {
+    # Same name and the same "<sha256>  ./<relative path>" format as the Linux
+    # edition, written LF-only and without a BOM, so `sha256sum -c
+    # manifest_sha256.txt` verifies an evidence folder from either platform.
+    # The CSV this used to write was not checkable by any standard tool.
+    $manifest = Join-Path $script:OutDir 'manifest_sha256.txt'
+    $exclude  = @($manifest, $script:ExecLog)   # tatar.log keeps growing after hashing, so it is excluded
+    $root     = $script:OutDir.TrimEnd('\')
+    $mLines   = New-Object System.Collections.Generic.List[string]
+    Get-ChildItem -Path $script:OutDir -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $exclude -notcontains $_.FullName } | Sort-Object FullName | ForEach-Object {
+            $h = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256 -ErrorAction SilentlyContinue
+            if ($h) {
+                $rel = $_.FullName
+                if ($rel.StartsWith($root)) { $rel = $rel.Substring($root.Length) }
+                $rel = $rel.TrimStart('\').Replace('\','/')
+                $mLines.Add(("{0}  ./{1}" -f $h.Hash.ToLower(), $rel))
+            }
+        }
+    [IO.File]::WriteAllText($manifest, (($mLines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+    Write-ExecLog 'INFO' "Manifest written: $manifest ($($mLines.Count) file(s))"
+} catch { Add-Err "Manifest failed: $_" }
 
 if ($Compress) {
     try {

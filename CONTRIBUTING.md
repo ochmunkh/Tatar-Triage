@@ -50,6 +50,12 @@ Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
   the enum in `schema/summary.schema.json`, keep new fields optional).
 - Line endings are enforced by `.gitattributes` (`.sh`/`.md`/`.json` = LF, `.ps1` = CRLF). If
   `git status` shows a whole-file diff, run `git add --renormalize <file>`.
+- `docs/banner.src.svg` is the **editable source** for the `banner.png` the README loads; re-export
+  the PNG from it when the artwork changes, so the two never drift apart. (The SVG is not referenced
+  by any page: GitHub renders the raster version, which is sharp at the README's width.)
+- Documentation facts that are derivable from the code are checked, not proof-read: the `docs-parity`
+  CI job asserts the module-count badges, the English/Mongolian module lists and the ATT&CK coverage
+  in `docs/MITRE_ATTACK.md`. Run it locally with `python3 .github/scripts/check_docs_parity.py .`
 - Release: update `CHANGELOG.md` + the README changelog → commit → annotated tag `vX.Y.Z` →
   push the branch, then push the tag. The `Release` workflow builds `SHA256SUMS.txt` and attaches
   both collectors and both sample JSONs to the release, taking its notes from the matching

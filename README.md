@@ -62,7 +62,7 @@ The consolidated report flags suspicious activity as it goes (sample):
 - **One script, no install.** Drop it on the host (or a USB), run it, done.
 - **30 modules**, executed in **RFC 3227 order of volatility** (memory → network → processes → … → disk / registry / logs).
 - **Analyst-first summary.** Every run writes `summary.txt` + `summary.json`: host/OS/case metadata, quick stats, and an aggregated **Suspicious findings** list — leads for review, *not* verdicts. The JSON feeds straight into SIEM / SOAR pipelines.
-- **Execution log.** `Tatar.log` records every module with timestamps and `START / OK / WARN / FAILED` status — clean audit trail, easy troubleshooting.
+- **Execution log.** `tatar.log` records every module with timestamps and `START / OK / WARN / FAILED` status — clean audit trail, easy troubleshooting.
 - **Automation-friendly.** `-Silent` suppresses all console output (WinRM / scheduled / remote runs) and the script returns meaningful **exit codes** (see below).
 - **Read-only first.** Destructive / heavy actions (memory dump, hive save, full EVTX) are **off by default** behind explicit switches.
 - **Chain of custody.** Per-run metadata, examiner / case ID, and a SHA-256 manifest of every collected file.
@@ -149,6 +149,10 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 # List available modules (no collection, no folder created)
 .\Tatar.ps1 -List
 
+# Check the plan before touching the disk: output path, module order, armed
+# gated operations, allowlist / IOC readability. Writes nothing.
+.\Tatar.ps1 -All -DryRun -OutputPath E:\Evidence -Allowlist allowlist.sample.json
+
 # Run specific modules only
 .\Tatar.ps1 -Modules network,process,rdp,lateral,timeline
 
@@ -157,7 +161,7 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 
 # Automated / remote run: no console output, check the exit code
 .\Tatar.ps1 -All -Silent -OutputPath E:\Evidence -CaseId IR-2026-014
-if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check Tatar.log" }
+if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check tatar.log" }
 
 # Cut the noise: suppress known-good findings with an allowlist
 .\Tatar.ps1 -All -Allowlist allowlist.sample.json
@@ -181,7 +185,8 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check Tat
 | `-CollectHives` | Save SAM/SECURITY/SYSTEM/SOFTWARE + NTUSER (credential material; may trigger EDR) |
 | `-ExportEvtx` | Export full `.evtx` logs |
 | `-MemoryDump` | Raw memory image via `tools\winpmem.exe` (may trigger EDR) |
-| `-Silent` / `-Quiet` | Suppress **all** console output (banner, progress, status). Files, including `Tatar.log`, are still written. For WinRM / scheduled / automated runs |
+| `-Silent` / `-Quiet` | Suppress **all** console output (banner, progress, status). Files, including `tatar.log`, are still written. For WinRM / scheduled / automated runs |
+| `-DryRun` / `-Preview` | Print the resolved output directory, the module list in run order, which gated operations are armed and whether the allowlist / IOC feeds can be read — then exit `0` **without creating or writing anything** |
 | `-Allowlist <json>` | Suppress known-good findings by path glob, Authenticode publisher, or SHA-256. Suppressed findings are kept for audit, not deleted |
 | `-IOCFile <json>` | Match findings & collected evidence against an offline IOC feed (hashes = SHA-256 only, ips, domains, filenames). A hit **overrides** the allowlist and escalates to High |
 
@@ -190,8 +195,8 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check Tat
 | Code | Meaning |
 |------|---------|
 | `0` | Collection completed successfully |
-| `1` | Fatal / usage error (nothing selected, output dir cannot be created, no valid modules) |
-| `2` | Collection completed, but one or more steps logged errors — check `Tatar.log`. An unreadable `-Allowlist` / `-IOCFile` path lands here. |
+| `1` | Fatal / usage error (nothing selected, a value-taking flag with no value, output dir cannot be created, no valid modules) |
+| `2` | Collection completed, but one or more steps logged errors — check `tatar.log`. An unreadable `-Allowlist` / `-IOCFile` path lands here, as does an unknown option or an unknown module name. |
 
 ---
 
@@ -199,9 +204,13 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check Tat
 
 Order of volatility, top to bottom:
 
-`memory` · `network` · `process` · `sessions` · `services` · `sysinfo` · `users` · `persistence` · `autoruns` · `shares` · `firewall` · `drivers` · `apps` · `prefetch` · `usb` · `pshistory` · `obfscan` · `rdp` · `lateral` · `privesc` · `browser` · `fsartifacts` · `deleted` · `shadow` · `eventlogs` · `hives` · `mft` · `indicators` · `hashes` · `timeline`
+**Windows (30):** `memory` · `network` · `process` · `sessions` · `services` · `sysinfo` · `users` · `persistence` · `autoruns` · `shares` · `firewall` · `drivers` · `apps` · `prefetch` · `usb` · `pshistory` · `obfscan` · `rdp` · `lateral` · `privesc` · `browser` · `fsartifacts` · `deleted` · `shadow` · `eventlogs` · `hives` · `mft` · `indicators` · `hashes` · `timeline`
+
+**Linux (18):** `sysinfo` · `network` · `process` · `sessions` · `users` · `services` · `persistence` · `apps` · `suid` · `sshkeys` · `bashhistory` · `kernelmods` · `indicators` · `hashes` · `logs` · `timeline` · `containers` · `integrity`
 
 Coverage includes: system/user/network state, running processes with LOLBAS pattern flags, services & drivers, startup/Run-key/scheduled-task persistence, RDP activity, lateral-movement artifacts (SMB sessions, mapped drives, WMI persistence, PsExec), privilege-escalation indicators (unquoted service paths, `AlwaysInstallElevated`, token privileges), obfuscated-script scan, browser artifact metadata (all profiles, no decryption), Recent/Amcache/Prefetch, Recycle Bin, shadow copies, key Windows event IDs, optional registry hive & EVTX export, NTFS/MFT info, file hashing for IOC matching, and a lightweight super-timeline CSV.
+
+On Linux: cron / systemd persistence, SUID/SGID enumeration, SSH keys, container & cloud context, and a critical-file integrity baseline — see [`linux/README.md`](linux/README.md).
 
 ---
 
@@ -209,14 +218,14 @@ Coverage includes: system/user/network state, running processes with LOLBAS patt
 
 Every run ends with an analyst-first one-pager so the IR lead knows **what to look at first**:
 
-- **`summary.txt`** — host / OS / case metadata, quick stats (process count, TCP connections, local users, hashed binaries, …) and the aggregated **Suspicious findings** list, sorted by severity.
+- **`summary.txt`** — host / OS / case metadata, quick stats (process count, listening ports, established connections, accounts, hashed binaries, … the same keys on every platform) and the aggregated **Suspicious findings** list, sorted by severity.
 - **`summary.json`** — the same data as structured JSON (`stats`, `findings[]` with `Severity/Category/Message/Detail`), ready for SIEM ingestion or scripted post-processing.
 
 Findings come from the collectors themselves: LOLBAS-style command lines, obfuscated-script matches, PsExec artifacts, WMI event-subscription consumers, unquoted / user-writable service paths, `AlwaysInstallElevated`, security-log-cleared (1102) events, executables recently dropped in temp locations, and more.
 
 > **Important:** findings are automated pattern matches — **leads for review, not verdicts**. Legitimate software (updaters, IT tooling) regularly appears; validate each lead against the full report before drawing conclusions.
 
-## Execution log (`Tatar.log`)
+## Execution log (`tatar.log`)
 
 Each run writes a timestamped execution log alongside the evidence:
 
@@ -228,7 +237,7 @@ Each run writes a timestamped execution log alongside the evidence:
 [2026-07-10 22:26:17.996] [WARN  ] module hives finished in 0.2s with 1 error(s)
 ```
 
-`Tatar.log` is an *operational* log (it keeps growing after the manifest is hashed), so it is deliberately **excluded from `manifest_sha256.csv`**. Evidence files are all hashed as usual.
+`tatar.log` is an *operational* log (it keeps growing after the manifest is hashed), so it is deliberately **excluded from `manifest_sha256.txt`**. Evidence files are all hashed as usual.
 
 ---
 
@@ -253,7 +262,7 @@ Each collector maps to the adversary techniques it helps **detect / investigate*
 | `usb` | T1091 · T1200 | Initial Access / Exfil |
 | `eventlogs` (ID 1102) | T1070.001 (clear event logs) | Defense Evasion |
 | `shadow` | T1490 (inhibit recovery) | Impact |
-| `network` / `hosts` | T1071 · T1565.001 | C2 / Defense Evasion |
+| `network` (connections, DNS, `hosts` file) | T1071 · T1565.001 | C2 / Defense Evasion |
 | `browser` | T1555.003 · T1539 | Credential Access |
 
 ---
@@ -266,11 +275,11 @@ C:\Forensic\<HOST>_<YYYY-MM-DD_HH-mm-ss>\
 ├─ summary.txt                       # analyst-first triage summary + findings  (NEW v1.1)
 ├─ summary.json                      # same, machine-readable (SIEM/automation) (NEW v1.1)
 ├─ findings.json                     # findings-only feed for SOAR / SIEM              (NEW)
-├─ Tatar.log                         # execution log: START/OK/WARN/FAILED      (NEW v1.1)
+├─ tatar.log                         # execution log: START/OK/WARN/FAILED      (NEW v1.1)
 ├─ chain_of_custody.txt              # case/examiner/times/script hash
-├─ manifest_sha256.csv               # SHA-256 of every collected file (Tatar.log excluded)
+├─ manifest_sha256.txt               # SHA-256 of every collected file, `sha256sum -c` format (tatar.log excluded)
 ├─ timeline.csv                      # process / prefetch / recent / installs
-├─ binary_hashes.csv                 # SHA-256 of running/service binaries (VT/IOC)
+├─ binary_hashes.txt                 # SHA-256 of running/service binaries (VT/IOC)
 ├─ recyclebin.csv
 ├─ arp.txt / routes.txt / dns_cache.txt / ipconfig.txt / hosts.txt
 ├─ firewall_rules.txt
@@ -443,7 +452,7 @@ Triage гэдэг ойлголт эмнэлгээс гаралтай. Эмч ө�
 - **Нэг скрипт, суулгах шаардлагагүй.** Хост дээр (эсвэл USB-д) хуулж аваад шууд ажиллуулна.
 - **Windows 30 / Linux 18 модуль**, RFC 3227 order of volatility дарааллаар (санах ой → сүлжээ → процесс → … → диск / registry / лог).
 - **Шинжээч-төвтэй тайлан.** Run бүр `summary.txt` + `summary.json` + `findings.json` гаргана — host/OS/case мета, quick stats, нэгтгэсэн **сэжигтэй finding-уудын** жагсаалт. JSON нь SIEM/SOAR-т шууд ордог.
-- **Гүйцэтгэлийн лог** (`Tatar.log`/`tatar.log`) — модуль бүрийн `START/OK/WARN/FAILED`.
+- **Гүйцэтгэлийн лог** (`tatar.log`, хоёр платформ дээр ижил нэртэй) — модуль бүрийн `START/OK/WARN/FAILED`.
 - **Read-only-first.** Хүнд/эвдрэлтэй үйлдлүүд (memory dump, hive save, EVTX export) default-оор унтраалттай, тодорхой switch-ээр л асаана.
 - **Chain of custody.** Run бүрийн мета, examiner/case ID, файл бүрийн SHA-256 manifest.
 - **Ил тод.** Обфускаци, AV/AMSI bypass үгүй. Гарын үсэг зурж, allow-list хийхэд зориулсан.
@@ -526,6 +535,7 @@ Tatar Triage бүрэн **офлайн** ажиллана. Цуглуулсан 
 Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 .\Tatar.ps1 -All -OutputPath E:\Evidence -CaseId IR-2026-014 -Examiner "Enkhbat.O" -Compress
 .\Tatar.ps1 -List          # модулиудыг харах
+.\Tatar.ps1 -All -DryRun   # төлөвлөгөө харах: гаралтын зам, модулийн дараалал, feed-ийн бэлэн байдал (юу ч бичихгүй)
 .\Tatar.ps1 -All -Silent   # автоматжуулалт (exit code буцаана)
 ```
 
@@ -534,9 +544,10 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 chmod +x tatar-linux.sh
 sudo ./tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-014 --examiner "Enkhbat.O"
 ./tatar-linux.sh --list
+sudo ./tatar-linux.sh --all --dry-run   # төлөвлөгөө харах (юу ч бичихгүй)
 ```
 
-**Exit code:** `0` = амжилт · `1` = fatal/usage алдаа · `2` = алдаатай дууссан (лог шалга). Уншигдахгүй `-Allowlist` / `-IOCFile` зам нь `2`-т унана.
+**Exit code:** `0` = амжилт · `1` = fatal/usage алдаа · `2` = алдаатай дууссан (лог шалга). Уншигдахгүй `-Allowlist` / `-IOCFile` зам, танигдахгүй флаг ба байхгүй модулийн нэр нь `2`-т унана; заавал зайлшгүй гэж шаардах флаг (`--output`) замгүй байвал `1`.
 
 ---
 
@@ -558,10 +569,10 @@ sudo ./tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-014 --ex
 ├─ summary.txt                       # шинжээч-төвтэй triage дүгнэлт + findings
 ├─ summary.json                      # нэгдсэн schema (SIEM/автоматжуулалт)
 ├─ findings.json                     # findings-only feed (SOAR/SIEM)
-├─ Tatar.log                         # гүйцэтгэлийн лог: START/OK/WARN/FAILED
+├─ tatar.log                         # гүйцэтгэлийн лог: START/OK/WARN/FAILED
 ├─ chain_of_custody.txt              # case/examiner/цаг/скриптийн hash
-├─ manifest_sha256.csv               # файл бүрийн SHA-256
-├─ timeline.csv · binary_hashes.csv · ...
+├─ manifest_sha256.txt               # файл бүрийн SHA-256 (`sha256sum -c`-гээр шалгаж болно)
+├─ timeline.csv · binary_hashes.txt · ...
 └─ (optional) TATAR_<HOST>_<stamp>.zip (+ .sha256)
 ```
 
