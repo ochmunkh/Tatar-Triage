@@ -1,4 +1,4 @@
-<#
+﻿<#
     TATAR Triage Toolkit - contract tests (Windows edition).
 
     Black-box: runs the collector with controlled allowlist / IOC fixtures and
@@ -6,7 +6,8 @@
     internals, so these tests keep working across refactors.
 
     Run from the repo root:
-        powershell -NoProfile -File tests\Invoke-Tests.ps1
+        pwsh       -NoProfile -File tests/Invoke-Tests.ps1   # PowerShell 7, any OS
+        powershell -NoProfile -File tests\Invoke-Tests.ps1   # Windows PowerShell 5.1
 
     Exit code: 0 = all assertions passed, 1 = at least one failed.
 #>
@@ -16,6 +17,14 @@ param(
     [string]$Modules   = 'sysinfo,network,users',
     [string]$Schema    = (Join-Path $PSScriptRoot '..\schema\summary.schema.json')
 )
+
+# The collector is spawned as a child process. Hardcoding "powershell" pins the
+# suite to Windows PowerShell 5.1, so it cannot run under PowerShell 7 or on a
+# non-Windows host -- which is also what stops CI from running it anywhere but a
+# Windows runner. Reuse whichever host is running this file.
+$TempRoot = [System.IO.Path]::GetTempPath()
+$PwshHost = if ($PSVersionTable.PSEdition -eq 'Core') { (Get-Process -Id $PID).Path } else { 'powershell' }
+
 
 $ErrorActionPreference = 'Continue'
 $script:PassCount = 0
@@ -30,9 +39,9 @@ function Check {
 
 function Invoke-Collector {
     param([string]$Label, [string[]]$Extra = @())
-    $root = Join-Path $env:TEMP ('tatar-test-' + $Label + '-' + (Get-Random))
+    $root = Join-Path $TempRoot ('tatar-test-' + $Label + '-' + (Get-Random))
     $argList = @('-Modules', $Modules, '-Silent', '-OutputPath', $root) + $Extra
-    & powershell -NoProfile -File $Collector @argList | Out-Null
+    & $PwshHost -NoProfile -File $Collector @argList | Out-Null
     $code = $LASTEXITCODE
     $dir  = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
     $path = $null; if ($dir) { $path = $dir.FullName }
@@ -209,11 +218,11 @@ Check 'T5 : the log names both files as NOT applied' (([regex]::Matches($log5, '
 #      called '-CaseId' and dropped the case id from the chain of custody.
 Write-Host ''
 Write-Host 'T6  a value-taking flag with no value is a usage error'
-& powershell -NoProfile -File $Collector -Modules $Modules -Silent -OutputPath | Out-Null
+& $PwshHost -NoProfile -File $Collector -Modules $Modules -Silent -OutputPath | Out-Null
 Check 'T6 : -OutputPath with no value exits 1' ($LASTEXITCODE -eq 1) "got $LASTEXITCODE"
-& powershell -NoProfile -File $Collector -Modules $Modules -Silent -OutputPath -CaseId IR-T6 | Out-Null
+& $PwshHost -NoProfile -File $Collector -Modules $Modules -Silent -OutputPath -CaseId IR-T6 | Out-Null
 Check 'T6 : -OutputPath followed by another flag exits 1' ($LASTEXITCODE -eq 1) "got $LASTEXITCODE"
-& powershell -NoProfile -File $Collector -Silent -Modules | Out-Null
+& $PwshHost -NoProfile -File $Collector -Silent -Modules | Out-Null
 Check 'T6 : -Modules with no value exits 1' ($LASTEXITCODE -eq 1) "got $LASTEXITCODE"
 Check 'T6 : no evidence folder was created for the flag name' (-not (Test-Path -LiteralPath (Join-Path (Get-Location).Path '-CaseId')))
 
@@ -236,8 +245,8 @@ Check 'T7 : summary.json reports the skipped module' ((@($s7.modulesSkipped) -jo
 #      -CollectHives / -MemoryDump are documented as EDR-triggering.
 Write-Host ''
 Write-Host 'T8  -DryRun resolves the plan and writes nothing'
-$root8 = Join-Path $env:TEMP ('tatar-test-t8-' + (Get-Random))
-$out8  = & powershell -NoProfile -File $Collector -All -DryRun -OutputPath $root8 -Allowlist (Join-Path $Fixtures 'does-not-exist.json') 2>&1 | Out-String
+$root8 = Join-Path $TempRoot ('tatar-test-t8-' + (Get-Random))
+$out8  = & $PwshHost -NoProfile -File $Collector -All -DryRun -OutputPath $root8 -Allowlist (Join-Path $Fixtures 'does-not-exist.json') 2>&1 | Out-String
 Check 'T8 : -DryRun exits 0' ($LASTEXITCODE -eq 0) "got $LASTEXITCODE"
 Check 'T8 : -DryRun creates no output directory' (-not (Test-Path $root8))
 Check 'T8 : the preview names the resolved output dir' ($out8 -match [regex]::Escape($root8))

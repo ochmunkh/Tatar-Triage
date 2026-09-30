@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     TATAR Triage Toolkit - Windows quick DFIR triage / incident-response collector.
 
@@ -139,12 +139,14 @@ for ($k = 0; $k -lt $args.Count; $k++) {
         'dry-run'      { $DryRun = $true }
         'preview'      { $DryRun = $true }
         'modules'      { $Modules = ((Read-ArgValue $tok $next) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }); $k++ }
-        'outputpath'   { $OutputPath = Read-ArgValue $tok $next; $k++ }
-        'caseid'       { $CaseId     = Read-ArgValue $tok $next; $k++ }
+        # -Output / -o are what the Linux collector takes; both editions must
+        # accept the same spellings or an operator who learns one is bitten by
+        # the other. -OutputPath stays for anything already scripted against it.
+        { $_ -in 'outputpath','output','o' } { $OutputPath = Read-ArgValue $tok $next; $k++ }
+        { $_ -in 'caseid','case' }  { $CaseId    = Read-ArgValue $tok $next; $k++ }
         'examiner'     { $Examiner   = Read-ArgValue $tok $next; $k++ }
-        'allowlist'    { $Allowlist  = Read-ArgValue $tok $next; $k++ }
-        'iocfile'      { $IOCFile    = Read-ArgValue $tok $next; $k++ }
-        'ioc'          { $IOCFile    = Read-ArgValue $tok $next; $k++ }
+        { $_ -in 'allowlist','allow' } { $Allowlist = Read-ArgValue $tok $next; $k++ }
+        { $_ -in 'iocfile','ioc','iocs' } { $IOCFile = Read-ArgValue $tok $next; $k++ }
         default        { $UnknownOpts += $tok }
     }
 }
@@ -1291,7 +1293,17 @@ $toRun = if ($All) { @($script:Collectors.Keys) }
              exit 1
          }
 
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+# If the identity check cannot run, assume NOT administrator: the run then warns
+# that artifacts will be incomplete, which is the safe reading. Letting the
+# exception through left $isAdmin empty, and Write-Summary -IsAdmin takes a
+# [bool], so the binding failed and summary.json -- the machine-readable output
+# contract -- was never written at all, while the text report still appeared.
+$isAdmin = $false
+try {
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+} catch {
+    Write-Console "[!] Could not determine administrator status ($($_.Exception.Message)) - assuming standard user." 'Yellow'
+}
 if (-not $isAdmin) { Write-Console "[!] Not running as Administrator - some artifacts will be incomplete." 'Yellow' }
 
 $hostn = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { [System.Net.Dns]::GetHostName() }
@@ -1356,7 +1368,11 @@ Write-ExecLog 'INFO' ("CaseId='{0}' Examiner='{1}' OutDir={2}" -f $CaseId, $Exam
 Write-ExecLog 'INFO' ("Modules selected: {0}" -f ($toRun -join ', '))
 if (-not $isAdmin) { Write-ExecLog 'WARN' 'Not running as Administrator - collection will be incomplete.' }
 
-if ((Split-Path $OutputPath -Qualifier) -eq $env:SystemDrive) {
+# -Qualifier throws on any path that has no drive letter, and a UNC target such
+# as \\fileserver\Evidence is exactly that -- writing triage output to a network
+# share is an ordinary workflow, so this warning must not abort the run.
+$outQualifier = try { Split-Path $OutputPath -Qualifier -ErrorAction Stop } catch { '' }
+if ($outQualifier -and $env:SystemDrive -and $outQualifier -eq $env:SystemDrive) {
     Write-Console "[!] WARNING: writing evidence to the SYSTEM drive ($env:SystemDrive). This can overwrite deleted-file evidence. Prefer an external drive (-OutputPath E:\Evidence)." 'Red'
     Write-ExecLog 'WARN' "Evidence is being written to the system drive $env:SystemDrive - prefer an external drive."
 }
