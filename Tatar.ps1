@@ -161,6 +161,16 @@ $script:Findings   = New-Object System.Collections.Generic.List[object]
 $script:Stats      = [ordered]@{}
 $script:ModulesSkipped = New-Object System.Collections.Generic.List[string]
 
+# Windows is not always on C:. The collector hardcoded 'C:\Windows' / 'C:' in
+# nine places, and two of them are FINDING predicates: on a host installed to
+# D:, the default Winlogon Userinit and every service under D:\Windows were
+# reported as High-severity tampering. The rest simply looked in the wrong place
+# and reported nothing. Resolve once, here. The literals stay as the fallback so
+# a host without these variables (the cross-platform suite runs on Linux, where
+# both are empty and Join-Path throws on a null Path) behaves exactly as before.
+$script:SysRoot  = if ($env:SystemRoot)  { $env:SystemRoot.TrimEnd('\') }  else { 'C:\Windows' }
+$script:SysDrive = if ($env:SystemDrive) { $env:SystemDrive.TrimEnd('\') } else { 'C:' }
+
 function Write-Console {
     # Console output wrapper: fully suppressed by -Silent. File output is never affected.
     param([string]$Text = '', [string]$Color = 'Gray')
@@ -361,6 +371,20 @@ function Copy-BestEffort {
     catch { Add-Note ("Could not copy {0} - {1}." -f $Src, $Hint) }
 }
 
+function Get-ServiceImagePath {
+    # The executable out of a service ImagePath, which is a COMMAND LINE, not a
+    # path: 'C:\Windows\system32\svchost.exe -k netsvcs' is the normal form.
+    # Stripping only surrounding quotes left the arguments attached, so
+    # Test-Path failed and svchost - i.e. most of Windows - was never hashed.
+    # Quoted wins outright; otherwise take the shortest leading run that ends in
+    # .exe at a word boundary, which is also what the service control manager
+    # resolves first. Returns $null when there is no .exe (driver .sys entries).
+    param([string]$PathName)
+    if ($PathName -match '^\s*"([^"]+)"')          { return $matches[1] }
+    if ($PathName -match '^\s*(\S.*?\.exe)(\s|$)') { return $matches[1] }
+    return $null
+}
+
 # =====================================================================
 #  Collector modules
 # =====================================================================
@@ -403,7 +427,7 @@ function Collect-Network {
         route print | Out-File (Join-Path $script:OutDir 'routes.txt') -Encoding UTF8
         ipconfig /displaydns | Out-File (Join-Path $script:OutDir 'dns_cache.txt') -Encoding UTF8
         ipconfig /all | Out-File (Join-Path $script:OutDir 'ipconfig.txt') -Encoding UTF8
-        $hostsFile = 'C:\Windows\System32\drivers\etc\hosts'
+        $hostsFile = Join-Path $script:SysRoot 'System32\drivers\etc\hosts'
         Get-Content $hostsFile -ErrorAction SilentlyContinue | Out-File (Join-Path $script:OutDir 'hosts.txt') -Encoding UTF8
         # Mirror of the Linux check: the file is already being collected, and a
         # static host override that silently redirects traffic is one of the
@@ -532,8 +556,13 @@ function Collect-Users {
         try {
             # Anything in local Administrators other than the built-in RID-500
             # account is worth an analyst's eye; the SID suffix is the only
-            # locale-independent way to recognise that account.
-            $extraAdmins = @(Get-LocalGroupMember -Group 'Administrators' -ErrorAction Stop |
+            # locale-independent way to recognise that account. The GROUP has to
+            # be resolved the same way: 'Administrators' is localised - it is
+            # Administradores, Administrateurs, Администраторы - so looking it up
+            # by name threw on every non-English Windows and this check reported
+            # silence about a host it had never actually examined. S-1-5-32-544
+            # is the same group everywhere.
+            $extraAdmins = @(Get-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-544') -ErrorAction Stop |
                              Where-Object { $_.SID -and ($_.SID.Value -notmatch '-500$') })
             if ($extraAdmins.Count -gt 0) {
                 Add-Finding -Severity 'Review' -Category 'users' -Message ("{0} local Administrators member(s) besides the built-in account" -f $extraAdmins.Count) -Detail (("Members: " + (($extraAdmins | ForEach-Object { $_.Name }) -join ', ')))
@@ -580,7 +609,12 @@ function Collect-Persistence {
             $wlp = Get-ItemProperty $wl -ErrorAction SilentlyContinue
             Add-Report ("[Winlogon] Shell='{0}'  Userinit='{1}'" -f $wlp.Shell, $wlp.Userinit)
             if ($wlp.Shell -and $wlp.Shell -notmatch '^explorer\.exe,?\s*$') { Add-Finding -Severity 'High' -Category 'persistence' -Message 'Winlogon Shell is non-default' -Detail ("Shell = $($wlp.Shell) (expected explorer.exe)") }
-            if ($wlp.Userinit -and $wlp.Userinit -notmatch '(?i)^C:\\Windows\\system32\\userinit\.exe,?\s*$') { Add-Finding -Severity 'High' -Category 'persistence' -Message 'Winlogon Userinit is non-default' -Detail ("Userinit = $($wlp.Userinit)") }
+            # Built from the real SystemRoot: the default value is
+            # '<SystemRoot>\system32\userinit.exe,', so pinning the drive to C:
+            # raised a HIGH 'Userinit is non-default' on every host that boots
+            # from another drive - a false positive on an untouched machine.
+            $uiDefault = '(?i)^' + [regex]::Escape((Join-Path $script:SysRoot 'system32\userinit.exe')) + ',?\s*$'
+            if ($wlp.Userinit -and $wlp.Userinit -notmatch $uiDefault) { Add-Finding -Severity 'High' -Category 'persistence' -Message 'Winlogon Userinit is non-default' -Detail ("Userinit = $($wlp.Userinit)") }
         }
         $lsa = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'
         if (Test-PathSafe $lsa) {
@@ -725,9 +759,10 @@ function Collect-Lateral {
         Add-Report '-- Inbound SMB sessions / open files --'
         Get-SmbSession -ErrorAction SilentlyContinue | Select-Object ClientComputerName, ClientUserName, NumOpens | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
         Add-Report '-- PsExec artifacts --'
-        if (Test-PathSafe 'C:\Windows\PSEXESVC.exe') {
-            Add-Report 'PSEXESVC.exe present in C:\Windows (PsExec was used).'
-            Add-Finding -Severity 'High' -Category 'lateral' -Message 'PsExec service binary present (C:\Windows\PSEXESVC.exe)' -Detail 'PsExec was executed against this host at some point - correlate with logon events'
+        $psexesvc = Join-Path $script:SysRoot 'PSEXESVC.exe'
+        if (Test-PathSafe $psexesvc) {
+            Add-Report ("PSEXESVC.exe present in {0} (PsExec was used)." -f $script:SysRoot)
+            Add-Finding -Severity 'High' -Category 'lateral' -Message ("PsExec service binary present ({0})" -f $psexesvc) -Detail 'PsExec was executed against this host at some point - correlate with logon events'
         }
         Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'PSEXESVC' } | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
         Add-Report '-- WMI persistence (root\subscription) --'
@@ -750,22 +785,40 @@ function Collect-PrivEsc {
         Add-Report '-- Token privileges (whoami /priv) --'
         (whoami /priv 2>&1) | Out-File $script:ReportFile -Append -Encoding UTF8
         Add-Report '-- Unquoted service paths (with spaces, outside System32) --'
+        # The space has to be in the IMAGE PATH, not anywhere in the command
+        # line. Testing the whole PathName flagged 'C:\Apps\svc.exe -k foo' -
+        # not vulnerable, the binary path has no space - and anchoring the quote
+        # test at ^" flagged an ImagePath that legally begins with whitespace
+        # before its opening quote. Both were noise on every run.
+        $sysRootRe = '(?i)^' + [regex]::Escape($script:SysRoot + '\')
         $unq = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object {
-            $_.PathName -and $_.PathName -notmatch '^"' -and $_.PathName -match ' ' -and $_.PathName -match '\.exe' -and $_.PathName -notmatch '(?i)^C:\\Windows'
+            $img = Get-ServiceImagePath $_.PathName
+            $img -and $_.PathName -notmatch '^\s*"' -and $img -match ' ' -and $img -notmatch $sysRootRe
         } | Select-Object Name, PathName
         $unq | Format-Table -AutoSize | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
         foreach ($u in @($unq)) { Add-Finding -Category 'privesc' -Message ("Unquoted service path: {0}" -f $u.Name) -Detail $u.PathName }
         Add-Report '-- Service binaries in user-writable locations --'
-        $wr = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object { $_.PathName -imatch 'users\\|\\appdata\\|\\temp\\|\\programdata\\' } | Select-Object Name, PathName
+        # Same reason: match the binary, not an argument that merely mentions a
+        # path under \Users\ (a log file destination is not a writable binary).
+        $wr = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object { (Get-ServiceImagePath $_.PathName) -imatch 'users\\|\\appdata\\|\\temp\\|\\programdata\\' } | Select-Object Name, PathName
         $wr | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
         foreach ($w in @($wr)) { Add-Finding -Category 'privesc' -Message ("Service binary in user-writable location: {0}" -f $w.Name) -Detail $w.PathName }
         Add-Report '-- AlwaysInstallElevated --'
-        foreach ($k in 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer','HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer') {
-            $v = (Get-ItemProperty $k -Name AlwaysInstallElevated -ErrorAction SilentlyContinue).AlwaysInstallElevated
-            if ($null -ne $v) {
-                "$k AlwaysInstallElevated = $v" | Out-File $script:ReportFile -Append -Encoding UTF8
-                if ($v -eq 1) { Add-Finding -Severity 'High' -Category 'privesc' -Message "AlwaysInstallElevated is ENABLED ($k)" -Detail 'Any user can install MSI packages as SYSTEM (T1548)' }
-            }
+        # The escalation needs BOTH hives set to 1: the installer elevates only
+        # when the machine policy and the user policy agree. Raising High on
+        # either one alone sent the analyst after a half-configured policy that
+        # grants nothing. The single-hive case is still worth an eye, so it is
+        # kept - as a Review lead, which is what it is.
+        $aieM = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name AlwaysInstallElevated -ErrorAction SilentlyContinue).AlwaysInstallElevated
+        $aieU = (Get-ItemProperty 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name AlwaysInstallElevated -ErrorAction SilentlyContinue).AlwaysInstallElevated
+        $aieMTxt = if ($null -ne $aieM) { "$aieM" } else { '(not set)' }
+        $aieUTxt = if ($null -ne $aieU) { "$aieU" } else { '(not set)' }
+        "HKLM AlwaysInstallElevated = $aieMTxt" | Out-File $script:ReportFile -Append -Encoding UTF8
+        "HKCU AlwaysInstallElevated = $aieUTxt" | Out-File $script:ReportFile -Append -Encoding UTF8
+        if ($aieM -eq 1 -and $aieU -eq 1) {
+            Add-Finding -Severity 'High' -Category 'privesc' -Message 'AlwaysInstallElevated is ENABLED in both HKLM and HKCU' -Detail 'Any user can install an MSI package as SYSTEM (T1548.002)'
+        } elseif ($aieM -eq 1 -or $aieU -eq 1) {
+            Add-Finding -Category 'privesc' -Message ("AlwaysInstallElevated is set in only one hive (HKLM={0} HKCU={1})" -f $aieMTxt, $aieUTxt) -Detail 'Not exploitable on its own - both hives must be 1. NOTE: HKCU is read for the account running the collector, so a different logged-on user may still have it set.'
         }
     } catch { Add-Err "PrivEsc failed: $_" }
 }
@@ -803,8 +856,8 @@ function Collect-FsArtifacts {
     try {
         $fs = New-SubDir 'FsArtifacts'
         Copy-Safe "$env:APPDATA\Microsoft\Windows\Recent" (Join-Path $fs 'Recent')
-        Copy-BestEffort 'C:\Windows\AppCompat\Programs\Amcache.hve' (Join-Path $fs 'Amcache.hve') 'Amcache.hve is locked on a live host; acquire via VSS / RawCopy for offline parsing'
-        try { fsutil usn queryjournal C: 2>$null | Out-File (Join-Path $fs 'usn_queryjournal.txt') -Encoding UTF8 } catch {}
+        Copy-BestEffort (Join-Path $script:SysRoot 'AppCompat\Programs\Amcache.hve') (Join-Path $fs 'Amcache.hve') 'Amcache.hve is locked on a live host; acquire via VSS / RawCopy for offline parsing'
+        try { fsutil usn queryjournal $script:SysDrive 2>$null | Out-File (Join-Path $fs 'usn_queryjournal.txt') -Encoding UTF8 } catch {}
         Get-Volume -ErrorAction SilentlyContinue | Out-File (Join-Path $fs 'volumes.txt') -Encoding UTF8
         Get-Disk   -ErrorAction SilentlyContinue | Out-File (Join-Path $fs 'disks.txt')   -Encoding UTF8
         Add-Report 'Filesystem artifacts saved to FsArtifacts\.'
@@ -884,8 +937,12 @@ function Collect-MFT {
     Add-Section '27 NTFS / MFT information'
     try {
         $mo = New-SubDir 'MFT'
-        (fsutil fsinfo ntfsinfo C: 2>&1) | Out-File (Join-Path $mo 'ntfsinfo_C.txt') -Encoding UTF8
-        (fsutil fsinfo statistics C: 2>&1) | Out-File (Join-Path $mo 'ntfs_statistics_C.txt') -Encoding UTF8
+        # The system drive, not a literal C:. The filenames follow the drive
+        # actually queried, so the evidence says which volume it came from.
+        $mftDrv = $script:SysDrive
+        $mftTag = ($mftDrv -replace '[^A-Za-z]', '')
+        (fsutil fsinfo ntfsinfo $mftDrv 2>&1)   | Out-File (Join-Path $mo ("ntfsinfo_{0}.txt" -f $mftTag)) -Encoding UTF8
+        (fsutil fsinfo statistics $mftDrv 2>&1) | Out-File (Join-Path $mo ("ntfs_statistics_{0}.txt" -f $mftTag)) -Encoding UTF8
         Add-Report 'NTFS volume/MFT info saved to MFT\.'
         Add-Report 'NOTE: full $MFT record parsing requires an offline tool (e.g. MFTECmd / RawCopy) or a mounted shadow copy; not performed in-place to avoid disk modification.'
     } catch { Add-Err "MFT failed: $_" }
@@ -901,7 +958,17 @@ function Collect-Indicators {
         Add-Report '-- Executables written to temp locations (last 14 days) --'
         $tmpCount = 0
         $tmpFirst = New-Object System.Collections.Generic.List[string]
-        foreach ($d in @("$env:TEMP","$env:APPDATA","$env:LOCALAPPDATA\Temp")) {
+        # %TEMP% and %LOCALAPPDATA%\Temp are the SAME directory for an
+        # interactive user, so every executable under it was counted twice -
+        # in the finding text and in the ExecInTempDirs counter that
+        # summary.json publishes. They differ only when running as SYSTEM, so
+        # keep both and de-duplicate instead of dropping one. Windows paths are
+        # case-insensitive; the HashSet has to be told that.
+        $tmpDirs = New-Object 'System.Collections.Generic.HashSet[string]'([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($cand in @("$env:TEMP", "$env:APPDATA", "$env:LOCALAPPDATA\Temp")) {
+            if ($cand -and $cand.Trim()) { [void]$tmpDirs.Add($cand.TrimEnd('\')) }
+        }
+        foreach ($d in $tmpDirs) {
             if (Test-PathSafe $d) {
                 $items = Get-ChildItem $d -Recurse -Include *.exe,*.dll,*.scr -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge (Get-Date).AddDays(-14) } | Select-Object FullName, Length, LastWriteTime
                 $tmpCount += @($items).Count
@@ -923,10 +990,15 @@ function Collect-Indicators {
 function Collect-Hashes {
     Add-Section '29 Hash collection (running/startup/service binaries)'
     try {
-        $paths = New-Object System.Collections.Generic.HashSet[string]
+        # Case-insensitive, because Windows paths are: Win32_Process and
+        # Win32_Service disagree on the casing of the same binary often enough
+        # that the default ordinal comparer hashed svchost.exe twice and emitted
+        # two identical lines to the IOC feed.
+        $paths = New-Object 'System.Collections.Generic.HashSet[string]'([System.StringComparer]::OrdinalIgnoreCase)
         Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object { if ($_.ExecutablePath) { [void]$paths.Add($_.ExecutablePath) } }
         Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | ForEach-Object {
-            if ($_.PathName) { $p = ($_.PathName -replace '^"([^"]+)".*','$1'); if ($p -match '\.exe') { [void]$paths.Add($p.Trim()) } }
+            $p = Get-ServiceImagePath $_.PathName
+            if ($p) { [void]$paths.Add($p) }
         }
         $rows = foreach ($p in $paths) {
             if (Test-PathSafe $p) {
@@ -949,12 +1021,27 @@ function Collect-Timeline {
     try {
         $tl = New-Object System.Collections.Generic.List[object]
         Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object { if ($_.CreationDate) { $tl.Add([pscustomobject]@{ Time=$_.CreationDate; Source='Process'; Detail=("{0} (PID {1})" -f $_.Name,$_.ProcessId) }) } }
-        if (Test-PathSafe 'C:\Windows\Prefetch') { Get-ChildItem 'C:\Windows\Prefetch' -Filter *.pf -ErrorAction SilentlyContinue | ForEach-Object { $tl.Add([pscustomobject]@{ Time=$_.LastWriteTime; Source='Prefetch'; Detail=$_.Name }) } }
+        $pfDir = Join-Path $script:SysRoot 'Prefetch'
+        if (Test-PathSafe $pfDir) { Get-ChildItem $pfDir -Filter *.pf -ErrorAction SilentlyContinue | ForEach-Object { $tl.Add([pscustomobject]@{ Time=$_.LastWriteTime; Source='Prefetch'; Detail=$_.Name }) } }
         $rec = "$env:APPDATA\Microsoft\Windows\Recent"
         if (Test-PathSafe $rec) { Get-ChildItem $rec -Filter *.lnk -ErrorAction SilentlyContinue | ForEach-Object { $tl.Add([pscustomobject]@{ Time=$_.LastWriteTime; Source='RecentLnk'; Detail=$_.Name }) } }
+        # InstallDate is a REG_SZ 'yyyyMMdd'. Added raw, it made Time a mixed
+        # DateTime/String column: Sort-Object then compared a string against a
+        # DateTime, silently gave up on those rows and shipped a timeline that
+        # is NOT in time order - the one property a timeline has to have. Rows
+        # whose date will not parse are dropped rather than left in to corrupt
+        # the ordering of every other row, and counted so the drop is visible.
+        $badDates = 0
         foreach ($p in 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*') {
-            Get-ItemProperty $p -ErrorAction SilentlyContinue | Where-Object { $_.InstallDate } | ForEach-Object { $tl.Add([pscustomobject]@{ Time=$_.InstallDate; Source='AppInstall'; Detail=$_.DisplayName }) }
+            Get-ItemProperty $p -ErrorAction SilentlyContinue | Where-Object { $_.InstallDate } | ForEach-Object {
+                $when = $null
+                try { $when = [datetime]::ParseExact([string]$_.InstallDate, 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture) }
+                catch { try { $when = [datetime]::Parse([string]$_.InstallDate, [Globalization.CultureInfo]::InvariantCulture) } catch { $when = $null } }
+                if ($when) { $tl.Add([pscustomobject]@{ Time=$when; Source='AppInstall'; Detail=$_.DisplayName }) }
+                else { $badDates++ }
+            }
         }
+        if ($badDates -gt 0) { Add-Note ("{0} Uninstall entry/entries had an InstallDate that does not parse as a date and are not in timeline.csv." -f $badDates) }
         $tl | Where-Object { $_.Time } | Sort-Object Time -Descending | Export-Csv (Join-Path $script:OutDir 'timeline.csv') -NoTypeInformation -Encoding UTF8
         $script:Stats['TimelineEntries'] = $tl.Count
         Add-Report ("Timeline entries: {0} -> timeline.csv" -f $tl.Count)

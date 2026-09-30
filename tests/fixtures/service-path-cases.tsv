@@ -1,0 +1,16 @@
+# pathname	expect	note
+# Service ImagePath -> executable, for tests/Test-ServicePath.ps1 (Get-ServiceImagePath).
+# expect: the executable, or the literal (none) when there is no .exe to take.
+# Windows-only: a service ImagePath has no Linux counterpart, so unlike the IOC and
+# allowlist tables this one is not shared with a .sh half.
+C:\Windows\system32\svchost.exe -k netsvcs	C:\Windows\system32\svchost.exe	REGRESSION: unquoted + arguments is the normal Windows form; the arguments used to stay attached, so Test-Path failed and the binary was never hashed
+C:\Windows\system32\svchost.exe -k NetworkService -p	C:\Windows\system32\svchost.exe	several arguments
+C:\Windows\system32\lsass.exe	C:\Windows\system32\lsass.exe	bare path, no arguments
+"C:\Program Files\Foo\bar.exe" -run	C:\Program Files\Foo\bar.exe	quoted path wins outright, quotes stripped
+"C:\Program Files (x86)\App\svc.exe"	C:\Program Files (x86)\App\svc.exe	quoted, 32-bit Program Files, no arguments
+C:\Program Files\Foo\bar.exe -run	C:\Program Files\Foo\bar.exe	the genuinely unquoted-with-space case privesc must still flag
+C:\Apps\svc.exe -config "C:\Program Files\x.exe"	C:\Apps\svc.exe	REGRESSION: a quoted .exe inside an ARGUMENT must not extend the image path, and must not make privesc call this unquoted
+  "C:\Windows\system32\alg.exe"	C:\Windows\system32\alg.exe	REGRESSION: leading whitespace before the opening quote is legal; anchoring at ^" read this as unquoted
+C:\Windows\System32\drivers\vmbus.sys	(none)	a driver ImagePath has no .exe - nothing to hash
+System32\drivers\afd.sys	(none)	kernel driver, relative ImagePath
+C:\Windows\system32\svchost.exe	C:\Windows\system32\svchost.exe	trailing-argument branch must also match at end of string
