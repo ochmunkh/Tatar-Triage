@@ -53,11 +53,27 @@ LABELS = {
 #
 # Reducing these numbers is the goal: each one is Mongolian documentation that
 # has not been written. Write it by hand; never machine-translate the English.
-# Measured 2026-09-30.
+# Re-measured 2026-09-30 after the Mongolian half gained Demo, the options and
+# exit-code tables, the triage-summary, execution-log and ATT&CK sections, the
+# AV-without-evasion subsection and the optional-tools list.
+#
+# table_rows and code_blocks are now ZERO, which is the point: every future
+# table row or fenced block added on one side is reported immediately, instead
+# of being absorbed by a backlog that was never going to notice it.
+#
+# The 10 that remain are the README's condensed version history -- "## Changelog"
+# and its ten release subsections -- plus "## Legal", whose text the Mongolian
+# half already carries inside "## Холбоо барих". Net of the two sections the
+# Mongolian half has and the English one does not ("Triage гэж юу вэ?" and
+# "Нууцлал", both written for a reader newer to DFIR), that is 12 - 2 = 10.
+#
+# The version history is deliberately last in the queue: docs/TRANSLATION_NEEDED.md
+# ranks translating past release notes below every operator-facing document, and
+# linux/README.md above all of them.
 ACCEPTED_DELTA = {
-    "headings": 18,      # EN 35 vs MN 17
-    "table_rows": 38,    # the option/exit-code/module tables have no MN version
-    "code_blocks": 2,    # EN 6 vs MN 4
+    "headings": 10,      # EN 35 vs MN 25 -- the condensed changelog + Legal
+    "table_rows": 0,     # in sync
+    "code_blocks": 0,    # in sync
 }
 
 

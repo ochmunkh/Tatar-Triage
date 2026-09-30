@@ -434,6 +434,36 @@ MIT (see `LICENSE`).
 
 ---
 
+## Demo
+
+Бүх модулийг нэг командаар:
+
+<p align="center">
+  <img src="docs/screenshot_terminal.png" alt="TATAR Triage Toolkit ажиллаж байгаа нь" width="840">
+</p>
+
+Run бүр бие даасан, хэшлэгдсэн нотолгооны хавтас үлдээнэ:
+
+<p align="center">
+  <img src="docs/sample_output_tree.png" alt="Гаралтын бүтэц" width="840">
+</p>
+
+v1.1-ээс хойш `summary.txt` нь IR ахлагчид нэг хуудсаар эхлэх цэг өгнө:
+
+<p align="center">
+  <img src="docs/sample_summary.png" alt="Triage дүгнэлт" width="840">
+</p>
+
+Нэгдсэн тайлан сэжигтэй үйлдлийг явцын дундаа тэмдэглэнэ (жишээ):
+
+<p align="center">
+  <img src="docs/sample_report.png" alt="Тайлангийн жишээ" width="840">
+</p>
+
+> Дэлгэцийн зурагт жишээ / далдалсан өгөгдөл ашигласан.
+
+---
+
 ## Triage гэж юу вэ?
 
 Triage гэдэг ойлголт эмнэлгээс гаралтай. Эмч өвчтөнд хамгийн эхний үнэлгээг хурдан хийж, ямар эрсдэл байж болох, цааш ямар гүнзгий шинжилгээ хэрэгтэйг тодорхойлдог. **Tatar Triage-ийн зорилго ч мөн адил** — бүх forensic хэрэгслийг орлох биш, Incident Response-ийн эхний шатанд чухал мэдээллийг хурдан цуглуулж, шинжээчид дараагийн алхмаа зөв тодорхойлоход туслах юм.
@@ -547,7 +577,35 @@ sudo ./tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-014 --ex
 sudo ./tatar-linux.sh --all --dry-run   # төлөвлөгөө харах (юу ч бичихгүй)
 ```
 
-**Exit code:** `0` = амжилт · `1` = fatal/usage алдаа · `2` = алдаатай дууссан (лог шалга). Уншигдахгүй `-Allowlist` / `-IOCFile` зам, танигдахгүй флаг ба байхгүй модулийн нэр нь `2`-т унана; заавал зайлшгүй гэж шаардах флаг (`--output`) замгүй байвал `1`.
+### Флагууд
+
+| Флаг | Тайлбар |
+|--------|-------------|
+| `-All` / `--all` | Бүх модулийг ажиллуулна |
+| `-Modules a,b,c` | Зөвхөн нэрлэсэн модулиудыг ажиллуулна |
+| `-List` | Модулиудыг жагсаагаад гарна |
+| `-Help` | Тусламж хэвлээд гарна |
+| `-OutputPath <зам>` | Гаралтын үндсэн хавтас (default `C:\Forensic`; **гадаад дискийг илүүд үз**) |
+| `-CaseId <id>` | Chain of custody-д бичих case / incident ID |
+| `-Examiner <нэр>` | Chain of custody-д бичих шинжээчийн нэр |
+| `-Compress` | Төгсгөлд нь гаралтыг zip болгож SHA-256 авна |
+| `-CollectHives` | SAM/SECURITY/SYSTEM/SOFTWARE + NTUSER-ийг хадгална (credential материал; EDR сэрээж болзошгүй) |
+| `-ExportEvtx` | Бүтэн `.evtx` лог export хийнэ |
+| `-MemoryDump` | `tools\winpmem.exe`-ээр санах ойн raw image авна (EDR сэрээж болзошгүй) |
+| `-Silent` / `-Quiet` | Консолын **бүх** гаралтыг дарна (banner, явц, төлөв). Файлууд — `tatar.log` ч мөн — хэвээр бичигдэнэ. WinRM / хуваарьт / автомат run-д зориулав |
+| `-DryRun` / `-Preview` | Тодорхойлсон гаралтын хавтас, модулиудыг ажиллах дарааллаар нь, аль gated үйлдэл асаалттайг, allowlist / IOC feed уншигдаж байгаа эсэхийг хэвлээд `0`-ээр гарна — **юу ч үүсгэхгүй, юу ч бичихгүй** |
+| `-Allowlist <json>` | Мэдэгдэж байгаа цэвэр finding-ийг зам, Authenticode нийтлэгч, эсвэл SHA-256-аар нууна. Suppressed finding аудитад үлдэнэ, устдаггүй |
+| `-IOCFile <json>` | Finding болон цуглуулсан нотолгоог офлайн IOC feed-тэй тулгана (hashes = зөвхөн SHA-256, ips, domains, filenames). Таарвал allowlist-ийг **давж**, High болгож өсгөнө |
+
+### Exit code
+
+`0` = амжилт · `1` = fatal/usage алдаа · `2` = алдаатай дууссан (лог шалга). Заавал утга шаардах флаг (`--output`) замгүй байвал `1`.
+
+| Code | Утга |
+|------|---------|
+| `0` | Цуглуулга амжилттай дууссан |
+| `1` | Fatal / usage алдаа (юу ч сонгоогүй, утга шаардах флаг утгагүй, гаралтын хавтас үүсгэж чадаагүй, хүчинтэй модуль алга) |
+| `2` | Цуглуулга дууссан ч нэг буюу хэд хэдэн алхам алдаа бүртгүүлсэн — `tatar.log`-ийг шалга. Уншигдахгүй `-Allowlist` / `-IOCFile` зам, танигдахгүй флаг, байхгүй модулийн нэр энд унана. |
 
 ---
 
@@ -558,6 +616,59 @@ sudo ./tatar-linux.sh --all --dry-run   # төлөвлөгөө харах (юу 
 **Linux (18):** sysinfo · network · process · sessions · users · services · persistence · apps · suid · sshkeys · bashhistory · kernelmods · indicators · hashes · logs · timeline · containers · integrity
 
 Хамрах хүрээ: систем/хэрэглэгч/сүлжээний төлөв, LOLBAS command-line флагтай процессууд, process genealogy, persistence (Run keys, scheduled tasks, IFEO/AppInit/LSA/Winlogon ASEP-ууд), RDP/lateral movement, privilege-escalation индикатор, обфускаци скан, browser artifact мета, Recent/Amcache/Prefetch, shadow copy, чухал Windows event ID, NTFS/MFT, IOC-д зориулсан file hashing, super-timeline. Linux талд: cron/systemd persistence, SUID/SGID, SSH түлхүүр, container/cloud context, критикал файлын integrity baseline гэх мэт.
+
+---
+
+## Triage дүгнэлт ба finding
+
+Run бүр шинжээчид зориулсан нэг хуудсаар төгсдөг — IR ахлагч **юуг эхэлж харахаа** мэдэж авна:
+
+- **`summary.txt`** — host / OS / case мета, quick stats (процессын тоо, listening port, established холболт, account, хэшлэсэн binary … платформ бүр дээр ижил түлхүүрүүд) болон severity-ээр эрэмбэлсэн **сэжигтэй finding**-үүдийн нэгтгэсэн жагсаалт.
+- **`summary.json`** — ижил өгөгдөл бүтэцтэй JSON хэлбэрээр (`stats`, `Severity/Category/Message/Detail`-тай `findings[]`), SIEM-д залгих эсвэл скриптээр боловсруулахад бэлэн.
+
+Finding-ууд collector-уудаас өөрсдөөс нь гарна: LOLBAS маягийн command line, обфускацитай скрипт, PsExec-ийн ул мөр, WMI event-subscription consumer, хашилтгүй / хэрэглэгч бичиж чадах service зам, `AlwaysInstallElevated`, security log цэвэрлэсэн (1102) event, temp хавтсанд саяхан унасан executable гэх мэт.
+
+> **Чухал:** finding бол автомат pattern match — **review хийх сэжүүр, эцсийн дүгнэлт биш.** Хууль ёсны программ (updater, IT хэрэгсэл) байнга орж ирдэг; дүгнэлт гаргахаасаа өмнө сэжүүр бүрийг бүтэн тайлантай тулгаж баталгаажуул.
+
+## Гүйцэтгэлийн лог (`tatar.log`)
+
+Run бүр нотолгооны хажууд цаг тэмдэгтэй гүйцэтгэлийн лог бичнэ:
+
+```
+[2026-07-10 22:26:16.693] [START ] module sysinfo (1/30)
+[2026-07-10 22:26:17.721] [OK    ] module sysinfo finished in 1s
+[2026-07-10 22:26:17.751] [START ] module hives (26/30)
+[2026-07-10 22:26:17.995] [ERROR ] Hives failed: Access denied
+[2026-07-10 22:26:17.996] [WARN  ] module hives finished in 0.2s with 1 error(s)
+```
+
+`tatar.log` бол **ажиллагааны** лог — manifest хэшлэгдсэний дараа ч үргэлжлэн урсдаг тул `manifest_sha256.txt`-д **зориудаар оруулаагүй**. Нотолгооны файлууд бүгд ердийнхөөрөө хэшлэгдэнэ.
+
+---
+
+## MITRE ATT&CK тэмдэглэгээ
+
+Collector бүр нь халдагчийн аль техникийг **илрүүлэх / шинжлэхэд** туслахаар нь ATT&CK-тай холбогдоно. Дэлгэрэнгүйг [`docs/MITRE_ATTACK.md`](docs/MITRE_ATTACK.md)-аас үз.
+
+| Модуль / artifact | ATT&CK technique | Tactic |
+|---|---|---|
+| `process` (LOLBAS command line) | T1059 · T1059.001 (PowerShell) | Execution |
+| `persistence` (Run key) | T1547.001 | Persistence |
+| `persistence` (scheduled task) | T1053.005 | Persistence |
+| `services` | T1543.003 | Persistence / Priv Esc |
+| `rdp` | T1021.001 (RDP) | Lateral Movement |
+| `lateral` (SMB share / session) | T1021.002 | Lateral Movement |
+| `lateral` (WMI event subscription) | T1546.003 · T1047 | Persistence / Execution |
+| `lateral` (PsExec) | T1569.002 | Execution |
+| `hives` (SAM / SECURITY / LSASS) | T1003.002 · T1003.001 | Credential Access |
+| `privesc` (хашилтгүй service зам) | T1574.009 | Persistence / Priv Esc |
+| `privesc` (AlwaysInstallElevated) | T1548 | Privilege Escalation |
+| `obfscan` | T1027 · T1140 | Defense Evasion |
+| `usb` | T1091 · T1200 | Initial Access / Exfil |
+| `eventlogs` (ID 1102) | T1070.001 (event log цэвэрлэх) | Defense Evasion |
+| `shadow` | T1490 (сэргээлтийг хаах) | Impact |
+| `network` (холболт, DNS, `hosts` файл) | T1071 · T1565.001 | C2 / Defense Evasion |
+| `browser` | T1555.003 · T1539 | Credential Access |
 
 ---
 
@@ -583,10 +694,24 @@ sudo ./tatar-linux.sh --all --dry-run   # төлөвлөгөө харах (юу 
 - **Гадаад дискэнд бичихийг зөвлөнө** (`-OutputPath E:\Evidence`). Систем дискэнд бичвэл устсан файлын ул мөрийг дарж бичиж болзошгүй.
 - Цуглуулга дуусахаас өмнө хостыг **унтраах/restart хийхгүй**.
 - Гаралт нь **эмзэг мэдээлэл** агуулж болзошгүй (registry hive, browser мета) — шифрлэж, аюулгүй дамжуул.
-- Зарим модуль (`hives`, `memorydump`, `exportevtx`) EDR/AV-г идэвхжүүлж болзошгүй — SOC-той зөвшилцөж, tool-оо урьдчилан allow-list хий.
-- **Татсан файлаа шалга.** Release бүр SHA256SUMS.txt-тэй гарна: Linux дээр `sha256sum -c SHA256SUMS.txt`, Windows дээр `Get-FileHash`. Хэшийг README дотор хатуу бичихгүй — release-ийн тэр файл нь эх сурвалж.
+- Зарим модуль (`hives`, `memorydump`, `exportevtx`) EDR/AV-г идэвхжүүлдэг нь мэдэгдэж байгаа. Энэ бол хүлээгдэж байсан зүйл — EDR-ээ унтраах биш, **SOC-той зөвшилцөж, tool-оо урьдчилан allow-list хий.**
 
-Дэлгэрэнгүй MITRE ATT&CK mapping: [`docs/MITRE_ATTACK.md`](docs/MITRE_ATTACK.md).
+### AV-г тойрч гарахгүйгээр ажиллуулах
+
+Энэ хэрэгсэл зориудаар **ил тод** бичигдсэн (обфускаци, AMSI bypass үгүй). AV саад болохгүйгээр ажиллуулах зөв, аудит хийгдэх боломжтой арга:
+
+1. Скриптэд **code-sign** хий (`Set-AuthenticodeSignature`).
+2. Түүний SHA-256-ийг **нийтэл** — хариу үзүүлэгч шалгаад allow-list хийж чадна.
+3. Forensic хост дээр зөвхөн тухайн хэрэгсэлд зориулсан **хязгаарлагдмал Defender/EDR exclusion** нэмж, ажил дууссаны дараа буцааж хас.
+
+**Татсан файлаа шалга.** Release бүр хоёр collector болон хоёр sample файлыг хамарсан `SHA256SUMS.txt`-тэй гарна. Хэшийн эх сурвалж нь энэ README биш, тэр файл — тиймээс энд бичсэн зүйл хэзээ ч хуучирдаггүй:
+
+```
+sha256sum -c SHA256SUMS.txt                          # Linux
+(Get-FileHash .\Tatar.ps1 -Algorithm SHA256).Hash    # Windows — SHA256SUMS.txt-тэй тулгана
+```
+
+Сүүлийн release: **[github.com/ochmunkh/Tatar-Triage/releases/latest](https://github.com/ochmunkh/Tatar-Triage/releases/latest)**
 
 ---
 
@@ -595,7 +720,16 @@ sudo ./tatar-linux.sh --all --dry-run   # төлөвлөгөө харах (юу 
 - Хадгалагдсан нууц үг **задалдаггүй / тайлдаггүй**.
 - Бүрэн `$MFT` parse хийхэд offline хэрэгсэл (MFTECmd / RawCopy) хэрэгтэй; скрипт зөвхөн NTFS/MFT мета бичнэ.
 - Browser artifact бол **зөвхөн мета** (DB задлахгүй).
+- Administrator эрхгүй бол зарим artifact (event log, hive, хамгаалагдсан процесс) дутуу цуглана.
 - Finding нь эвристик pattern match — хууль ёсны программаас FP гарч болзошгүй, **үргэлж баталгаажуул**.
+- PowerShell 5.1 дээрх `Compress-Archive` маш том гаралтыг (жишээ нь санах ойн image) барьж дийлдэггүй — түүнд 7-Zip ашигла.
+
+## Нэмэлт гадаад хэрэгсэл (`tools\`)
+
+- `winpmem.exe` — санах ойн image авах (`-MemoryDump`-д)
+- `autoruns64.exe` — Sysinternals Autoruns (`autoruns` модульд)
+
+`tools\` дэд хавтсанд байвал автоматаар ашиглана; байхгүй бол тэр алхмуудыг алгасана.
 
 ---
 
