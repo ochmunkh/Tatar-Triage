@@ -14,3 +14,5 @@ C:\Apps\svc.exe -config "C:\Program Files\x.exe"	C:\Apps\svc.exe	REGRESSION: a q
 C:\Windows\System32\drivers\vmbus.sys	(none)	a driver ImagePath has no .exe - nothing to hash
 System32\drivers\afd.sys	(none)	kernel driver, relative ImagePath
 C:\Windows\system32\svchost.exe	C:\Windows\system32\svchost.exe	trailing-argument branch must also match at end of string
+C:\Apps\svc.exe -config C:\Program Files\x.exe	C:\Apps\svc.exe	unquoted argument that itself ends in .exe must not be taken as the image
+"C:\Windows\system32\drivers\foo.sys"	(none)	quoted driver entry: the .exe rule applies to the quoted form too

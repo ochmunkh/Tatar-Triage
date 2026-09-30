@@ -171,6 +171,19 @@ $script:ModulesSkipped = New-Object System.Collections.Generic.List[string]
 $script:SysRoot  = if ($env:SystemRoot)  { $env:SystemRoot.TrimEnd('\') }  else { 'C:\Windows' }
 $script:SysDrive = if ($env:SystemDrive) { $env:SystemDrive.TrimEnd('\') } else { 'C:' }
 
+function Join-WinPath {
+    # Join Windows path segments LITERALLY, with a single backslash.
+    #
+    # Join-Path resolves the drive of its first segment, so on a non-Windows
+    # host 'C:\Windows' makes it throw "Cannot find drive. A drive with the name
+    # 'C' does not exist" -- a red error block on a run that is otherwise silent.
+    # These are constants being assembled, not paths being resolved, so no drive
+    # lookup is wanted on any platform. The parse/analyse/dry-run checks all run
+    # on Linux, and an error there is noise that hides a real one.
+    param([Parameter(Mandatory)][string]$Base, [Parameter(Mandatory)][string]$Child)
+    return ($Base.TrimEnd('\') + '\' + $Child.TrimStart('\'))
+}
+
 function Write-Console {
     # Console output wrapper: fully suppressed by -Silent. File output is never affected.
     param([string]$Text = '', [string]$Color = 'Gray')
@@ -380,7 +393,19 @@ function Get-ServiceImagePath {
     # .exe at a word boundary, which is also what the service control manager
     # resolves first. Returns $null when there is no .exe (driver .sys entries).
     param([string]$PathName)
-    if ($PathName -match '^\s*"([^"]+)"')          { return $matches[1] }
+    # The .exe rule applies to the quoted form too. It used to return whatever
+    # was inside the quotes, so a quoted driver entry -- "C:\Windows\system32\
+    # drivers\foo.sys" -- came back as a path and was fed to Get-FileHash,
+    # contradicting the contract two lines above and hashing a driver as though
+    # it were a service executable.
+    if ($PathName -match '^\s*"([^"]+)"') {
+        # Capture BEFORE the next -match: that operator reassigns $matches, so
+        # testing $matches[1] and then returning $matches[1] returns the inner
+        # match's groups, i.e. $null.
+        $quoted = $matches[1]
+        if ($quoted -match '\.exe$') { return $quoted }
+        return $null
+    }
     if ($PathName -match '^\s*(\S.*?\.exe)(\s|$)') { return $matches[1] }
     return $null
 }
@@ -427,7 +452,7 @@ function Collect-Network {
         route print | Out-File (Join-Path $script:OutDir 'routes.txt') -Encoding UTF8
         ipconfig /displaydns | Out-File (Join-Path $script:OutDir 'dns_cache.txt') -Encoding UTF8
         ipconfig /all | Out-File (Join-Path $script:OutDir 'ipconfig.txt') -Encoding UTF8
-        $hostsFile = Join-Path $script:SysRoot 'System32\drivers\etc\hosts'
+        $hostsFile = Join-WinPath $script:SysRoot 'System32\drivers\etc\hosts'
         Get-Content $hostsFile -ErrorAction SilentlyContinue | Out-File (Join-Path $script:OutDir 'hosts.txt') -Encoding UTF8
         # Mirror of the Linux check: the file is already being collected, and a
         # static host override that silently redirects traffic is one of the
@@ -613,7 +638,7 @@ function Collect-Persistence {
             # '<SystemRoot>\system32\userinit.exe,', so pinning the drive to C:
             # raised a HIGH 'Userinit is non-default' on every host that boots
             # from another drive - a false positive on an untouched machine.
-            $uiDefault = '(?i)^' + [regex]::Escape((Join-Path $script:SysRoot 'system32\userinit.exe')) + ',?\s*$'
+            $uiDefault = '(?i)^' + [regex]::Escape((Join-WinPath $script:SysRoot 'system32\userinit.exe')) + ',?\s*$'
             if ($wlp.Userinit -and $wlp.Userinit -notmatch $uiDefault) { Add-Finding -Severity 'High' -Category 'persistence' -Message 'Winlogon Userinit is non-default' -Detail ("Userinit = $($wlp.Userinit)") }
         }
         $lsa = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'
@@ -672,7 +697,7 @@ function Collect-InstalledApps {
 function Collect-Prefetch {
     Add-Section '14 Prefetch (last 60 days)'
     try {
-        $pf = 'C:\Windows\Prefetch'
+        $pf = Join-WinPath $script:SysRoot 'Prefetch'
         if (Test-PathSafe $pf) {
             $cutoff = (Get-Date).AddDays(-60)
             Get-ChildItem $pf -Filter *.pf -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $cutoff } | Sort-Object LastWriteTime -Descending | Select-Object Name, Length, LastWriteTime | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
@@ -759,7 +784,7 @@ function Collect-Lateral {
         Add-Report '-- Inbound SMB sessions / open files --'
         Get-SmbSession -ErrorAction SilentlyContinue | Select-Object ClientComputerName, ClientUserName, NumOpens | Out-String | Out-File $script:ReportFile -Append -Encoding UTF8
         Add-Report '-- PsExec artifacts --'
-        $psexesvc = Join-Path $script:SysRoot 'PSEXESVC.exe'
+        $psexesvc = Join-WinPath $script:SysRoot 'PSEXESVC.exe'
         if (Test-PathSafe $psexesvc) {
             Add-Report ("PSEXESVC.exe present in {0} (PsExec was used)." -f $script:SysRoot)
             Add-Finding -Severity 'High' -Category 'lateral' -Message ("PsExec service binary present ({0})" -f $psexesvc) -Detail 'PsExec was executed against this host at some point - correlate with logon events'
@@ -856,7 +881,7 @@ function Collect-FsArtifacts {
     try {
         $fs = New-SubDir 'FsArtifacts'
         Copy-Safe "$env:APPDATA\Microsoft\Windows\Recent" (Join-Path $fs 'Recent')
-        Copy-BestEffort (Join-Path $script:SysRoot 'AppCompat\Programs\Amcache.hve') (Join-Path $fs 'Amcache.hve') 'Amcache.hve is locked on a live host; acquire via VSS / RawCopy for offline parsing'
+        Copy-BestEffort (Join-WinPath $script:SysRoot 'AppCompat\Programs\Amcache.hve') (Join-Path $fs 'Amcache.hve') 'Amcache.hve is locked on a live host; acquire via VSS / RawCopy for offline parsing'
         try { fsutil usn queryjournal $script:SysDrive 2>$null | Out-File (Join-Path $fs 'usn_queryjournal.txt') -Encoding UTF8 } catch {}
         Get-Volume -ErrorAction SilentlyContinue | Out-File (Join-Path $fs 'volumes.txt') -Encoding UTF8
         Get-Disk   -ErrorAction SilentlyContinue | Out-File (Join-Path $fs 'disks.txt')   -Encoding UTF8
@@ -925,7 +950,7 @@ function Collect-Hives {
             Invoke-Ext -File 'reg.exe' -Arguments @('save', $k, $dst, '/y') -OutFile (Join-Path $hd 'reg_save.log')
             if (Test-PathSafe $dst) { Add-Report "Saved $k" }
         }
-        Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-ChildItem (Join-WinPath $script:SysDrive 'Users') -Directory -ErrorAction SilentlyContinue | ForEach-Object {
             $nt = Join-Path $_.FullName 'NTUSER.DAT'
             if (Test-PathSafe $nt) { Copy-BestEffort $nt (Join-Path $hd ("NTUSER_" + $_.Name + ".dat")) 'NTUSER.DAT of an active profile is locked; acquire offline / via VSS' }
         }
@@ -1021,7 +1046,7 @@ function Collect-Timeline {
     try {
         $tl = New-Object System.Collections.Generic.List[object]
         Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object { if ($_.CreationDate) { $tl.Add([pscustomobject]@{ Time=$_.CreationDate; Source='Process'; Detail=("{0} (PID {1})" -f $_.Name,$_.ProcessId) }) } }
-        $pfDir = Join-Path $script:SysRoot 'Prefetch'
+        $pfDir = Join-WinPath $script:SysRoot 'Prefetch'
         if (Test-PathSafe $pfDir) { Get-ChildItem $pfDir -Filter *.pf -ErrorAction SilentlyContinue | ForEach-Object { $tl.Add([pscustomobject]@{ Time=$_.LastWriteTime; Source='Prefetch'; Detail=$_.Name }) } }
         $rec = "$env:APPDATA\Microsoft\Windows\Recent"
         if (Test-PathSafe $rec) { Get-ChildItem $rec -Filter *.lnk -ErrorAction SilentlyContinue | ForEach-Object { $tl.Add([pscustomobject]@{ Time=$_.LastWriteTime; Source='RecentLnk'; Detail=$_.Name }) } }
