@@ -1,0 +1,131 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ochmunkh/Tatar-Triage/blob/main/schema/findings.schema.json",
+  "title": "TATAR findings-only feed",
+  "description": "Shared findings.json contract emitted by every TATAR collector alongside summary.json: the findings-only feed for SOAR / SIEM ingestion. The findings[] definition is kept byte-identical to summary.schema.json#/properties/findings (asserted by tests/run-tests.sh) so this file validates standalone, with no $ref resolver.",
+  "type": "object",
+  "required": [
+    "tool",
+    "schemaVersion",
+    "platform",
+    "host",
+    "generated",
+    "findingsCount",
+    "activeFindingsCount",
+    "suppressedCount",
+    "findings"
+  ],
+  "properties": {
+    "tool": {
+      "type": "string",
+      "description": "Human tool name, e.g. 'TATAR Triage Toolkit'. Identical across platforms; 'platform' is the discriminator."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "enum": [
+        "1.1",
+        "1.2"
+      ],
+      "description": "Version of THIS shared schema. Consumers key off this."
+    },
+    "platform": {
+      "type": "string",
+      "enum": [
+        "windows",
+        "linux",
+        "macos",
+        "android"
+      ]
+    },
+    "host": {
+      "type": "string"
+    },
+    "caseId": {
+      "type": "string"
+    },
+    "generated": {
+      "type": "string",
+      "description": "ISO-8601 time the feed was written (the run's finish time)."
+    },
+    "findingsCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Length of findings[]; equals activeFindingsCount + suppressedCount."
+    },
+    "activeFindingsCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Findings still on the headline list. INVARIANT: activeFindingsCount + suppressedCount == findings.length. A low value means 'allowlisted' only when suppressedCount is high - it never means the host is clean."
+    },
+    "suppressedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Findings hidden by an allowlist rule but retained in findings[] for audit. INVARIANT: activeFindingsCount + suppressedCount == findings.length."
+    },
+    "findings": {
+      "type": "array",
+      "description": "Automated triage leads (NOT verdicts). Each maps to zero or more MITRE ATT&CK techniques.",
+      "items": {
+        "type": "object",
+        "required": [
+          "severity",
+          "category",
+          "message"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "High",
+              "Review",
+              "Info"
+            ],
+            "description": "The shipped collectors emit only High and Review. Info is reserved for low-signal context findings; a consumer may receive it from a future collector, so handle it, but do not expect it today."
+          },
+          "category": {
+            "type": "string",
+            "description": "Emitting module/collector, e.g. process, users, persistence."
+          },
+          "technique": {
+            "type": "array",
+            "description": "Suggested MITRE ATT&CK technique IDs. Empty when unmapped.",
+            "items": {
+              "type": "string",
+              "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$"
+            }
+          },
+          "message": {
+            "type": "string",
+            "description": "One-line lead for the analyst."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Where to look / why it matters."
+          },
+          "id": {
+            "type": "string",
+            "description": "Stable finding id, e.g. TTR-F-001."
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "How sure the tool is (independent of severity)."
+          },
+          "suppressed": {
+            "type": "boolean",
+            "description": "True when hidden from the headline by an allowlist rule (still retained for audit)."
+          },
+          "suppressReason": {
+            "type": "string",
+            "description": "Why the finding was suppressed (allowlist rule / signature)."
+          },
+          "iocMatch": {
+            "type": "boolean",
+            "description": "True when an IOC matched this finding. The indicator itself is prefixed into detail as: IOC match: <indicator> | ..."
+          }
+        }
+      }
+    }
+  }
+}

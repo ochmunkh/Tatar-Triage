@@ -1,0 +1,24 @@
+# Python bytecode from the CI check scripts in .github/scripts/.
+# Importing one of them (or pytest touching them) writes __pycache__ next to the
+# source, and a `git add -A` then sweeps it in. Two .pyc files reached this
+# branch that way before this file existed.
+__pycache__/
+*.py[cod]
+
+# Collector output. Tatar.ps1 and linux/tatar-linux.sh write a timestamped
+# evidence directory; none of it belongs in the repo, and some of it would be
+# real evidence from whatever host it was run on.
+*_20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*/
+tatar.log
+summary.json
+TATAR_Report_*.txt
+manifest_sha256.txt
+chain_of_custody.txt
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/

@@ -32,12 +32,31 @@
     },
     "errorsLogged": { "type": "integer", "minimum": 0 },
     "modulesRun": { "type": "array", "items": { "type": "string" } },
+    "modulesSkipped": {
+      "type": "array",
+      "description": "Modules that were requested but never ran (unknown module name). Empty on a clean run. A non-empty list means evidence is MISSING, not absent.",
+      "items": { "type": "string" }
+    },
     "stats": {
       "type": "object",
-      "description": "Free-form key/value counters (process count, listening ports, etc.). Values are strings or numbers.",
+      "description": "Key/value counters. A counter is emitted as a JSON number on every platform. Use the canonical key in x-canonicalStatKeys for a concept any collector can measure, so one dashboard can plot 'accounts on host' without a per-platform special case; a key listed there means the same thing everywhere. Platform-specific counters are allowed, but a new spelling of an existing concept is not.",
+      "x-canonicalStatKeys": [
+        "Processes",
+        "ListeningTcpPorts",
+        "EstablishedConnections",
+        "RecentFailedLogons",
+        "Accounts",
+        "RunningServices",
+        "ExecInTempDirs",
+        "HashedBinaries",
+        "TimelineEntries",
+        "RunningContainers"
+      ],
       "additionalProperties": { "type": ["string", "number"] }
     },
-    "findingsCount": { "type": "integer", "minimum": 0 },
+    "findingsCount": { "type": "integer", "minimum": 0, "description": "Length of findings[]; equals activeFindingsCount + suppressedCount." },
+    "activeFindingsCount": { "type": "integer", "minimum": 0, "description": "Findings still on the headline list. INVARIANT: activeFindingsCount + suppressedCount == findings.length. A low value means 'allowlisted' only when suppressedCount is high - it never means the host is clean." },
+    "suppressedCount": { "type": "integer", "minimum": 0, "description": "Findings hidden by an allowlist rule but retained in findings[] for audit. INVARIANT: activeFindingsCount + suppressedCount == findings.length." },
     "findings": {
       "type": "array",
       "description": "Automated triage leads (NOT verdicts). Each maps to zero or more MITRE ATT&CK techniques.",
@@ -45,7 +64,7 @@
         "type": "object",
         "required": ["severity", "category", "message"],
         "properties": {
-          "severity": { "type": "string", "enum": ["High", "Review", "Info"] },
+          "severity": { "type": "string", "enum": ["High", "Review", "Info"], "description": "The shipped collectors emit only High and Review. Info is reserved for low-signal context findings; a consumer may receive it from a future collector, so handle it, but do not expect it today." },
           "category": { "type": "string", "description": "Emitting module/collector, e.g. process, users, persistence." },
           "technique": {
             "type": "array",
@@ -62,5 +81,13 @@
         }
       }
     }
+  },
+  "if": {
+    "required": ["schemaVersion"],
+    "properties": { "schemaVersion": { "const": "1.2" } }
+  },
+  "then": {
+    "description": "The three counts are optional for schemaVersion 1.1, which predates them, and mandatory from 1.2 on - every 1.2 producer emits them and four test harnesses assert the invariant.",
+    "required": ["findingsCount", "activeFindingsCount", "suppressedCount"]
   }
 }

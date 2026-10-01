@@ -6,6 +6,7 @@
 # Companion to Tatar.ps1 (Windows). Produces the SAME analyst-first outputs:
 #   * summary.txt / summary.json  (unified schema across platforms)
 #   * tatar.log                   (timestamped START/OK/WARN/FAILED per module)
+#                                 FAILED = the module's primary artifact is MISSING
 #   * manifest_sha256.txt         (SHA-256 of every collected file)
 #   * chain_of_custody.txt
 #
@@ -27,7 +28,12 @@
 set -o pipefail 2>/dev/null || true
 
 VERSION="1.2.5"
-TOOL="TATAR Triage Toolkit (Linux)"
+# 'tool' in summary.json MUST be identical on every platform: 'platform' is the
+# discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
+# dashboard that ingests both editions. The edition stays visible to humans via
+# TOOL_DISPLAY (banner, help, report and chain of custody).
+TOOL="TATAR Triage Toolkit"
+TOOL_DISPLAY="$TOOL (Linux)"
 
 # Field separator for the findings pipeline. MUST be non-whitespace: bash 'read'
 # collapses consecutive whitespace-IFS delimiters, which would drop empty fields
@@ -37,9 +43,20 @@ FSEP="$(printf '\037')"   # ASCII Unit Separator (0x1F)
 # ---------------------------------------------------------------------------
 # Argument parsing  (-flag / --flag, case-insensitive-ish)
 # ---------------------------------------------------------------------------
-ALL=0; LIST=0; HELP=0; COMPRESS=0; SILENT=0; DUMP_DELETED=0
+ALL=0; LIST=0; HELP=0; COMPRESS=0; SILENT=0; DUMP_DELETED=0; DRYRUN=0
 OUTPUT_BASE="/tmp/forensic"; CASE_ID=""; EXAMINER=""
 MODULES=""; UNKNOWN=""; ALLOWLIST=""; IOCFILE=""
+
+# A value-taking flag must be followed by an actual value. Without this guard
+# 'shift; VAR="$1"' swallowed the NEXT FLAG (or nothing at all): `--all --output`
+# left OUTPUT_BASE empty and wrote the evidence tree to "/" on the suspect host,
+# and `--output --caseid IR-1` silently dropped the case id. A usage error is
+# printed to stderr even under --silent: a cron/SSH run must not exit 1 mutely.
+need_val() {  # need_val FLAG_AS_TYPED [NEXT_TOKEN]
+    case "${2-}" in
+        ''|-*) printf '%s\n' "[x] FATAL: $1 requires a value" >&2; exit 1 ;;
+    esac
+}
 
 while [ $# -gt 0 ]; do
     raw="$1"
@@ -50,13 +67,14 @@ while [ $# -gt 0 ]; do
         help|h|\?)   HELP=1 ;;
         compress)    COMPRESS=1 ;;
         silent|quiet|q) SILENT=1 ;;
+        dry-run|dryrun|preview) DRYRUN=1 ;;
         dump-deleted|dumpdeleted) DUMP_DELETED=1 ;;
-        modules)     shift; MODULES="$(printf '%s' "$1" | tr ',' ' ')" ;;
-        output|outputpath|o) shift; OUTPUT_BASE="$1" ;;
-        caseid|case) shift; CASE_ID="$1" ;;
-        examiner)    shift; EXAMINER="$1" ;;
-        allowlist|allow) shift; ALLOWLIST="$1" ;;
-        ioc|iocfile|iocs) shift; IOCFILE="$1" ;;
+        modules)     need_val "$raw" "${2-}"; shift; MODULES="$(printf '%s' "$1" | tr ',' ' ')" ;;
+        output|outputpath|o) need_val "$raw" "${2-}"; shift; OUTPUT_BASE="$1" ;;
+        caseid|case) need_val "$raw" "${2-}"; shift; CASE_ID="$1" ;;
+        examiner)    need_val "$raw" "${2-}"; shift; EXAMINER="$1" ;;
+        allowlist|allow) need_val "$raw" "${2-}"; shift; ALLOWLIST="$1" ;;
+        ioc|iocfile|iocs) need_val "$raw" "${2-}"; shift; IOCFILE="$1" ;;
         *)           UNKNOWN="$UNKNOWN $raw" ;;
     esac
     shift
@@ -121,10 +139,17 @@ add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
     msg=$(printf '%s' "$msg" | tr '\t\n' '  ')
     det=$(printf '%s' "$det" | tr '\t\n' '  ')
     [ -z "$tech" ] && tech="$(map_technique "$cat" "$msg")"
-    FIND_SEQ=$((FIND_SEQ+1))
     local id conf
+    # An unknown severity used to become confidence 0.3 in silence - a value no
+    # collector emits and both test suites reject. Fail at the call site instead
+    # of shipping a finding the contract does not allow.
+    case "$sev" in
+        High)   conf=0.7 ;;
+        Review) conf=0.4 ;;
+        *)      printf "add_finding: unknown severity '%s' (expected High or Review)\n" "$sev" >&2; return 1 ;;
+    esac
+    FIND_SEQ=$((FIND_SEQ+1))
     id=$(printf 'TTR-F-%03d' "$FIND_SEQ")
-    case "$sev" in High) conf=0.7 ;; Review) conf=0.4 ;; *) conf=0.3 ;; esac
     # columns (FSEP-delimited): id | sev | cat | msg | det | tech | conf
     printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\n' "$id" "$sev" "$cat" "$msg" "$det" "$tech" "$conf" >> "$FINDINGS_FILE"
 }
@@ -156,12 +181,18 @@ pkg_owns() {  # $1=path -> 0 if the file belongs to an installed system package
     return 1
 }
 
+al_paths_of() {  # $1=msg $2=detail -> EVERY absolute path token, one per line
+    # The suppression pass has to see all of them: judging a finding by a single
+    # token let `dpkg -S /tmp` allowlist an aggregate about files in /tmp.
+    printf '%s %s' "$1" "$2" | grep -oE '/[A-Za-z0-9_.+-][A-Za-z0-9_./+-]*' | awk '!seen[$0]++'
+}
+
 al_path_of() {  # $1=msg $2=detail -> best absolute path token
     # A finding can mention several paths ("/tmp/x runs from /usr/bin/foo"). Taking
     # the first one blindly hashed or globbed the wrong file, so prefer a token
     # that exists on disk and fall back to the first one.
     local toks first p
-    toks="$(printf '%s %s' "$1" "$2" | grep -oE '/[A-Za-z0-9_.+-][A-Za-z0-9_./+-]*')"
+    toks="$(al_paths_of "$1" "$2")"
     [ -n "$toks" ] || return 0
     first="$(printf '%s\n' "$toks" | head -n1)"
     while IFS= read -r p; do
@@ -268,6 +299,10 @@ json_escape() {
 
 banner() {
     [ "$SILENT" -eq 1 ] && return 0
+    # The ASCII art keeps its quoted heredoc so the backslashes stay literal;
+    # the title line is printed separately so it follows $TOOL_DISPLAY and
+    # $VERSION. It used to hard-code both "(Linux)" and "v1.2.5", which made
+    # the banner the one header in this script a version bump leaves stale.
     cat <<'EOF'
 
    _____  _    _____  _    ____
@@ -277,7 +312,9 @@ banner() {
     |_/_/   \_\ |_/_/   \_\_| \_\
 
 +==============================================================+
-|   TATAR TRIAGE TOOLKIT  (Linux)   v1.2.5                     |
+EOF
+    printf '|   %-59s|\n' "${TOOL_DISPLAY^^}   v$VERSION"
+    cat <<'EOF'
 |   Fast DFIR triage / artifact collector                      |
 |   Transparent - review, sign & allow-list; do not evade      |
 +==============================================================+
@@ -286,11 +323,12 @@ EOF
 
 show_help() {
 cat <<EOF
-$TOOL v$VERSION
+$TOOL_DISPLAY v$VERSION
 
 USAGE:
   sudo ./tatar-linux.sh --all                     Run all modules (order of volatility)
   sudo ./tatar-linux.sh --modules network,process Run selected modules
+  sudo ./tatar-linux.sh --all --dry-run           Preview the plan; write nothing
   ./tatar-linux.sh --list                         List available modules
   ./tatar-linux.sh --help                         Show this help
 
@@ -300,6 +338,8 @@ OPTIONS:
   --examiner <name> Examiner name for chain of custody
   --compress        tar.gz + SHA-256 the output at the end
   --silent|--quiet  No console output (for SSH/cron/remote runs)
+  --dry-run         Show output dir, module order, gated ops and feed verdicts,
+                    then exit 0 without creating or writing anything. Alias: --preview
   --allowlist <json> Suppress known-good findings (paths[], hashes[], packageOwned)
   --ioc <json>      Match findings/evidence vs IOCs (hashes[], ips[], domains[], filenames[])
   --dump-deleted    Recover deleted running binaries via /proc/PID/exe (opt-in; off by default)
@@ -313,6 +353,7 @@ OUTPUT (always written):
 EXIT CODES:  0 = success | 1 = fatal / usage error | 2 = completed with errors
 
 NOTES:
+  * A value-taking flag rejects a missing value: --output with no path exits 1.
   * Run as root for complete collection.
   * Do NOT reboot the host before collection finishes.
   * Findings are review LEADS, not verdicts - validate against the full report.
@@ -335,10 +376,12 @@ m_sysinfo() {
     have lscpu && { echo "--- lscpu ---" >> "$REPORT"; lscpu >> "$REPORT" 2>/dev/null; }
     free -h >> "$REPORT" 2>/dev/null
     df -h  >> "$REPORT" 2>/dev/null
+    return 0
 }
 
 m_network() {
     section "02 Network (connections, listening, routes, DNS)"
+    local rc=0
     if have ss; then
         echo "--- ss -tunap (all sockets, with PID) ---" >> "$REPORT"
         ss -tunap >> "$REPORT" 2>/dev/null
@@ -350,6 +393,9 @@ m_network() {
         echo "--- netstat -tunap ---" >> "$REPORT"; netstat -tunap >> "$REPORT" 2>/dev/null
     elif have lsof; then
         echo "--- lsof -i -nP (network connections) ---" >> "$REPORT"; lsof -i -nP >> "$REPORT" 2>/dev/null
+    else
+        report "No ss/netstat/lsof available - the socket table was NOT collected."
+        rc=1
     fi
     { echo "--- ip addr ---"; ip addr 2>/dev/null || ifconfig -a 2>/dev/null; } >> "$REPORT"
     { echo "--- ip route ---"; ip route 2>/dev/null || route -n 2>/dev/null; } >> "$REPORT"
@@ -362,6 +408,7 @@ m_network() {
         [ "${hx:-0}" -gt 0 ] && add_finding "Review" "network" "/etc/hosts has $hx custom entries" "Review /etc/hosts in report - static host overrides can redirect traffic (T1565.001)"
     fi
     report "Network artifacts saved."
+    return $rc
 }
 
 m_process() {
@@ -398,6 +445,8 @@ m_process() {
     for pat in 'nc -e' 'ncat' '/dev/tcp/' 'bash -i' 'python -c' 'perl -e' 'base64 -d' 'xmrig' 'kinsing' 'kdevtmpfsi'; do
         ps auxww 2>/dev/null | grep -iE "$pat" | grep -v 'grep' >> "$REPORT" 2>/dev/null
     done
+    # "no suspicious pattern" is grep exit 1: return the module's status, not it.
+    return 0
 }
 
 m_sessions() {
@@ -408,7 +457,7 @@ m_sessions() {
     local fb; fb=$(lastb -n 200 2>/dev/null)
     printf '%s\n' "$fb" >> "$REPORT"
     local fc; fc=$(printf '%s\n' "$fb" | grep -cE 'tty|pts|ssh')
-    add_stat "RecentFailedLogins" "${fc:-0}"
+    add_stat "RecentFailedLogons" "${fc:-0}"
     [ "${fc:-0}" -ge 50 ] && add_finding "Review" "sessions" "High volume of failed logins: ${fc}+ in lastb" "Possible brute force - review source IPs in report section 04"
     local al=""
     [ -r /var/log/auth.log ] && al=/var/log/auth.log
@@ -420,6 +469,7 @@ m_sessions() {
         echo "-- journalctl sshd (last 200) --" >> "$REPORT"
         journalctl _COMM=sshd -n 200 --no-pager 2>/dev/null >> "$REPORT"
     fi
+    return 0
 }
 
 m_users() {
@@ -443,6 +493,7 @@ m_users() {
     else
         report "(/etc/shadow not readable - run as root for empty-password check)"
     fi
+    return 0
 }
 
 m_services() {
@@ -459,6 +510,7 @@ m_services() {
     else
         ls -la /etc/init.d 2>/dev/null >> "$REPORT"
     fi
+    return 0
 }
 
 m_persistence() {
@@ -481,13 +533,18 @@ m_persistence() {
     for f in /etc/rc.local /etc/rc.d/rc.local; do [ -r "$f" ] && { echo "[$f]" >> "$REPORT"; cat "$f" >> "$REPORT"; }; done
     echo "-- shell profile scripts --" >> "$REPORT"
     for f in /etc/profile /etc/bash.bashrc /etc/profile.d/*; do [ -r "$f" ] && echo "[$f] ($(stat -c '%y' "$f" 2>/dev/null))" >> "$REPORT"; done
+    return 0
 }
 
 m_apps() {
     section "08 Installed packages"
     if have dpkg; then dpkg -l >> "$REPORT" 2>/dev/null
     elif have rpm; then rpm -qa >> "$REPORT" 2>/dev/null
-    else report "No dpkg/rpm found."; fi
+    else
+        report "No dpkg/rpm found - the installed-package list was NOT collected."
+        return 1
+    fi
+    return 0
 }
 
 m_suid() {
@@ -500,6 +557,7 @@ m_suid() {
     printf '%s\n' "$list" | grep -vE '^/(usr/bin|bin|usr/sbin|sbin|usr/lib|lib|usr/libexec)/' | grep -E '.' | while read -r s; do
         [ -n "$s" ] && add_finding "Review" "suid" "SUID binary outside standard paths: $s" "Unusual SUID location can indicate privilege-escalation backdoor (T1548.001)"
     done
+    return 0
 }
 
 m_sshkeys() {
@@ -516,6 +574,7 @@ m_sshkeys() {
             [ "$h" = "/root" ] && add_finding "Review" "sshkeys" "root has authorized_keys ($(wc -l < "$ak" 2>/dev/null) entries)" "Verify these keys are expected - unexpected key = remote backdoor (T1098.004)"
         fi
     done
+    return 0
 }
 
 m_bashhistory() {
@@ -531,6 +590,7 @@ m_bashhistory() {
             fi
         done
     done
+    return 0
 }
 
 m_kernelmods() {
@@ -538,6 +598,7 @@ m_kernelmods() {
     have lsmod && lsmod >> "$REPORT" 2>/dev/null
     echo "-- tainted state --" >> "$REPORT"
     cat /proc/sys/kernel/tainted 2>/dev/null >> "$REPORT"
+    return 0
 }
 
 m_indicators() {
@@ -548,18 +609,32 @@ m_indicators() {
         add_finding "Review" "indicators" "World-writable system file: $f" "System binaries/config should not be world-writable"
     done
     echo "-- executables in /tmp /dev/shm /var/tmp --" >> "$REPORT"
-    local tc=0 d
+    local tc=0 d tl tfirst="" shown
     for d in /tmp /dev/shm /var/tmp; do
         [ -d "$d" ] || continue
-        find "$d" -xdev -type f -perm -111 ! -path "$OUTPUT_BASE/*" ! -path "$OUTDIR/*" 2>/dev/null >> "$REPORT"
-        tc=$((tc + $(find "$d" -xdev -type f -perm -111 ! -path "$OUTPUT_BASE/*" ! -path "$OUTDIR/*" 2>/dev/null | wc -l)))
+        # one find per directory, not two: the report listing, the counter and
+        # the finding detail all come from the same result set.
+        tl="$(find "$d" -xdev -type f -perm -111 ! -path "$OUTPUT_BASE/*" ! -path "$OUTDIR/*" 2>/dev/null)"
+        [ -n "$tl" ] || continue
+        printf '%s\n' "$tl" >> "$REPORT"
+        tc=$((tc + $(printf '%s\n' "$tl" | grep -c '^/')))
+        tfirst="$(printf '%s\n%s\n' "$tfirst" "$tl" | grep -E '^/' | head -n 10)"
     done
     add_stat "ExecInTempDirs" "${tc:-0}"
-    [ "${tc:-0}" -gt 0 ] && add_finding "Review" "indicators" "${tc} executable file(s) in /tmp,/dev/shm,/var/tmp" "See report section 13 - legitimate installers also appear; validate"
+    if [ "${tc:-0}" -gt 0 ]; then
+        # The paths have to be INSIDE the finding: the allowlist and IOC engines
+        # only ever see message+detail, so an aggregate that named no file could
+        # not be matched by a path glob, a hash or package ownership.
+        shown="$(printf '%s' "$tfirst" | grep -c '^/')"
+        add_finding "Review" "indicators" "${tc} executable file(s) in /tmp,/dev/shm,/var/tmp" \
+            "First ${shown} of ${tc}: $(printf '%s' "$tfirst" | tr '\n' ' ')| see report section 13 for all - legitimate installers also appear; validate"
+    fi
     echo "-- recently modified files in /etc (7 days) --" >> "$REPORT"
     find /etc -xdev -type f -mtime -7 2>/dev/null | head -n 200 >> "$REPORT"
     echo "-- immutable files (chattr +i) in /etc /root --" >> "$REPORT"
     have lsattr && lsattr -R /etc /root 2>/dev/null | grep -E '^....i' >> "$REPORT"
+    # "no immutable files" is grep exit 1: return the module's status, not it.
+    return 0
 }
 
 m_hashes() {
@@ -576,6 +651,7 @@ m_hashes() {
     done
     local hc; hc=$(wc -l < "$outf" 2>/dev/null); add_stat "HashedBinaries" "${hc:-0}"
     report "Hashed ${hc:-0} running binaries -> binary_hashes.txt (feed to VirusTotal / IOC matching)."
+    return 0
 }
 
 m_logs() {
@@ -585,6 +661,7 @@ m_logs() {
         [ -r "$f" ] && cp -p "$f" "$ld/" 2>/dev/null
     done
     report "Copied available key logs to logs/."
+    return 0
 }
 
 m_timeline() {
@@ -597,6 +674,7 @@ m_timeline() {
     local n; n=$(( $(wc -l < "$tf" 2>/dev/null) - 1 )); [ "$n" -lt 0 ] && n=0
     add_stat "TimelineEntries" "$n"
     report "Timeline entries: $n -> timeline.csv"
+    return 0
 }
 
 m_containers() {
@@ -613,6 +691,8 @@ m_containers() {
         report "Docker CLI not present / daemon not reachable."
     fi
     if have podman; then echo "-- podman ps -a --" >> "$REPORT"; podman ps -a >> "$REPORT" 2>/dev/null; fi
+    # No docker/podman on the host is an expected condition, not a failure.
+    return 0
 }
 
 m_integrity() {
@@ -625,6 +705,7 @@ m_integrity() {
         fi
     done
     report "Critical-file hashes recorded (compare across runs to detect tampering)."
+    return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -660,7 +741,7 @@ run_module() {
 # Summary writer (unified schema with the Windows edition)
 # ---------------------------------------------------------------------------
 write_summary() {
-    local start_iso="$1" end_iso="$2" mods="$3" is_root="$4" dur="$5"
+    local start_iso="$1" end_iso="$2" mods="$3" is_root="$4" dur="$5" skipped="${6:-}"
     local hn os osv usr fcount TAB
     TAB="$(printf '\t')"
     hn="$(hostname 2>/dev/null)"
@@ -686,32 +767,53 @@ except Exception: print(1)' "$ALLOWLIST" 2>/dev/null || echo 1)"
         if grep -qE '"packageOwned"[[:space:]]*:[[:space:]]*false' "$ALLOWLIST" 2>/dev/null; then AL_PKGOWN=0; fi
     fi
     if [ -s "$FINDINGS_FILE" ]; then
-        local fid fs fc fm fd ft fconf supp reason path h g
+        local fid fs fc fm fd ft fconf supp reason paths path h g
+        local tok_ok tok_reason all_ok first_reason
         while IFS="$FSEP" read -r fid fs fc fm fd ft fconf; do
             supp=false; reason=""
             if [ -n "$ALLOWLIST" ] && [ -r "$ALLOWLIST" ]; then
-                path="$(al_path_of "$fm" "$fd")"
-                # 1) sha256 of the referenced binary
-                if [ "$supp" = false ] && [ -n "$AL_HASHES" ] && [ -n "$path" ] && [ -r "$path" ]; then
-                    h="$(sha256sum "$path" 2>/dev/null | awk '{print $1}')"
-                    if [ -n "$h" ] && printf '%s\n' "$AL_HASHES" | grep -qix "$h"; then
-                        supp=true; reason="allowlist sha256"
-                    fi
-                fi
-                # 2) path glob
-                if [ "$supp" = false ] && [ -n "$path" ] && [ -n "$AL_PATHS" ]; then
-                    while IFS= read -r g; do
-                        [ -n "$g" ] || continue
-                        # shellcheck disable=SC2254
-                        case "$path" in $g) supp=true; reason="allowlist path: $g"; break ;; esac
-                    done <<EOF
+                # EVERY path the finding names has to be known-good before the
+                # finding is hidden. Judging it by one token meant an aggregate
+                # naming /tmp was suppressed as "owned by system package"
+                # (dpkg -S /tmp -> base-files) no matter what was in /tmp.
+                paths="$(al_paths_of "$fm" "$fd")"
+                all_ok=0; first_reason=""
+                if [ -n "$paths" ]; then
+                    all_ok=1
+                    while IFS= read -r path; do
+                        [ -n "$path" ] || continue
+                        tok_ok=0; tok_reason=""
+                        # 1) sha256 of the referenced binary
+                        if [ -n "$AL_HASHES" ] && [ -r "$path" ] && [ ! -d "$path" ]; then
+                            h="$(sha256sum "$path" 2>/dev/null | awk '{print $1}')"
+                            if [ -n "$h" ] && printf '%s\n' "$AL_HASHES" | grep -qix "$h"; then
+                                tok_ok=1; tok_reason="allowlist sha256"
+                            fi
+                        fi
+                        # 2) path glob
+                        if [ "$tok_ok" = 0 ] && [ -n "$AL_PATHS" ]; then
+                            while IFS= read -r g; do
+                                [ -n "$g" ] || continue
+                                # shellcheck disable=SC2254
+                                case "$path" in $g) tok_ok=1; tok_reason="allowlist path: $g"; break ;; esac
+                            done <<EOF
 $AL_PATHS
 EOF
+                        fi
+                        # 3) owned by an installed system package (Linux trust
+                        #    signal). A DIRECTORY never qualifies: every distro
+                        #    ships /tmp, /usr/bin and friends, so accepting one
+                        #    would trust the container instead of the file.
+                        if [ "$tok_ok" = 0 ] && [ "$AL_PKGOWN" = 1 ] && [ ! -d "$path" ]; then
+                            if pkg_owns "$path"; then tok_ok=1; tok_reason="owned by system package"; fi
+                        fi
+                        if [ "$tok_ok" = 0 ]; then all_ok=0; break; fi
+                        [ -n "$first_reason" ] || first_reason="$tok_reason"
+                    done <<EOF
+$paths
+EOF
                 fi
-                # 3) owned by an installed system package (Linux trust signal)
-                if [ "$supp" = false ] && [ "$AL_PKGOWN" = 1 ] && [ -n "$path" ]; then
-                    if pkg_owns "$path"; then supp=true; reason="owned by system package"; fi
-                fi
+                if [ "$all_ok" = 1 ]; then supp=true; reason="$first_reason"; fi
             fi
             [ "$supp" = true ] && sup_count=$((sup_count+1))
             # 10th column: iocMatch (default false; set by the IOC pass below)
@@ -768,7 +870,15 @@ EOF
         mv "$F2b" "$F2"
 
         # Pass B: raise NEW findings for IOCs seen anywhere in the collected report
-        local val ln
+        # The scan shells out to find/xargs/grep. If that toolchain cannot run at
+        # all (a broken PATH entry, a missing or unresolvable grep - plausible on
+        # the compromised host this tool is pointed at), a discarded stderr would
+        # make the scan report ZERO hits, which is indistinguishable from "no
+        # indicators present". T5 exists to stop exactly that class of silent
+        # skip for unreadable feeds; the same rule has to hold here. Stderr from
+        # the scan is therefore captured, and any of it forces the error exit.
+        local val ln SCAN_ERR SCAN_BAD
+        SCAN_ERR="$(mktemp)"; SCAN_BAD="$(mktemp)"; : > "$SCAN_BAD"
         # Scope parity with the Windows edition: scan every text artifact in the
         # output folder, not just the consolidated report (summary.txt excluded -
         # it is written later and would echo our own findings back).
@@ -780,7 +890,7 @@ EOF
                 # grep pre-filters, ioc_match confirms the hit sits on a boundary
                 ln="$(find "$OUTDIR" -type f \( -name '*.txt' -o -name '*.csv' -o -name '*.log' \) \
                         ! -name 'summary.txt' -print0 2>/dev/null \
-                      | xargs -0 -r grep -ihF -- "$val" 2>/dev/null | grep -viE 'IOC match' \
+                      | xargs -0 -r grep -ihF -- "$val" 2>>"$SCAN_ERR" | grep -viE 'IOC match' \
                       | while IFS= read -r cand; do
                             if ioc_match "$cand" "$val"; then printf '%s' "$cand"; break; fi
                         done)"
@@ -794,7 +904,10 @@ EOF
                 fi
             done
         fi
-        rm -f "$IOC_HIT" 2>/dev/null
+        if [ -s "$SCAN_ERR" ]; then
+            add_err "IOC evidence scan could not run, so its result is NOT trustworthy: $(head -n1 "$SCAN_ERR" | cut -c1-160)"
+        fi
+        rm -f "$IOC_HIT" "$SCAN_ERR" "$SCAN_BAD" 2>/dev/null
     fi
 
     fcount=$( [ -s "$F2" ] && wc -l < "$F2" || echo 0 )
@@ -812,7 +925,7 @@ EOF
     local S="$OUTDIR/summary.txt"
     {
         echo "=============================================================="
-        echo " $TOOL v$VERSION - TRIAGE SUMMARY"
+        echo " $TOOL_DISPLAY v$VERSION - TRIAGE SUMMARY"
         echo "=============================================================="
         echo "Host       : $hn"
         echo "OS         : $os ($osv)"
@@ -825,6 +938,7 @@ EOF
         echo "Privileged : $is_root"
         echo "Environment: virt=$ENV_VIRT container=$ENV_CONTAINER runtime=$ENV_RUNTIME secmod=$ENV_SECMOD"
         echo "Modules    : $mods"
+        [ -n "$skipped" ] && echo "SKIPPED    :$skipped (not a module name - NOTHING was collected for it)"
         echo "Errors     : $ERROR_COUNT (see tatar.log)"
         echo ""
         echo "-------------------- QUICK STATS ----------------------------"
@@ -896,12 +1010,29 @@ EOF
         local first=1 m
         for m in $mods; do [ $first -eq 1 ] && first=0 || printf ', '; printf '"%s"' "$m"; done
         printf '],\n'
+        # Requested but never run (unknown module name). Visible to the pipeline,
+        # not only to whoever reads the log.
+        printf '  "modulesSkipped": ['
+        first=1
+        for m in $skipped; do [ $first -eq 1 ] && first=0 || printf ', '; printf '"%s"' "$(json_escape "$m")"; done
+        printf '],\n'
         printf '  "stats": {'
         if [ -s "$STATS_FILE" ]; then
             first=1
             while IFS="$TAB" read -r k v; do
                 [ $first -eq 1 ] && first=0 || printf ','
-                printf '"%s": "%s"' "$(json_escape "$k")" "$(json_escape "$v")"
+                # Type parity with the Windows edition, which emits native ints:
+                # a counter must not be a JSON string here and a number there or
+                # every consumer has to coerce per platform. The sign is part of
+                # the number, so the shape test runs on the magnitude: emitting a
+                # negative counter as the string "-1" is the one form BOTH gates
+                # reject (tests/run-tests.sh and validate_summary.py each fail a
+                # quoted integer, sign stripped), so it must go out unquoted.
+                case "${v#-}" in
+                    ''|*[!0-9]*) printf '"%s": "%s"' "$(json_escape "$k")" "$(json_escape "$v")" ;;
+                    0|[1-9]*)    printf '"%s": %s'   "$(json_escape "$k")" "$v" ;;
+                    *)           printf '"%s": "%s"' "$(json_escape "$k")" "$(json_escape "$v")" ;;
+                esac
             done < "$STATS_FILE"
         fi
         printf '},\n'
@@ -957,6 +1088,8 @@ _emit_findings_json() {  # $1 = F2 path
 # Dispatch
 # ---------------------------------------------------------------------------
 banner
+# Console hint now, so --help/--list users see it too; the durable record (log +
+# error count) is written further down, once the exec log exists.
 for u in $UNKNOWN; do c_out "[!] Unknown option: $u"; done
 
 if [ "$HELP" -eq 1 ]; then show_help; exit 0; fi
@@ -980,6 +1113,72 @@ IS_ROOT=false; [ "$(id -u)" -eq 0 ] && IS_ROOT=true
 HOSTN="$(hostname 2>/dev/null | tr ' /' '__')"
 STAMP="$(date '+%Y-%m-%d_%H-%M-%S')"
 OUTDIR="$OUTPUT_BASE/${HOSTN}_${STAMP}"
+
+# Parity with the Windows edition, which warns when evidence lands on the system
+# drive: writing to the root filesystem of the suspect host can overwrite the
+# deleted-file evidence this collector exists to preserve.
+ROOT_FS_ANCHOR=""   # the nearest EXISTING ancestor on_root_fs actually tested
+on_root_fs() {  # 0 = the output base sits on the root filesystem
+    local b="$OUTPUT_BASE"
+    # An --output whose leaf does not exist yet - a mount point with nothing
+    # mounted on it, typically - still resolves through its nearest EXISTING
+    # parent, and that is the filesystem the evidence would really land on. The
+    # message has to name that parent: told only "prefer external media
+    # (--output /mnt/usb/evidence)" after typing exactly that, an operator
+    # cannot tell the warning is about the USB not being mounted.
+    while [ -n "$b" ] && [ "$b" != "/" ] && [ ! -d "$b" ]; do b="$(dirname "$b")"; done
+    [ -n "$b" ] || return 1
+    ROOT_FS_ANCHOR="$b"
+    [ "$(stat -c '%d' "$b" 2>/dev/null)" = "$(stat -c '%d' / 2>/dev/null)" ]
+}
+
+# One wording for all three warning sites, and only as specific as it can honestly
+# be: naming the anchor is what the operator needs when the target is an unmounted
+# mount point, and pure noise when the anchor is the output base itself.
+root_fs_note() {  # only meaningful immediately after on_root_fs returned 0
+    if [ "$ROOT_FS_ANCHOR" = "$OUTPUT_BASE" ]; then
+        printf '%s is on the ROOT filesystem' "$OUTPUT_BASE"
+    else
+        printf '%s does not exist yet and resolves onto the ROOT filesystem through its nearest existing parent %s' \
+            "$OUTPUT_BASE" "$ROOT_FS_ANCHOR"
+    fi
+}
+
+# --dry-run: every input an operator wants to check first - the resolved output
+# path, the module order, the armed gated operations, the feed verdicts - is
+# already known here. It used to be printed only AFTER the output directory had
+# been created, i.e. after the first write to the disk being preserved. Print it
+# and stop, touching nothing. Not silenced by --silent: a preview nobody can see
+# has no purpose.
+if [ "$DRYRUN" -eq 1 ]; then
+    _n=0; _unknown_mods=""
+    for m in $TO_RUN; do
+        _n=$((_n+1))
+        echo " $MOD_NAMES " | grep -q " $m " || _unknown_mods="$_unknown_mods $m"
+    done
+    printf '\n=== TATAR DRY RUN - nothing is collected and nothing is written ===\n'
+    printf '  %-14s: %s v%s\n' "Tool"        "$TOOL_DISPLAY" "$VERSION"
+    printf '  %-14s: %s\n'     "Host"        "$HOSTN"
+    printf '  %-14s: %s (root)\n' "Privileged" "$IS_ROOT"
+    printf '  %-14s: %s\n'     "Output dir"  "$OUTDIR"
+    on_root_fs && printf '  %-14s: %s; prefer external media that is already mounted\n' "WARNING" "$(root_fs_note)"
+    printf '  %-14s: %s\n'     "Case ID"     "${CASE_ID:-(none)}"
+    printf '  %-14s: %s\n'     "Examiner"    "${EXAMINER:-(none)}"
+    printf '  %-14s: %s module(s) in this order: %s\n' "Modules" "$_n" "$TO_RUN"
+    [ -n "$_unknown_mods" ] && printf '  %-14s: NOT a module, nothing would be collected for it:%s\n' "WARNING" "$_unknown_mods"
+    printf '  %-14s: --dump-deleted=%s --compress=%s --silent=%s\n' "Gated ops" "$DUMP_DELETED" "$COMPRESS" "$SILENT"
+    for _spec in "Allowlist:$ALLOWLIST" "IOC file:$IOCFILE"; do
+        _name="${_spec%%:*}"; _path="${_spec#*:}"
+        if [ -z "$_path" ]; then printf '  %-14s: (none supplied)\n' "$_name"
+        elif [ -r "$_path" ]; then printf '  %-14s: readable, WILL be applied: %s\n' "$_name" "$_path"
+        else printf '  %-14s: NOT READABLE, would NOT be applied: %s\n' "$_name" "$_path"; fi
+    done
+    for u in $UNKNOWN; do printf '  %-14s: unknown option, would be ignored: %s\n' "WARNING" "$u"; done
+    printf '\nRe-run without --dry-run to collect.\n\n'
+    unset _n _unknown_mods _spec _name _path
+    exit 0
+fi
+
 if ! mkdir -p "$OUTDIR" 2>/dev/null; then
     [ "$SILENT" -eq 0 ] && echo "[x] FATAL: cannot create output dir $OUTDIR"
     exit 1
@@ -988,13 +1187,13 @@ REPORT="$OUTDIR/TATAR_Report_${HOSTN}_${STAMP}.txt"
 EXECLOG="$OUTDIR/tatar.log"
 FINDINGS_FILE="$(mktemp)"; STATS_FILE="$(mktemp)"
 
-execlog "INFO" "$TOOL v$VERSION starting on $HOSTN as $(id -un) (root=$IS_ROOT, silent=$SILENT)"
+execlog "INFO" "$TOOL_DISPLAY v$VERSION starting on $HOSTN as $(id -un) (root=$IS_ROOT, silent=$SILENT)"
 execlog "INFO" "CaseId='$CASE_ID' Examiner='$EXAMINER' OutDir=$OUTDIR"
 execlog "INFO" "Modules selected: $TO_RUN"
 [ "$IS_ROOT" = false ] && execlog "WARN" "Not running as root - collection will be incomplete."
 
 {
-    echo "$TOOL v$VERSION - Collection Report"
+    echo "$TOOL_DISPLAY v$VERSION - Collection Report"
     echo "Host        : $HOSTN"
     echo "Case ID     : $CASE_ID"
     echo "Examiner    : $EXAMINER"
@@ -1024,22 +1223,44 @@ for _spec in "Allowlist:$ALLOWLIST" "IOC file:$IOCFILE"; do
 done
 unset _spec _name _path
 
+# Same class of quiet no-op: an unknown option was a console-only warning, which
+# --silent swallowed completely - a cron run with a misspelled flag looked
+# identical to a clean one and still exited 0. Log it and make it count.
+for u in $UNKNOWN; do add_err "Unknown option ignored: $u"; done
+
+if on_root_fs; then
+    c_out "[!] WARNING: $(root_fs_note). Writing evidence there can overwrite deleted-file evidence. Prefer external media that is already mounted."
+    execlog "WARN" "$(root_fs_note); prefer external media that is already mounted."
+fi
+
 c_out ""; c_out "[i] Output: $OUTDIR"
 c_out "[i] Env: virt=$ENV_VIRT container=$ENV_CONTAINER runtime=$ENV_RUNTIME secmod=$ENV_SECMOD"
 c_out ""
 
-I=0; N=$(echo $TO_RUN | wc -w); RAN=0
+I=0; N=$(echo $TO_RUN | wc -w); RAN=0; SKIPPED=""
 for m in $TO_RUN; do
     I=$((I+1))
     if ! echo " $MOD_NAMES " | grep -q " $m "; then
-        c_out "[!] Unknown module: $m"; execlog "WARN" "Unknown module requested: $m"; continue
+        # A misspelled module name must never read as "collected and empty".
+        c_out "[!] Unknown module: $m"
+        SKIPPED="$SKIPPED $m"
+        add_err "Unknown module requested, nothing was collected for it: $m"
+        continue
     fi
     c_out "[$I/$N] $m"
     execlog "START" "module $m ($I/$N)"
     err_before=$ERROR_COUNT; mstart=$(date +%s)
-    run_module "$m"; RAN=$((RAN+1))
+    run_module "$m"; rc=$?; RAN=$((RAN+1))
     secs=$(( $(date +%s) - mstart ))
-    if [ "$ERROR_COUNT" -gt "$err_before" ]; then
+    # summary.txt tells the analyst to grep tatar.log for FAILED. Until now no
+    # FAILED line could ever be written on Linux, so a module that produced none
+    # of its evidence read as a clean run. Every m_* returns a deliberate status
+    # (0 = artifact produced, 1 = primary artifact NOT produced), 99 = no such
+    # module, which the check above already handled.
+    if [ "$rc" -ne 0 ] && [ "$rc" -ne 99 ]; then
+        execlog "FAILED" "module $m exited $rc after ${secs}s - its primary artifact was NOT collected"
+        add_err "module $m did not produce its primary artifact (exit $rc)"
+    elif [ "$ERROR_COUNT" -gt "$err_before" ]; then
         execlog "WARN" "module $m finished in ${secs}s with $((ERROR_COUNT-err_before)) error(s)"
     else
         execlog "OK" "module $m finished in ${secs}s"
@@ -1062,17 +1283,20 @@ SELF="$0"; SELF_HASH="$(sha256sum "$SELF" 2>/dev/null | awk '{print $1}')"
     echo "Duration     : ${DUR}s"
     echo "Script       : $SELF"
     echo "Script SHA256: $SELF_HASH"
-    echo "Tool         : $TOOL v$VERSION"
+    echo "Tool         : $TOOL_DISPLAY v$VERSION"
 } > "$OUTDIR/chain_of_custody.txt"
 
 execlog "INFO" "Writing summary.txt / summary.json"
-write_summary "$START_ISO" "$END_ISO" "$TO_RUN" "$IS_ROOT" "$DUR"
+write_summary "$START_ISO" "$END_ISO" "$TO_RUN" "$IS_ROOT" "$DUR" "$SKIPPED"
+
+# The report trailer has to be written BEFORE the manifest hashes the report:
+# appending to an already-hashed file left one entry permanently wrong, so
+# `sha256sum -c manifest_sha256.txt` failed on every single run.
+printf '\n=== Collection finished: %s ===\n' "$END_ISO" >> "$REPORT"
 
 MANIFEST="$OUTDIR/manifest_sha256.txt"
 ( cd "$OUTDIR" && find . -type f ! -name 'manifest_sha256.txt' ! -name 'tatar.log' -exec sha256sum {} \; ) > "$MANIFEST" 2>/dev/null
 execlog "INFO" "Manifest written: $MANIFEST"
-
-printf '\n=== Collection finished: %s ===\n' "$END_ISO" >> "$REPORT"
 
 if [ "$COMPRESS" -eq 1 ]; then
     ARCHIVE="$OUTPUT_BASE/TATAR_${HOSTN}_${STAMP}.tar.gz"
