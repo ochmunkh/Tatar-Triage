@@ -4,14 +4,19 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.3.0] — 2026-10-12
+
+Contributed by Yalguun Tumenkhuu ([@fg0x0](https://github.com/fg0x0)), reviewed
+and merged by the maintainer. A minor version, not a patch: the output filenames
+and several `stats` keys changed, so anything parsing a previous run's output
+needs updating — see **Changed** below.
 
 Closes the seams between the two editions. Nothing here changes what the
 collectors look for — it changes what they *promise*: the "unified" summary.json
 used six different key spellings for the same concepts, the Windows producer was
 never validated against the schema it is the flagship of, an unknown flag was
 swallowed by `-Silent`, and a value-less `--output` wrote the evidence tree to
-`/`. Version numbers are deliberately left alone; bump them at release time.
+`/`.
 
 ### Fixed
 - **The evidence manifest never verified.** The consolidated report had its
@@ -330,6 +335,7 @@ Release-hygiene patch for 1.2.0 — no collector or schema changes.
 - Initial release: 30 Windows collectors in RFC 3227 order of volatility, chain
   of custody, SHA-256 manifest, optional archive, and hive/EVTX/memory switches.
 
+[1.3.0]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.3.0
 [1.2.5]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.5
 [1.2.4]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.4
 [1.2.3]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.3

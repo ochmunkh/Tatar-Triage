@@ -143,18 +143,26 @@ For each, confirm the named artifact appears and is non-trivial:
 
 | Module | Expect |
 |---|---|
-| `sysinfo` | OS build, hotfixes, env, `systeminfo` output |
+| `sysinfo` | OS build, hotfixes, timezone, uptime |
 | `network` | connections with owning PIDs, DNS cache, hosts file, ARP |
 | `process` | process list with paths and command lines, parent PIDs |
 | `sessions` | logon sessions, `query user` output |
 | `services` | services with binary paths, non-standard paths flagged |
 | `users` | local users and groups, admin membership |
 | `persistence` | Run keys, scheduled tasks, WMI subscriptions, startup |
-| `shares` | SMB shares and permissions |
+| `shares` | SMB shares |
 | `firewall` | profile state and rules |
-| `drivers` | driver list, unsigned drivers flagged |
-| `privesc` | unquoted service paths, weak ACLs, AlwaysInstallElevated |
+| `drivers` | driver list |
+| `privesc` | unquoted service paths, service binaries in writable paths, AlwaysInstallElevated |
 | `lateral` | PsExec traces, WMI/WinRM/RDP artifacts |
+
+> This table says what each module **does** collect, not what it could. Four
+> things an earlier draft of it listed are genuinely NOT collected today and are
+> deliberately left out above rather than written as if they were: unsigned-driver
+> flagging, share ACLs, `systeminfo` output, and the environment block. The first
+> three are open gaps. The environment block is a decision, not a gap: it
+> routinely carries credentials, and this collector does not take credential
+> material it was not asked for.
 | `fsartifacts` | Recent, LNK, JumpLists, Amcache note |
 | `shadow` | VSS listing (admin only) |
 | `mft` | `$MFT`/USN journal info |

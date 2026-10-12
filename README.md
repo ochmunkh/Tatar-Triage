@@ -391,7 +391,7 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ### v1.1
 - **Triage summary** (`summary.txt` + `summary.json`): metadata, quick stats, aggregated *Suspicious findings* (review leads, not verdicts); JSON for SIEM/automation.
-- **Execution log** (`Tatar.log`): timestamped `START/OK/WARN/FAILED` per module, errors mirrored with reasons; excluded from the evidence manifest by design.
+- **Execution log** (`tatar.log`): timestamped `START/OK/WARN/FAILED` per module, errors mirrored with reasons; excluded from the evidence manifest by design.
 - **`-Silent` / `-Quiet`** mode for WinRM / scheduled / remote runs + **exit codes** (`0` ok, `1` fatal, `2` completed with errors).
 - False-positive fixes: obfuscation scan skips the script itself; word-boundary matching for `nc.exe` / `ncat` / `iex` patterns (no more `AdobeCollabSync.exe` hits).
 - Hostname fallback when `$env:COMPUTERNAME` is unset.

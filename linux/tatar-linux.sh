@@ -21,13 +21,13 @@
 #
 # Exit codes:  0 = success | 1 = fatal / usage error | 2 = completed with errors
 #
-# Author: Enkhbat.O (Security Analyst) | TATAR Triage Toolkit - Linux v1.2.5
+# Author: Enkhbat.O (Security Analyst) | TATAR Triage Toolkit - Linux v1.3.0
 # ---------------------------------------------------------------------------
 
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.2.5"
+VERSION="1.3.0"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
