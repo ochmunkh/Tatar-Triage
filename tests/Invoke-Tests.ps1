@@ -1,4 +1,4 @@
-<#
+﻿<#
     TATAR Triage Toolkit - contract tests (Windows edition).
 
     Black-box: runs the collector with controlled allowlist / IOC fixtures and
@@ -6,15 +6,25 @@
     internals, so these tests keep working across refactors.
 
     Run from the repo root:
-        powershell -NoProfile -File tests\Invoke-Tests.ps1
+        pwsh       -NoProfile -File tests/Invoke-Tests.ps1   # PowerShell 7, any OS
+        powershell -NoProfile -File tests\Invoke-Tests.ps1   # Windows PowerShell 5.1
 
     Exit code: 0 = all assertions passed, 1 = at least one failed.
 #>
 #Requires -Version 5.1
 param(
     [string]$Collector = (Join-Path $PSScriptRoot '..\Tatar.ps1'),
-    [string]$Modules   = 'sysinfo,network,users'
+    [string]$Modules   = 'sysinfo,network,users',
+    [string]$Schema    = (Join-Path $PSScriptRoot '..\schema\summary.schema.json')
 )
+
+# The collector is spawned as a child process. Hardcoding "powershell" pins the
+# suite to Windows PowerShell 5.1, so it cannot run under PowerShell 7 or on a
+# non-Windows host -- which is also what stops CI from running it anywhere but a
+# Windows runner. Reuse whichever host is running this file.
+$TempRoot = [System.IO.Path]::GetTempPath()
+$PwshHost = if ($PSVersionTable.PSEdition -eq 'Core') { (Get-Process -Id $PID).Path } else { 'powershell' }
+
 
 $ErrorActionPreference = 'Continue'
 $script:PassCount = 0
@@ -29,9 +39,9 @@ function Check {
 
 function Invoke-Collector {
     param([string]$Label, [string[]]$Extra = @())
-    $root = Join-Path $env:TEMP ('tatar-test-' + $Label + '-' + (Get-Random))
+    $root = Join-Path $TempRoot ('tatar-test-' + $Label + '-' + (Get-Random))
     $argList = @('-Modules', $Modules, '-Silent', '-OutputPath', $root) + $Extra
-    & powershell -NoProfile -File $Collector @argList | Out-Null
+    & $PwshHost -NoProfile -File $Collector @argList | Out-Null
     $code = $LASTEXITCODE
     $dir  = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
     $path = $null; if ($dir) { $path = $dir.FullName }
@@ -68,6 +78,30 @@ function Assert-Contract {
     Check "$Label : findingsCount matches array"    ($S.findingsCount -eq $f.Count) `
           "findingsCount=$($S.findingsCount) array=$($f.Count)"
 
+    # A requested module that never ran must be visible to the pipeline, not
+    # only to whoever reads the log.
+    $hasSkipped = $S.PSObject.Properties.Name -contains 'modulesSkipped'
+    Check "$Label : modulesSkipped key present"     $hasSkipped
+    if ($hasSkipped) {
+        Check "$Label : nothing was skipped for a valid module list" (@($S.modulesSkipped).Count -eq 0) `
+              ((@($S.modulesSkipped)) -join ',')
+    }
+
+    # summary.json is the cross-platform contract: a counter is a NUMBER on every
+    # platform and uses the one canonical key the schema names for that concept.
+    if ($S.PSObject.Properties.Name -contains 'stats') {
+        $statProps = @($S.stats.PSObject.Properties)
+        $quoted = @($statProps | Where-Object { $_.Value -is [string] -and $_.Value -match '^-?\d+$' } | ForEach-Object { $_.Name })
+        Check "$Label : stats counters are JSON numbers, not strings" ($quoted.Count -eq 0) ($quoted -join ',')
+        $canon = @()
+        try { $canon = @((Get-Content $Schema -Raw | ConvertFrom-Json).properties.stats.'x-canonicalStatKeys') } catch { }
+        Check "$Label : the schema declares x-canonicalStatKeys" ($canon.Count -gt 0)
+        if ($canon.Count -gt 0) {
+            $drifted = @($statProps | Where-Object { $canon -notcontains $_.Name } | ForEach-Object { $_.Name })
+            Check "$Label : every stats key is the canonical cross-platform spelling" ($drifted.Count -eq 0) ($drifted -join ',')
+        }
+    }
+
     if ($f.Count -eq 0) { return }
 
     $ids = @($f | ForEach-Object { $_.id })
@@ -82,7 +116,7 @@ function Assert-Contract {
     $badSev = @($f | Where-Object { $_.severity -notin 'High','Review' })
     Check "$Label : severity is High or Review"     ($badSev.Count -eq 0) (($badSev | ForEach-Object { $_.severity }) -join ',')
 
-    $badConf = @($f | Where-Object { [double]$_.confidence -notin 0.3,0.4,0.7,0.95 })
+    $badConf = @($f | Where-Object { [double]$_.confidence -notin 0.4,0.7,0.95 })
     Check "$Label : confidence from the fixed set"  ($badConf.Count -eq 0) (($badConf | ForEach-Object { "$($_.id)=$($_.confidence)" }) -join ',')
 
     # an IOC hit must always win: High, 0.95, not suppressed
@@ -109,6 +143,29 @@ $s1 = Get-Summary $t1
 Assert-Contract $s1 'T1'
 $ioc1 = @(Get-IocFindings $s1)
 Check 'T1 : no IOC findings without an IOC feed' ($ioc1.Count -eq 0) "got $($ioc1.Count)"
+# summary.txt tells the analyst to grep the log for FAILED, so a clean run must
+# not contain one - and the log must exist at all.
+$log1 = if ($t1.Dir) { Get-Content (Join-Path $t1.Dir 'tatar.log') -Raw -ErrorAction SilentlyContinue } else { '' }
+Check 'T1 : the execution log was written' (-not [string]::IsNullOrWhiteSpace($log1))
+Check 'T1 : a healthy run logs no FAILED module' (([regex]::Matches([string]$log1, 'FAILED')).Count -eq 0)
+# The manifest is the chain-of-custody artifact: if it cannot be verified, it is
+# decoration. It used to hash the consolidated report BEFORE the collector
+# appended its last line, so one entry was permanently wrong.
+$man1 = if ($t1.Dir) { Join-Path $t1.Dir 'manifest_sha256.txt' } else { $null }
+Check 'T1 : the manifest was written' ([bool]($man1 -and (Test-Path $man1)))
+if ($man1 -and (Test-Path $man1)) {
+    $bad = @()
+    foreach ($line in [IO.File]::ReadAllLines($man1)) {
+        if ($line.Trim() -eq '') { continue }
+        $parts = $line -split '  ', 2
+        if ($parts.Count -ne 2) { $bad += "malformed: $line"; continue }
+        $rel = ($parts[1] -replace '^\./', '') -replace '/', '\'
+        $p   = Join-Path $t1.Dir $rel
+        if (-not (Test-Path -LiteralPath $p)) { $bad += "missing: $rel"; continue }
+        if ((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLower() -ne $parts[0].ToLower()) { $bad += "changed after hashing: $rel" }
+    }
+    Check 'T1 : every manifest hash still matches its file' ($bad.Count -eq 0) ((@($bad) | Select-Object -First 2) -join '; ')
+}
 
 # T2 - IOC feed of PARTIAL tokens that must NOT match (boundary test)
 #      127.0.0    is a prefix of 127.0.0.1   -> must not match
@@ -153,11 +210,52 @@ Check 'T5 : unreadable feed paths force the error exit code' ($t5.ExitCode -eq 2
 $s5 = Get-Summary $t5
 Assert-Contract $s5 'T5'
 Check 'T5 : the run records the errors' ($s5.errorsLogged -ge 2) "got $($s5.errorsLogged)"
-$log5 = if ($t5.Dir) { Get-Content (Join-Path $t5.Dir 'Tatar.log') -Raw -ErrorAction SilentlyContinue } else { '' }
+$log5 = if ($t5.Dir) { Get-Content (Join-Path $t5.Dir 'tatar.log') -Raw -ErrorAction SilentlyContinue } else { '' }
 Check 'T5 : the log names both files as NOT applied' (([regex]::Matches($log5, 'NOT applied')).Count -ge 2)
 
+# T6 - a value-taking flag whose value is missing used to consume the NEXT FLAG
+#      (or nothing): '-OutputPath -CaseId IR-1' created a directory literally
+#      called '-CaseId' and dropped the case id from the chain of custody.
+Write-Host ''
+Write-Host 'T6  a value-taking flag with no value is a usage error'
+& $PwshHost -NoProfile -File $Collector -Modules $Modules -Silent -OutputPath | Out-Null
+Check 'T6 : -OutputPath with no value exits 1' ($LASTEXITCODE -eq 1) "got $LASTEXITCODE"
+& $PwshHost -NoProfile -File $Collector -Modules $Modules -Silent -OutputPath -CaseId IR-T6 | Out-Null
+Check 'T6 : -OutputPath followed by another flag exits 1' ($LASTEXITCODE -eq 1) "got $LASTEXITCODE"
+& $PwshHost -NoProfile -File $Collector -Silent -Modules | Out-Null
+Check 'T6 : -Modules with no value exits 1' ($LASTEXITCODE -eq 1) "got $LASTEXITCODE"
+Check 'T6 : no evidence folder was created for the flag name' (-not (Test-Path -LiteralPath (Join-Path (Get-Location).Path '-CaseId')))
+
+# T7 - an unknown option used to be a console-only warning that -Silent
+#      swallowed, and an unknown module name only warned: both exited 0, so a
+#      run that collected a quarter of what was asked looked clean.
+Write-Host ''
+Write-Host 'T7  unknown option and unknown module are recorded, not swallowed'
+$t7 = Invoke-Collector 't7' @('-TatarBogusFlag', '-Modules', 'sysinfo,notamodule')
+Check 'T7 : unknown option / module force the error exit code' ($t7.ExitCode -eq 2) "got $($t7.ExitCode)"
+$log7 = if ($t7.Dir) { Get-Content (Join-Path $t7.Dir 'tatar.log') -Raw -ErrorAction SilentlyContinue } else { '' }
+Check 'T7 : the log names the unknown option' ([string]$log7 -match 'TatarBogusFlag')
+Check 'T7 : the log names the unknown module' ([string]$log7 -match 'notamodule')
+$s7 = Get-Summary $t7
+Check 'T7 : summary.json reports the skipped module' ((@($s7.modulesSkipped) -join ',') -eq 'notamodule') `
+      ("modulesSkipped=" + (@($s7.modulesSkipped) -join ','))
+
+# T8 - the preview has to resolve the plan WITHOUT touching the disk: on a
+#      forensic collector the first write is itself evidence-destroying, and
+#      -CollectHives / -MemoryDump are documented as EDR-triggering.
+Write-Host ''
+Write-Host 'T8  -DryRun resolves the plan and writes nothing'
+$root8 = Join-Path $TempRoot ('tatar-test-t8-' + (Get-Random))
+$out8  = & $PwshHost -NoProfile -File $Collector -All -DryRun -OutputPath $root8 -Allowlist (Join-Path $Fixtures 'does-not-exist.json') 2>&1 | Out-String
+Check 'T8 : -DryRun exits 0' ($LASTEXITCODE -eq 0) "got $LASTEXITCODE"
+Check 'T8 : -DryRun creates no output directory' (-not (Test-Path $root8))
+Check 'T8 : the preview names the resolved output dir' ($out8 -match [regex]::Escape($root8))
+Check 'T8 : the preview names the module count and order' ($out8 -match '\d+ module\(s\) in this order')
+Check 'T8 : the preview reports an unreadable feed before collecting' ($out8 -match 'NOT READABLE')
+
 # cleanup
-foreach ($r in @($t1,$t2,$t3,$t4,$t5)) { if ($r.Root -and (Test-Path $r.Root)) { Remove-Item $r.Root -Recurse -Force -ErrorAction SilentlyContinue } }
+foreach ($r in @($t1,$t2,$t3,$t4,$t5,$t7)) { if ($r -and $r.Root -and (Test-Path $r.Root)) { Remove-Item $r.Root -Recurse -Force -ErrorAction SilentlyContinue } }
+if ($root8 -and (Test-Path $root8)) { Remove-Item $root8 -Recurse -Force -ErrorAction SilentlyContinue }
 
 Write-Host ''
 Write-Host ("RESULT  passed: {0}  failed: {1}" -f $script:PassCount, $script:FailCount) -ForegroundColor $(if ($script:FailCount) { 'Red' } else { 'Green' })

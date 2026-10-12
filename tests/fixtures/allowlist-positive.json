@@ -1,0 +1,10 @@
+{
+  "_comment": "POSITIVE allowlist fixture. tests/run-tests.sh (T9) raises a finding on purpose by running a copy of the system sleep binary from /tmp, then requires THIS file to suppress it: packageOwned is false and hashes is empty, so the path glob is the only rule that can fire and a suppression engine that degraded to a no-op fails the assertion instead of passing vacuously at zero. The Windows-shaped glob is here for the same test on that side, which does not exist yet - the Windows findings that carry a real file path all need a service, an admin right or a crafted command line to provoke.",
+  "paths": [
+    "/tmp/tatar-allowlist-probe*",
+    "*\\tatar-allowlist-probe*"
+  ],
+  "publishers": [],
+  "hashes": [],
+  "packageOwned": false
+}

@@ -1,0 +1,14 @@
+# fqeid	message	expect	note
+# Get-WinEvent failure -> "the filter matched nothing" (true) or "the log could not be
+# read" (false), for tests/Test-StaticReviewFixes.ps1 (Test-NoMatchingEvents).
+# expect: true / false. A literal (empty) in fqeid or message means that field is "".
+# Windows-only: Get-WinEvent has no Linux counterpart, so unlike the IOC and allowlist
+# tables this one is not shared with a .sh half.
+NoMatchingEventsFound,Microsoft.PowerShell.Commands.GetWinEventCommand	No events were found that match the specified selection criteria.	true	REGRESSION: the clean "log is quiet" result, previously reported to the operator as an access problem
+NoMatchingEventsFound	(empty)	true	the bare error id, without the cmdlet suffix
+(empty)	No events were found that match the specified selection criteria.	true	id unrecognised on this host: the message still classifies it, so a wrong id guess does not cost the fix
+(empty)	NO EVENTS WERE FOUND THAT MATCH the specified selection criteria.	true	the message test is case-insensitive
+Microsoft.PowerShell.Commands.GetWinEventCommand	Attempted to perform an unauthorized operation.	false	access denied is a real access problem and must keep saying so
+NoMatchingLogsFound,Microsoft.PowerShell.Commands.GetWinEventCommand	There is not an event log on the localhost computer that matches "Security".	false	a different Get-WinEvent error id that must NOT be read as a clean empty result
+(empty)	The RPC server is unavailable.	false	transport failure, not an empty log
+(empty)	(empty)	false	nothing to go on classifies as a real failure, which is the safe side
