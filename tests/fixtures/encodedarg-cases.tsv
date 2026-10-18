@@ -1,0 +1,17 @@
+# text	expect	note
+# Used by tests/Test-EncodedArg.ps1. expect: match | nomatch
+powershell -enc SQBFAFgA	match	the classic form
+powershell.exe -EncodedCommand SQBFAFgA	match	full spelling
+powershell -e SQBFAFgA	match	single-letter abbreviation still runs base64
+powershell -ec SQBFAFgA	match	-ec is not a strict prefix of encodedcommand but is what gets typed in the wild; listed explicitly
+powershell -enco SQBFAFgA	match	mid-length abbreviation
+powershell -encod SQBFAFgA	match	longest abbreviation that is still a prefix of -Encoding
+powershell /enc SQBFAFgA	match	slash form
+Out-File -Encoding utf8 x.txt	nomatch	the false positive this fix exists for: -encod continues into 'i'
+Get-Content -encoding UTF8	nomatch	same, lower case
+powershell -ExecutionPolicy Bypass -File x.ps1	nomatch	-e followed by 'x' is not a prefix of encodedcommand
+powershell -ep bypass	nomatch	-ep is not a prefix either
+$silenced = 1  # -encoded mention inside a word: not-enc	match	a real -encoded token on the line still matches
+writing to file-enc.txt	nomatch	the dash must start a token, not sit inside a word
+powershell -NoProfile -enc SQBFAFgA	match	after another flag
+-enc	match	at start of line, no value

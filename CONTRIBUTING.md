@@ -14,6 +14,83 @@ Tatar-Triage is a lightweight, cross-platform **DFIR triage & artifact collector
   consistent across Windows and Linux and is easy to feed into SOAR/SIEM.
 - **Chain of custody** — preserve hashes/timestamps; don't break provenance.
 
+## Architectural invariants
+
+Most of this tool is open to change. The list below is not. Each item is a way
+this collector could quietly stop being a triage tool — fast, privilege-light
+and read-only on a host that may already be compromised.
+
+1. **The host is evidence. Read-only first.** Nothing is written outside the
+   output directory the operator chose: no config changes, no downloads onto the
+   host, no exclusions added, no service installed. Change the host before
+   collecting and the evidence you then collect is weaker — the analyst can no
+   longer say whether a trace is the attacker's or the tool's.
+2. **One file per platform.** `Tatar.ps1` and `linux/tatar-linux.sh` each stand
+   alone. No module split, no package, no runtime to install. Triage happens on
+   a machine you do not control, often offline, often with no right to install
+   anything. The day this needs `pip install` it stops being usable in the
+   situation it exists for.
+3. **Offline. Nothing is sent, nothing is fetched.** Allowlist and IOC feeds are
+   local files; hashes are computed locally. No reputation lookup, no rule
+   update, no telemetry. One outbound request turns this into a way to move data
+   off a sensitive host and makes it unusable on an air-gapped or
+   legally-constrained network. An *optional* network feature is still in the
+   code, so the promise is already broken.
+4. **Privilege deepens, it does not gate.** Administrator / root widens what can
+   be *read*; it is never required. A module without it says what it could not
+   do and carries on — it never skips in silence. Make elevation mandatory and
+   the first-responder case disappears, which is the main case.
+5. **Seconds, not minutes.** Every module has a time budget. Anything that could
+   be unbounded — walking a filesystem, recursing, hashing in bulk — is capped by
+   depth, count and time, and says so when a cap is hit. "Triage" is a word about
+   time: a collector that runs for forty minutes is not triage, whatever it
+   collects.
+6. **The output contract is the product.** `schema/summary.schema.json` holds
+   both editions to one shape, so one parser reads both. Field names do not
+   change silently, `schemaVersion` changes only when the contract does, and the
+   output filenames are part of it. The collectors could be rewritten in a
+   weekend; this agreement could not.
+7. **A finding is a lead, not a verdict.** `severity` is `High` or `Review` —
+   deliberately two. A five-level scale manufactures false precision, when the
+   analyst's decision is binary: look now, or not. `confidence` comes from a
+   fixed set. Nothing heuristic is ever labelled "CRITICAL".
+8. **Suppressed is not deleted.** The allowlist marks a finding `suppressed`
+   with a `suppressReason`; it never removes it.
+   `activeFindingsCount + suppressedCount == findingsCount` is counted from the
+   data, not derived. Somebody is entitled to ask what you hid and why, and the
+   answer has to be in the output.
+9. **Silent failure is a defect, not a convenience.** An unreadable feed file, a
+   skipped module, a missing external tool, a swallowed exception — each must
+   warn, be logged, and affect the exit code. The dangerous output of a security
+   tool is not a wrong finding; it is **silence that reads as safe**. Until
+   v1.2.5 a one-character typo in an `--ioc` path ran a full collection with no
+   matching, no warning and exit 0, and the analyst read "no active findings"
+   believing the feed had been applied. Everything in this clause comes from
+   that.
+10. **Transparent. No obfuscation, no AV/AMSI bypass.** The source stays
+    readable so a defender can review it and allow-list it; that readability is
+    the only thing that earns the privilege this tool asks for. It also must not
+    behave like what it hunts — bulk file-walking, hiding, muting alerts are the
+    shape of ransomware staging. Modules that are visible to EDR are named in
+    the docs.
+11. **Mongolian is a first-class output language**, not a translation pasted
+    onto an English tool. The two halves of `README.md`, `linux/README.md` and
+    `docs/MITRE_ATTACK.md` are parity-checked in CI. Technical terms (finding,
+    allowlist, IOC, contract, pattern match, suppressed) stay in English in both
+    languages — translating them cuts the reader off from the JSON field names.
+
+### Adding a module
+
+Declare four things up front: **time** (seconds), **whether it needs
+Administrator** (not needing it is the default), **output size** (metadata, not
+raw data) and **AV risk**. Fail any of them and it does not go in the default
+set — it goes behind a switch that is off. No artefact is valuable enough to
+buy an exemption.
+
+Specifically never: `netsh wlan show profile key=clear` or anything else that
+extracts a secret; touching lsass; `Invoke-Expression` or encoded commands;
+downloading anything; an unbounded filesystem walk.
+
 ## Ways to contribute
 
 - **New collectors / artifacts** — add a Windows (PowerShell) or Linux (Bash) collector for an
@@ -77,6 +154,17 @@ mapping-тай.
 
 **Гол зарчим:** Read-only first (шинжилж буй системийг хэзээ ч өөрчлөхгүй) · ил тод · нэгдсэн
 schema · chain of custody (hash/timestamp хадгална).
+
+**Архитектурын тогтвортой зарчим:** Fork хийх, PR явуулахын өмнө дээрх
+*Architectural invariants* хэсгийг уншина уу. Энэ tool-ын ихэнх нь нээлттэй,
+гэхдээ арван нэг зүйл нь биш — тус бүр нь энэ collector чимээгүйхэн triage
+хэрэгсэл байхаа болих нэг арга юм: хурдан, эрх багатай, аль хэдийн халдлагад
+өртсөн байж болох хост дээр зөвхөн уншдаг.
+
+**Шинэ модуль нэмэх:** дөрвийг урьдчилж зарлана — хугацаа (секунд), admin
+шаардах эсэх (шаардахгүй нь анхдагч), гаралтын хэмжээ (мета, түүхий өгөгдөл
+биш), AV-ийн эрсдэл. Аль нэгэнд унавал default-д орохгүй, унтраалттай switch-ийн
+ард. Ямар ч артефакт энэ хаалтыг давах эрх худалдаж авахгүй.
 
 **Хувь нэмрийн чиглэл:** шинэ collector/artifact (Windows эсвэл Linux) · ATT&CK tagging ·
 schema сайжруулах · хоёр OS-ийн parity · баримт/орчуулга.

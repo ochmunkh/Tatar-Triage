@@ -512,7 +512,7 @@ function Collect-Process {
         $script:Stats['Processes'] = @($procs).Count
         $procs | Sort-Object ProcessId | Format-Table -AutoSize | Out-String -Width 4096 | Out-File $script:ReportFile -Append -Encoding UTF8
         $sus = @('powershell','cmd\.exe','rundll32','mshta','regsvr32','certutil','bitsadmin','wmic',
-                 'wscript','cscript','\bnc\.exe','\bncat','psexec','mimikatz','-enc ','frombase64string','downloadstring','\biex\b')
+                 'wscript','cscript','\bnc\.exe','\bncat','psexec','mimikatz',$script:EncArgPattern,'frombase64string','downloadstring','\biex\b')
         Add-Report "`n-- Suspicious process indicators --"
         foreach ($p in $procs) {
             if ($p.CommandLine) {
@@ -645,7 +645,7 @@ function Collect-Users {
             $noPwd = @(Get-CimInstance Win32_UserAccount -Filter "LocalAccount=True" -ErrorAction Stop |
                        Where-Object { -not $_.Disabled -and -not $_.PasswordRequired })
             foreach ($u in $noPwd) {
-                Add-Finding -Severity 'High' -Category 'users' -Message ("Enabled local account with NO password required: {0}" -f $u.Name) -Detail 'Logon without a password is possible - see report section 07 and confirm with the account owner'
+                Add-Finding -Severity 'High' -Category 'users' -Message ("Enabled local account with NO password required: {0}" -f $u.Name) -Detail 'UNCONFIRMED: the account is enabled and PasswordRequired is false, which is a policy flag, not proof that the account has no password or that it can be logged into. Confirm against the host policy and the account owner - see report section 07'
             }
         } catch { Add-Note "Win32_UserAccount query failed: $_" }
         try {
@@ -844,13 +844,16 @@ function Collect-ObfScan {
     Add-Section '17 Obfuscated/suspicious script scan (Downloads/Desktop/Temp, 30d)'
     try {
         $paths = @("$env:USERPROFILE\Downloads","$env:USERPROFILE\Desktop","$env:TEMP")
-        $patterns = @('IEX','Invoke-Expression','FromBase64String','ConvertFrom-Base64','-enc','-encodedcommand','DownloadString','DownloadFile','fromCharCode','eval(','WScript.Shell','-w hidden')
+        # Regex, not -SimpleMatch: the encoded-command pattern has to be a regex
+        # (see $script:EncArgPattern), and the literals below carry no regex
+        # metacharacters except the two that are escaped here.
+        $patterns = @('IEX','Invoke-Expression','FromBase64String','ConvertFrom-Base64',$script:EncArgPattern,'DownloadString','DownloadFile','fromCharCode','eval\(','WScript\.Shell','-w\s+hidden')
         $cutoff = (Get-Date).AddDays(-30)
         foreach ($base in $paths) {
             if (-not (Test-PathSafe $base)) { continue }
             $files = Get-ChildItem $base -Recurse -Include *.ps1,*.psm1,*.js,*.vbs,*.bat,*.hta -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $cutoff -and $_.FullName -ne $PSCommandPath } | Sort-Object LastWriteTime -Descending | Select-Object -First 100
             foreach ($f in $files) {
-                $m = Select-String -Path $f.FullName -Pattern $patterns -SimpleMatch -List -ErrorAction SilentlyContinue
+                $m = Select-String -Path $f.FullName -Pattern $patterns -List -ErrorAction SilentlyContinue
                 if ($m) {
                     $snip = $m.Line; if ($snip.Length -gt 160) { $snip = $snip.Substring(0,160)+'...' }
                     ("[!] {0} | line {1} | {2} | {3}" -f $f.FullName,$m.LineNumber,$m.Pattern,$snip) | Out-File $script:ReportFile -Append -Encoding UTF8
@@ -1199,6 +1202,24 @@ function Collect-Timeline {
 # =====================================================================
 #  Summary (P3): analyst-first one-pager, txt + json
 # =====================================================================
+# powershell.exe accepts any unambiguous abbreviation of -EncodedCommand, so
+# -e, -en, -enc, -enco, -encod ... all run base64 just as well as the full
+# spelling, and an operator writing an evasion uses the short one. Two places
+# looked for this and both were wrong in opposite directions: Collect-Process
+# matched the regex '-enc ' and so missed every abbreviation AND the no-space
+# forms, while Collect-ObfScan matched the literal '-enc' with -SimpleMatch and
+# so flagged every -Encoding utf8 in every ordinary script it read.
+#
+# The prefixes of 'encodedcommand' are listed longest first (alternation is
+# first-match) and the trailing (?![A-Za-z]) is what separates the two cases:
+# -encod stops at a non-letter and matches, -encoding continues into 'i' and
+# does not. -ExecutionPolicy is not a prefix of encodedcommand at all, so -e
+# followed by 'x' never enters the alternation. 'ec' is in the list even
+# though it is not a strict prefix: it is what gets typed in the wild, and for
+# a detection pattern the cost of catching it is a Review lead on an odd token,
+# while the cost of missing it is the whole point of the check.
+$script:EncArgPattern = '(?<=^|\s)[-/](?:encodedcommand|encodedcomman|encodedcomma|encodedcomm|encodedcom|encodedco|encodedc|encoded|encode|encod|enco|enc|ec|en|e)(?![A-Za-z])'
+
 function Get-IocPattern {
     # Boundary-aware regex for one IOC token. Plain substring matching used to let
     # "127.0.0" match 127.0.0.1 and "ocalhost" match localhost, raising false High

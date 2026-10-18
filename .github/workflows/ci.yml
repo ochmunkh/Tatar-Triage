@@ -129,6 +129,10 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Test-IocBoundary.ps1
 
+      - name: EncodedCommand pattern unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-EncodedArg.ps1
+
       - name: Allowlist path-extraction unit tests
         shell: pwsh
         run: pwsh -File tests/Test-AllowlistPath.ps1

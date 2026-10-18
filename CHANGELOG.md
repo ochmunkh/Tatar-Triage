@@ -4,6 +4,32 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **`-EncodedCommand` was looked for in two places and both were wrong, in
+  opposite directions.** `Collect-Process` matched the regex `'-enc '`, so every
+  abbreviation and every form without a trailing space went unnoticed;
+  `Collect-ObfScan` matched the literal `-enc` with `-SimpleMatch`, so it flagged
+  `-Encoding utf8` in ordinary scripts — a false positive on a module whose whole
+  job is to read the user's own Downloads and Desktop. Both now share one
+  pattern (`$script:EncArgPattern`) that accepts the abbreviations
+  powershell.exe accepts, at a token boundary, and stops before `-Encoding`.
+- The passwordless-account finding said logon without a password "is possible".
+  `PasswordRequired` is a policy flag, not proof that an account has no password
+  or that it can be logged into; the detail now says **UNCONFIRMED** and what to
+  confirm it against.
+
+### Added
+- `tests/Test-EncodedArg.ps1` and `tests/fixtures/encodedarg-cases.tsv` — fifteen
+  cases that pin the pattern in both directions at once: the abbreviations must
+  match, `-Encoding` and `-ExecutionPolicy` must not. Wired into CI.
+- `CONTRIBUTING.md` now states the **architectural invariants** — the short list
+  of properties that cannot be traded away, each with the failure it prevents —
+  and the four things a new module must declare before it can be in the default
+  set. Written because the project now takes outside contributions, and a forker
+  needs to know which few things are not open to change.
+
 ## [1.3.0] — 2026-10-12
 
 Contributed by Yalguun Tumenkhuu ([@fg0x0](https://github.com/fg0x0)), reviewed
