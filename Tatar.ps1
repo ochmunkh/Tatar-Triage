@@ -14,7 +14,7 @@
       * -IOCFile <json>   - offline IOC feed (hashes/ips/domains/filenames); a hit
         overrides the allowlist and escalates to High / 0.95.
       * findings v2 fields (id, confidence, suppressed, suppressReason, iocMatch),
-        schemaVersion 1.2.
+        schemaVersion 1.3.
 
     v1.1 additions:
       * summary.txt / summary.json - analyst-first triage summary with an
@@ -246,6 +246,34 @@ function Get-Technique {
     }
 }
 
+function Get-PathCandidate {
+    # Every drive-letter path a finding names, de-duplicated. The allowlist,
+    # publisher, hash and IOC passes can only reach files that appear here, so
+    # this is the single definition of "the files this finding is about" - and
+    # the reason a finding that names no file can never be suppressed.
+    param([string]$Text)
+    return @([regex]::Matches([string]$Text, '([A-Za-z]:\\[^"''\r\n]+?\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+}
+
+# The module currently running, recorded on every finding it raises so an
+# analyst can tell which collector made the claim. Set by the dispatch loop.
+$script:CurrentModule = ''
+
+# Why a finding carries the confidence it does. The number is derived, so the
+# reason is derived with it - stating it in the record is what makes the number
+# auditable instead of a magic constant the consumer has to look up. Kept
+# word-for-word identical to conf_reason() in the Linux edition: one output
+# contract means the same finding reads the same on both platforms.
+function Get-ConfidenceReason {
+    param([double]$Confidence)
+    switch ($Confidence) {
+        0.95    { 'an indicator from the supplied IOC feed matched this finding (see iocIndicator)' }
+        0.7     { 'severity High: a strong lead on its own, but the tool did not confirm it' }
+        0.4     { 'severity Review: the pattern also occurs in benign configurations' }
+        default { '' }
+    }
+}
+
 $script:FindingSeq = 0
 function Add-Finding {
     # P3: aggregated suspicious findings. LEADS for analyst review, NOT verdicts.
@@ -261,17 +289,27 @@ function Add-Finding {
         default  { throw "Add-Finding: unknown severity '$Severity' (expected High or Review)" }
     }
     $script:FindingSeq++
+    # paths[] is the set of paths this finding names, taken with the SAME
+    # extractor the allowlist engine judges with, so the two can never
+    # disagree about what a suppression decision covered. Recorded whether or
+    # not an allowlist was supplied: it is the first thing an analyst wants.
+    $fpaths = @(Get-PathCandidate "$Message $Detail")
     $script:Findings.Add([pscustomobject]@{
-        id             = ('TTR-F-{0:D3}' -f $script:FindingSeq)
-        severity       = $Severity
-        category       = $Category
-        technique      = @($Technique)
-        message        = $Message
-        detail         = $Detail
-        confidence     = $conf
-        suppressed     = $false
-        suppressReason = ''
-        iocMatch       = $false
+        id               = ('TTR-F-{0:D3}' -f $script:FindingSeq)
+        severity         = $Severity
+        category         = $Category
+        technique        = @($Technique)
+        message          = $Message
+        detail           = $Detail
+        confidence       = $conf
+        confidenceReason = (Get-ConfidenceReason $conf)
+        suppressed       = $false
+        suppressReason   = ''
+        iocMatch         = $false
+        iocIndicator     = ''
+        module           = $script:CurrentModule
+        collected_at     = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        paths            = $fpaths
     })
 }
 
@@ -1239,15 +1277,6 @@ function Get-IocPattern {
     return "(?<![\w.-])$e(?![\w-])(?!\.[A-Za-z0-9])"         # domain / filename
 }
 
-function Get-PathCandidate {
-    # Every drive-letter path a finding names, de-duplicated. The allowlist,
-    # publisher, hash and IOC passes can only reach files that appear here, so
-    # this is the single definition of "the files this finding is about" - and
-    # the reason a finding that names no file can never be suppressed.
-    param([string]$Text)
-    return @([regex]::Matches([string]$Text, '([A-Za-z]:\\[^"''\r\n]+?\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
-}
-
 function Write-Summary {
     param([datetime]$Start, [datetime]$End, [string[]]$ModulesRun, [bool]$IsAdmin)
     $osCap = ''; $osVer = ''
@@ -1370,6 +1399,11 @@ function Write-Summary {
                     $iocHits++; if (-not $iocSeen.Contains($hit)) { $iocSeen.Add($hit) }
                     $f.iocMatch = $true; $f.suppressed = $false; $f.suppressReason = ''
                     $f.severity = 'High'; $f.confidence = 0.95
+                    # The indicator gets its own field. It stays prefixed into
+                    # detail as well, because summary.txt and the report are
+                    # read by humans and only findings.json gains the field.
+                    $f.iocIndicator = $hit
+                    $f.confidenceReason = (Get-ConfidenceReason 0.95)
                     $f.detail = "IOC match: $hit | $($f.detail)"
                 }
             }
@@ -1396,16 +1430,24 @@ function Write-Summary {
                 if ($found) {
                     $iocSeen.Add($val)
                     $script:FindingSeq++
+                    $bMsg = "IOC observed in collected evidence: $val"
+                    $bDet = $found.Substring(0, [Math]::Min(160, $found.Length))
                     $script:Findings.Add([pscustomobject]@{
-                        id             = ('TTR-F-{0:D3}' -f $script:FindingSeq)
-                        severity       = 'High'; category = 'ioc'
-                        technique      = @(if     ($iocIps   -contains $val) { 'T1071'     }
-                                           elseif ($iocDoms  -contains $val) { 'T1071.004' }
-                                           elseif ($iocFiles -contains $val) { 'T1204.002' }
-                                           else                              { 'T1588.001' })
-                        message        = "IOC observed in collected evidence: $val"
-                        detail         = $found.Substring(0, [Math]::Min(160, $found.Length))
-                        confidence     = 0.95; suppressed = $false; suppressReason = ''; iocMatch = $true
+                        id               = ('TTR-F-{0:D3}' -f $script:FindingSeq)
+                        severity         = 'High'; category = 'ioc'
+                        technique        = @(if     ($iocIps   -contains $val) { 'T1071'     }
+                                             elseif ($iocDoms  -contains $val) { 'T1071.004' }
+                                             elseif ($iocFiles -contains $val) { 'T1204.002' }
+                                             else                              { 'T1588.001' })
+                        message          = $bMsg
+                        detail           = $bDet
+                        confidence       = 0.95
+                        confidenceReason = (Get-ConfidenceReason 0.95)
+                        suppressed       = $false; suppressReason = ''; iocMatch = $true
+                        iocIndicator     = $val
+                        module           = 'ioc'
+                        collected_at     = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                        paths            = @(Get-PathCandidate "$bMsg $bDet")
                     })
                 }
             }
@@ -1451,7 +1493,7 @@ function Write-Summary {
     $jsonObj = [pscustomobject]@{
         tool            = 'TATAR Triage Toolkit'
         version         = $script:ToolVersion
-        schemaVersion   = '1.2'
+        schemaVersion   = '1.3'
         platform        = 'windows'
         host            = $hn
         os              = $osCap
@@ -1478,7 +1520,7 @@ function Write-Summary {
     # findings-only file for SOAR / SIEM ingestion
     $findObj = [pscustomobject]@{
         tool          = 'TATAR Triage Toolkit'
-        schemaVersion = '1.2'
+        schemaVersion = '1.3'
         platform      = 'windows'
         host          = $hn
         caseId        = $CaseId
@@ -1681,6 +1723,7 @@ foreach ($m in $toRun) {
     if (-not $Silent) { Write-Progress -Activity 'TATAR Triage' -Status $m -PercentComplete (($i/$n)*100) }
     Write-Console ("[{0}/{1}] {2}" -f $i, $n, $m) 'Cyan'
     Write-ExecLog 'START' ("module {0} ({1}/{2})" -f $m, $i, $n)
+    $script:CurrentModule = $m
     $mStart = Get-Date; $errBefore = $script:ErrorCount; $crashed = $false
     try { & $script:Collectors[$m]; $ran++ } catch { Add-Err "Module $m crashed: $_"; $crashed = $true }
     $secs = [math]::Round(((Get-Date) - $mStart).TotalSeconds, 1)

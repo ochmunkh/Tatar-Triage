@@ -62,7 +62,7 @@ function Assert-Contract {
     Check "$Label : summary.json parses"            ($null -ne $S)
     if ($null -eq $S) { return }
 
-    Check "$Label : schemaVersion is 1.2"           ($S.schemaVersion -eq '1.2') "got '$($S.schemaVersion)'"
+    Check "$Label : schemaVersion is 1.3"           ($S.schemaVersion -eq '1.3') "got '$($S.schemaVersion)'"
     Check "$Label : version is SemVer"              ($S.version -match '^\d+\.\d+\.\d+$') "got '$($S.version)'"
     Check "$Label : platform is windows"            ($S.platform -eq 'windows')
 
@@ -126,6 +126,46 @@ function Assert-Contract {
     # a suppressed finding must say why
     $badSup = @($f | Where-Object { $_.suppressed -and [string]::IsNullOrWhiteSpace($_.suppressReason) })
     Check "$Label : suppressed findings carry a reason" ($badSup.Count -eq 0) (($badSup | ForEach-Object { $_.id }) -join ',')
+
+    # --- schema 1.3 evidence fields ---
+    # Required on every finding even though the schema marks them optional:
+    # optional is the promise to a CONSUMER, not a licence for the producer to
+    # skip them. A field present nine times out of ten is worse than no field,
+    # because a downstream rule written against it fails on the tenth. The
+    # Linux harness asserts the same list, so the two editions cannot drift.
+    $req13   = 'confidenceReason','iocIndicator','module','collected_at','paths'
+    $names13 = @($f | ForEach-Object { $_.PSObject.Properties.Name })
+    $missing13 = @()
+    foreach ($x in $f) {
+        $have = @($x.PSObject.Properties.Name)
+        foreach ($k in $req13) { if ($have -notcontains $k) { $missing13 += "$($x.id):$k" } }
+    }
+    Check "$Label : schema 1.3 fields on every finding" ($missing13.Count -eq 0) ($missing13 -join ',')
+
+    $badPaths = @($f | Where-Object { $null -eq $_.paths -or -not ($_.paths -is [array] -or $_.paths -is [System.Collections.IEnumerable]) })
+    Check "$Label : paths is a list, never null"    ($badPaths.Count -eq 0) (($badPaths | ForEach-Object { $_.id }) -join ',')
+
+    # paths[] is what the allowlist engine can reach, so a path/publisher/hash
+    # suppression that names no path cannot be audited at all.
+    $unauditable = @($f | Where-Object {
+        $_.suppressed -and ("$($_.suppressReason)" -match '^(allowlist path|signed:|allowlist hash)') -and (@($_.paths).Count -eq 0)
+    })
+    Check "$Label : a path-based suppression names the paths it covers" ($unauditable.Count -eq 0) (($unauditable | ForEach-Object { $_.id }) -join ',')
+
+    $badCr = @($f | Where-Object { [string]::IsNullOrWhiteSpace($_.confidenceReason) })
+    Check "$Label : every finding says why it has that confidence" ($badCr.Count -eq 0) (($badCr | ForEach-Object { $_.id }) -join ',')
+
+    # The flag and the indicator must agree in BOTH directions: an indicator
+    # with iocMatch false would be a lie, and an IOC hit with no indicator is
+    # the gap schema 1.3 exists to close.
+    $badInd = @($f | Where-Object { [bool]$_.iocMatch -ne -not [string]::IsNullOrWhiteSpace($_.iocIndicator) })
+    Check "$Label : iocIndicator is set exactly when iocMatch is true" ($badInd.Count -eq 0) (($badInd | ForEach-Object { "$($_.id)(match=$($_.iocMatch),ind='$($_.iocIndicator)')" }) -join ',')
+
+    $badMod = @($f | Where-Object { [string]::IsNullOrWhiteSpace($_.module) })
+    Check "$Label : every finding names the module that raised it" ($badMod.Count -eq 0) (($badMod | ForEach-Object { $_.id }) -join ',')
+
+    $badTs = @($f | Where-Object { "$($_.collected_at)" -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' })
+    Check "$Label : collected_at is ISO 8601 UTC" ($badTs.Count -eq 0) (($badTs | ForEach-Object { "$($_.id)=$($_.collected_at)" }) -join ',')
 }
 
 function Get-IocFindings { param($S) @(@($S.findings) | Where-Object { $_.iocMatch -or $_.category -eq 'ioc' }) }

@@ -68,7 +68,7 @@ except Exception as e:
     sys.exit(1)
 
 check("%s : summary.json parses" % label, True)
-check("%s : schemaVersion is 1.2" % label, s.get("schemaVersion") == "1.2", s.get("schemaVersion"))
+check("%s : schemaVersion is 1.3" % label, s.get("schemaVersion") == "1.3", s.get("schemaVersion"))
 import re
 check("%s : version is SemVer" % label, bool(re.match(r"^\d+\.\d+\.\d+$", str(s.get("version")))), s.get("version"))
 check("%s : platform is linux" % label, s.get("platform") == "linux", s.get("platform"))
@@ -127,6 +127,47 @@ if f:
     bad_sup = [x.get("id") for x in f if x.get("suppressed") in (True, "true")
                and not str(x.get("suppressReason", "")).strip()]
     check("%s : suppressed findings carry a reason" % label, not bad_sup, ",".join(map(str, bad_sup)))
+
+    # --- schema 1.3 evidence fields -------------------------------------
+    # Every one of these is REQUIRED to be present on every finding even
+    # though the schema marks them optional: optional is the promise to a
+    # consumer, not a licence for the producer to skip them. A field that is
+    # there nine times out of ten is worse than no field, because a
+    # downstream rule written against it fails on the tenth.
+    v13 = ("confidenceReason", "iocIndicator", "module", "collected_at", "paths")
+    missing13 = ["%s:%s" % (x.get("id"), k) for x in f for k in v13 if k not in x]
+    check("%s : schema 1.3 fields on every finding" % label, not missing13, ",".join(missing13))
+
+    bad_paths = [x.get("id") for x in f if not isinstance(x.get("paths"), list)]
+    check("%s : paths is a list, never null" % label, not bad_paths, ",".join(map(str, bad_paths)))
+
+    # paths[] is what the allowlist engine can reach. If a finding is
+    # suppressed by a path/publisher/hash rule it must name at least one
+    # path, or the suppression cannot be audited at all.
+    unauditable = [x.get("id") for x in f
+                   if x.get("suppressed") in (True, "true")
+                   and str(x.get("suppressReason", "")).startswith(("allowlist path", "owned by", "signed:"))
+                   and not (x.get("paths") or [])]
+    check("%s : a path-based suppression names the paths it covers" % label,
+          not unauditable, ",".join(map(str, unauditable)))
+
+    bad_cr = [x.get("id") for x in f if not str(x.get("confidenceReason", "")).strip()]
+    check("%s : every finding says why it has that confidence" % label, not bad_cr, ",".join(map(str, bad_cr)))
+
+    # The indicator and the flag have to agree in BOTH directions: an
+    # iocIndicator on a finding with iocMatch false would be a lie, and an
+    # IOC hit with no indicator is the gap 1.3 exists to close.
+    bad_ind = ["%s(match=%s,ind=%r)" % (x.get("id"), x.get("iocMatch"), x.get("iocIndicator"))
+               for x in f
+               if bool(x.get("iocMatch") in (True, "true")) != bool(str(x.get("iocIndicator", "")).strip())]
+    check("%s : iocIndicator is set exactly when iocMatch is true" % label, not bad_ind, ",".join(bad_ind))
+
+    bad_mod = [x.get("id") for x in f if not str(x.get("module", "")).strip()]
+    check("%s : every finding names the module that raised it" % label, not bad_mod, ",".join(map(str, bad_mod)))
+
+    bad_ts = ["%s=%r" % (x.get("id"), x.get("collected_at")) for x in f
+              if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", str(x.get("collected_at", "")))]
+    check("%s : collected_at is ISO 8601 UTC" % label, not bad_ts, ",".join(bad_ts))
 
 sys.exit(1 if fail else 0)
 PY

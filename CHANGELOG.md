@@ -6,6 +6,51 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+### Added
+- **Output schema 1.3 — findings now carry their evidence.** Five properties,
+  on every finding, on both editions:
+
+  | Field | What it answers |
+  |---|---|
+  | `paths[]` | *Which files is this about?* Exactly the set the allowlist, publisher, hash and IOC passes can reach — so it is also the audit trail for a suppression: a finding with an empty `paths[]` can never be hidden by a path, publisher or hash rule. |
+  | `confidenceReason` | *Why that number?* `confidence` was a magic constant the consumer had to look up. |
+  | `iocIndicator` | *Which indicator matched?* Previously readable only by parsing the `IOC match: <indicator> \| ...` prefix of `detail` (still written, for human readers). |
+  | `module` | *Which collector made this claim?* |
+  | `collected_at` | *When within the run?* Not the same as `generated`. |
+
+  Additive and optional: a 1.2 consumer keeps working against a 1.3 document.
+  Both test harnesses nonetheless require all five on **every** finding —
+  optional is a promise to the consumer, not a licence for the producer to
+  skip them. A field that is present nine times out of ten is worse than no
+  field, because a rule written against it fails on the tenth.
+
+  Three fields that were proposed were **left out**, and the reasons are the
+  point: `hashes[]` would hash files at finding time, which is extra I/O and,
+  worse, reads executables — the behaviour most likely to wake an EDR, against
+  the project's own constraint. `limitations[]` describes a *module* ("could
+  not read /proc/N: permission denied"), not a finding, so putting it on each
+  finding would have produced copy-pasted boilerplate; it belongs in the
+  summary. `found_in[]` (de-duplication) changes how many findings there are
+  rather than what one carries, and lands separately so a failing parity test
+  stays unambiguous.
+- `tests/test-gs-array.sh` — the Linux findings pipeline is a flat
+  separator-delimited record, and `paths[]` is the first array in it. Carrying
+  an array there is only safe while a string collected from the suspect host
+  cannot smuggle a separator into the record, so that defence is pinned by a
+  test instead of a comment. Removing the sanitisation makes five of its
+  assertions fail — including `module` reading back as `T1059` and
+  `collected_at` as `0.4`, which is the column-shifting forgery it exists to
+  stop.
+
+### Changed
+- `paths[]` is carried between the Linux modules and the JSON writer as
+  `0x1D`-separated elements inside the existing `0x1F` column, **not** as JSON
+  in a column and not by moving the pipeline to NDJSON. The current design has
+  modules write raw bytes with exactly one place turning them into JSON;
+  NDJSON would have spread that one thing-that-must-never-be-wrong across all
+  eighteen module emit sites. Both separators are now stripped from every
+  collected string at the point it enters a finding.
+
 ### Fixed
 - **The Linux JSON escaper emitted invalid JSON on a host without `python3`.**
   `json_escape` escaped only `\` and `"` on its fallback path and passed every

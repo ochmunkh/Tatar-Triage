@@ -39,6 +39,18 @@ TOOL_DISPLAY="$TOOL (Linux)"
 # collapses consecutive whitespace-IFS delimiters, which would drop empty fields
 # (empty detail/technique/suppressReason) and shift every column after them.
 FSEP="$(printf '\037')"   # ASCII Unit Separator (0x1F)
+# Separator for the elements INSIDE one array-valued column (paths). A finding
+# record stays one flat line, so an array needs a second level of separation.
+# Deliberately not JSON-in-a-column: modules write raw bytes and exactly one
+# place turns them into JSON (_emit_findings_json). Moving escaping into the
+# modules would spread the one thing that must never be wrong across all of
+# them. Both separators are stripped from every collected string in
+# add_finding, so host data cannot inject a column or an array element.
+GSEP="$(printf '\035')"   # ASCII Group Separator (0x1D)
+
+# The module currently running, recorded on every finding it raises so an
+# analyst can tell which collector made the claim. Set by the dispatch loop.
+CURRENT_MODULE=""
 
 # ---------------------------------------------------------------------------
 # Argument parsing  (-flag / --flag, case-insensitive-ish)
@@ -136,8 +148,11 @@ map_technique() {  # map_technique CATEGORY MESSAGE -> space-separated technique
 FIND_SEQ=0
 add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
     local sev="$1" cat="$2" msg="$3" det="$4" tech="${5:-}"
-    msg=$(printf '%s' "$msg" | tr '\t\n' '  ')
-    det=$(printf '%s' "$det" | tr '\t\n' '  ')
+    # Strip both record separators as well as tab/newline: these strings come
+    # from the suspect host, so a crafted filename must not be able to add a
+    # column or an array element to the record.
+    msg=$(printf '%s' "$msg" | tr '\t\n\035\037' '    ')
+    det=$(printf '%s' "$det" | tr '\t\n\035\037' '    ')
     [ -z "$tech" ] && tech="$(map_technique "$cat" "$msg")"
     local id conf
     # An unknown severity used to become confidence 0.3 in silence - a value no
@@ -150,8 +165,22 @@ add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
     esac
     FIND_SEQ=$((FIND_SEQ+1))
     id=$(printf 'TTR-F-%03d' "$FIND_SEQ")
-    # columns (FSEP-delimited): id | sev | cat | msg | det | tech | conf
-    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\n' "$id" "$sev" "$cat" "$msg" "$det" "$tech" "$conf" >> "$FINDINGS_FILE"
+    # columns (FSEP-delimited):
+    #   id | sev | cat | msg | det | tech | conf | module | collected_at
+    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+        "$id" "$sev" "$cat" "$msg" "$det" "$tech" "$conf" "$CURRENT_MODULE" "$(iso)" >> "$FINDINGS_FILE"
+}
+
+# Why a finding carries the confidence it does. The number is derived, so the
+# reason is derived with it - stating it in the record is what makes the number
+# auditable instead of a magic constant the consumer has to look up.
+conf_reason() {  # $1 = confidence
+    case "$1" in
+        0.95) printf '%s' "an indicator from the supplied IOC feed matched this finding (see iocIndicator)" ;;
+        0.7)  printf '%s' "severity High: a strong lead on its own, but the tool did not confirm it" ;;
+        0.4)  printf '%s' "severity Review: the pattern also occurs in benign configurations" ;;
+        *)    printf '%s' "" ;;
+    esac
 }
 
 # --- Allowlist helpers (Linux trust signals: path glob, sha256, package owner) ---
@@ -811,16 +840,22 @@ except Exception: print(1)' "$ALLOWLIST" 2>/dev/null || echo 1)"
         if grep -qE '"packageOwned"[[:space:]]*:[[:space:]]*false' "$ALLOWLIST" 2>/dev/null; then AL_PKGOWN=0; fi
     fi
     if [ -s "$FINDINGS_FILE" ]; then
-        local fid fs fc fm fd ft fconf supp reason paths path h g
+        local fid fs fc fm fd ft fconf fmod fts supp reason paths pathsj path h g
         local tok_ok tok_reason all_ok first_reason
-        while IFS="$FSEP" read -r fid fs fc fm fd ft fconf; do
+        while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fmod fts; do
             supp=false; reason=""
+            # The paths a finding names are recorded whether or not an
+            # allowlist was supplied: they are the first thing an analyst
+            # wants and, when a rule did fire, the only way to audit WHICH
+            # files the suppression decision covered. Same extractor the
+            # allowlist engine judges with, so the two can never disagree.
+            paths="$(al_paths_of "$fm" "$fd")"
+            pathsj="$(printf '%s' "$paths" | tr '\n' "$GSEP" | sed "s/${GSEP}*\$//")"
             if [ -n "$ALLOWLIST" ] && [ -r "$ALLOWLIST" ]; then
                 # EVERY path the finding names has to be known-good before the
                 # finding is hidden. Judging it by one token meant an aggregate
                 # naming /tmp was suppressed as "owned by system package"
                 # (dpkg -S /tmp -> base-files) no matter what was in /tmp.
-                paths="$(al_paths_of "$fm" "$fd")"
                 all_ok=0; first_reason=""
                 if [ -n "$paths" ]; then
                     all_ok=1
@@ -860,9 +895,15 @@ EOF
                 if [ "$all_ok" = 1 ]; then supp=true; reason="$first_reason"; fi
             fi
             [ "$supp" = true ] && sup_count=$((sup_count+1))
-            # 10th column: iocMatch (default false; set by the IOC pass below)
-            printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
-                "$fid" "$fs" "$fc" "$fm" "$fd" "$ft" "$fconf" "$supp" "$reason" "false" >> "$F2"
+            # Augmented record, 15 columns. 8-10 (suppressed | suppressReason |
+            # iocMatch) keep their positions: the suppressed count is read with
+            # awk $8 and every reader below is positional.
+            #   1 id   2 sev  3 cat   4 msg          5 det
+            #   6 tech 7 conf 8 supp  9 supReason   10 iocMatch
+            #  11 module 12 collected_at 13 paths(GSEP) 14 confReason 15 iocIndicator
+            printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+                "$fid" "$fs" "$fc" "$fm" "$fd" "$ft" "$fconf" "$supp" "$reason" "false" \
+                "$fmod" "$fts" "$pathsj" "$(conf_reason "$fconf")" "" >> "$F2"
         done < "$FINDINGS_FILE"
     fi
 
@@ -880,8 +921,9 @@ EOF
 
         # Pass A: annotate/override existing findings
         local F2b IOC_HIT; F2b="$(mktemp)"; IOC_HIT="$(mktemp)"
-        local xid xs xc xm xd xt xconf xsup xreason xioc hit path h ind
-        while IFS="$FSEP" read -r xid xs xc xm xd xt xconf xsup xreason xioc; do
+        local xid xs xc xm xd xt xconf xsup xreason xioc xmod xts xpaths xcr xind
+        local hit path h ind
+        while IFS="$FSEP" read -r xid xs xc xm xd xt xconf xsup xreason xioc xmod xts xpaths xcr xind; do
             hit=""
             # string IOCs (ip/domain/filename) in message or detail
             if [ -n "$IOC_STR" ]; then
@@ -906,10 +948,15 @@ EOF
                 # IOC beats allowlist: re-activate, escalate
                 [ "$xsup" = true ] && sup_count=$((sup_count-1))
                 xs="High"; xconf="0.95"; xsup="false"; xreason=""; xioc="true"
+                # The indicator gets its own column. It stays prefixed into
+                # detail as well, because summary.txt and the report are read
+                # by humans and only findings.json gains the field.
+                xind="$hit"; xcr="$(conf_reason 0.95)"
                 xd="IOC match: $hit | $xd"
             fi
-            printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
-                "$xid" "$xs" "$xc" "$xm" "$xd" "$xt" "$xconf" "$xsup" "$xreason" "$xioc" >> "$F2b"
+            printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+                "$xid" "$xs" "$xc" "$xm" "$xd" "$xt" "$xconf" "$xsup" "$xreason" "$xioc" \
+                "$xmod" "$xts" "$xpaths" "$xcr" "$xind" >> "$F2b"
         done < "$F2"
         mv "$F2b" "$F2"
 
@@ -921,7 +968,7 @@ EOF
         # indicators present". T5 exists to stop exactly that class of silent
         # skip for unreadable feeds; the same rule has to hold here. Stderr from
         # the scan is therefore captured, and any of it forces the error exit.
-        local val ln SCAN_ERR SCAN_BAD
+        local val ln bmsg bdet bpaths SCAN_ERR SCAN_BAD
         SCAN_ERR="$(mktemp)"; SCAN_BAD="$(mktemp)"; : > "$SCAN_BAD"
         # Scope parity with the Windows edition: scan every text artifact in the
         # output folder, not just the consolidated report (summary.txt excluded -
@@ -940,11 +987,14 @@ EOF
                         done)"
                 if [ -n "$ln" ]; then
                     FIND_SEQ=$((FIND_SEQ+1))
-                    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+                    bmsg="IOC observed in collected evidence: $val"
+                    bdet="$(printf '%s' "$ln" | tr '\t\035\037' '   ' | cut -c1-160)"
+                    bpaths="$(al_paths_of "$bmsg" "$bdet" | tr '\n' "$GSEP" | sed "s/${GSEP}*\$//")"
+                    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
                         "$(printf 'TTR-F-%03d' "$FIND_SEQ")" "High" "ioc" \
-                        "IOC observed in collected evidence: $val" \
-                        "$(printf '%s' "$ln" | tr '\t\037' '  ' | cut -c1-160)" \
-                        "$(ioc_technique "$val")" "0.95" "false" "" "true" >> "$F2"
+                        "$bmsg" "$bdet" \
+                        "$(ioc_technique "$val")" "0.95" "false" "" "true" \
+                        "ioc" "$(iso)" "$bpaths" "$(conf_reason 0.95)" "$val" >> "$F2"
                 fi
             done
         fi
@@ -995,7 +1045,7 @@ EOF
         echo "---------- SUSPICIOUS FINDINGS: $active_count active, $sup_count allowlisted (leads, NOT verdicts) ----------"
         if [ -s "$F2" ] && [ "$active_count" -gt 0 ]; then
             for sev in High Review; do
-                while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc; do
+                while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc fmod fts fpaths fcr find_; do
                     [ "$fs" = "$sev" ] || continue
                     [ "$fsup" = true ] && continue
                     local tag=""; [ "$fioc" = true ] && tag="[IOC] "
@@ -1018,7 +1068,7 @@ EOF
         if [ "$sup_count" -gt 0 ]; then
             echo ""
             echo "-------- SUPPRESSED BY ALLOWLIST: $sup_count (kept for audit) --------"
-            while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc; do
+            while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc fmod fts fpaths fcr find_; do
                 [ "$fsup" = true ] || continue
                 printf '  %s [%s] (%s) %s  <- %s\n' "$fid" "$fs" "$fc" "$fm" "$freason"
             done < "$F2"
@@ -1036,7 +1086,7 @@ EOF
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
         printf '  "version": "%s",\n' "$VERSION"
-        printf '  "schemaVersion": "1.2",\n'
+        printf '  "schemaVersion": "1.3",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "os": "%s",\n' "$(json_escape "$os")"
@@ -1094,7 +1144,7 @@ EOF
     {
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
-        printf '  "schemaVersion": "1.2",\n'
+        printf '  "schemaVersion": "1.3",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "caseId": "%s",\n' "$(json_escape "$CASE_ID")"
@@ -1111,20 +1161,38 @@ EOF
     rm -f "$F2" 2>/dev/null
 }
 
-# Emit the findings[] array items (v2 schema) from an augmented findings file.
+# Emit the findings[] array items (schema 1.3) from an augmented findings file.
 _emit_findings_json() {  # $1 = F2 path
     local f2="$1" first=1 fid fs fc fm fd ft fconf fsup freason fioc techjson
+    local fmod fts fpaths fcr find_ pathsjson
     [ -s "$f2" ] || return 0
-    while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc; do
+    while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc fmod fts fpaths fcr find_; do
         [ $first -eq 1 ] && first=0 || printf ','
         if [ -n "$ft" ]; then
             techjson=$(printf '%s' "$ft" | awk '{printf "[";for(i=1;i<=NF;i++)printf "%s\"%s\"",(i>1?",":""),$i;printf "]"}')
         else techjson="[]"; fi
         [ -n "$fconf" ] || fconf=0.3
         case "$fioc" in true|false) : ;; *) fioc=false ;; esac
-        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"suppressed":%s,"suppressReason":"%s","iocMatch":%s}' \
+        # paths[] is one column holding GSEP-separated elements. Split here and
+        # escape each element with the same escaper every other string uses:
+        # the array never becomes a second serialisation format.
+        if [ -n "$fpaths" ]; then
+            pathsjson="["
+            _pfirst=1
+            while IFS= read -r _p; do
+                [ -n "$_p" ] || continue
+                [ $_pfirst -eq 1 ] && _pfirst=0 || pathsjson="$pathsjson,"
+                pathsjson="$pathsjson\"$(json_escape "$_p")\""
+            done <<EOF
+$(printf '%s' "$fpaths" | tr "$GSEP" '\n')
+EOF
+            pathsjson="$pathsjson]"
+        else pathsjson="[]"; fi
+        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"confidenceReason":"%s","suppressed":%s,"suppressReason":"%s","iocMatch":%s,"iocIndicator":"%s","module":"%s","collected_at":"%s","paths":%s}' \
             "$(json_escape "$fid")" "$(json_escape "$fs")" "$(json_escape "$fc")" "$techjson" \
-            "$(json_escape "$fm")" "$(json_escape "$fd")" "$fconf" "${fsup:-false}" "$(json_escape "$freason")" "$fioc"
+            "$(json_escape "$fm")" "$(json_escape "$fd")" "$fconf" "$(json_escape "$fcr")" \
+            "${fsup:-false}" "$(json_escape "$freason")" "$fioc" "$(json_escape "$find_")" \
+            "$(json_escape "$fmod")" "$(json_escape "$fts")" "$pathsjson"
     done < "$f2"
 }
 
@@ -1293,6 +1361,7 @@ for m in $TO_RUN; do
     fi
     c_out "[$I/$N] $m"
     execlog "START" "module $m ($I/$N)"
+    CURRENT_MODULE="$m"
     err_before=$ERROR_COUNT; mstart=$(date +%s)
     run_module "$m"; rc=$?; RAN=$((RAN+1))
     secs=$(( $(date +%s) - mstart ))

@@ -103,7 +103,7 @@ Both paths are checked **before collection starts**. A path that cannot be read 
 
 A finding is only suppressed when **every** path it names is known-good. Judging it by one token meant an aggregate about files in `/tmp` was hidden because `dpkg -S /tmp` answers `base-files`, and a directory now never satisfies the package-ownership rule.
 
-Findings carry the v2 fields `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`; summaries gain `activeFindingsCount` / `suppressedCount` (`schemaVersion 1.2`, backward compatible).
+Findings carry `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`, and since schema 1.3 the evidence fields `confidenceReason`, `iocIndicator`, `module`, `collected_at` and `paths[]`; summaries gain `activeFindingsCount` / `suppressedCount` (`schemaVersion 1.3`, backward compatible — 1.3 only adds optional properties).
 
 ---
 ## Output
@@ -123,7 +123,7 @@ Findings carry the v2 fields `id`, `confidence`, `suppressed`, `suppressReason`,
 └─ logs/                             # copied auth/syslog/wtmp/btmp where readable
 ```
 
-The `summary.json` matches the Windows edition (`platform`, `host`, `os`, `stats`, `findings[]` with `severity/category/message/detail` plus the v2 fields `id/confidence/suppressed/suppressReason/iocMatch`), so a single parser ingests both: the `stats` keys and their numeric types are identical on the two platforms, and both editions write `manifest_sha256.txt`, `binary_hashes.txt` and `tatar.log` under the same names and in the same format. Schemas: [`schema/summary.schema.json`](../schema/summary.schema.json) and, for the SOAR feed, [`schema/findings.schema.json`](../schema/findings.schema.json).
+The `summary.json` matches the Windows edition (`platform`, `host`, `os`, `stats`, `findings[]` with `severity/category/message/detail` plus `id/confidence/suppressed/suppressReason/iocMatch` and the schema 1.3 evidence fields `confidenceReason/iocIndicator/module/collected_at/paths`), so a single parser ingests both: the `stats` keys and their numeric types are identical on the two platforms, and both editions write `manifest_sha256.txt`, `binary_hashes.txt` and `tatar.log` under the same names and in the same format. Schemas: [`schema/summary.schema.json`](../schema/summary.schema.json) and, for the SOAR feed, [`schema/findings.schema.json`](../schema/findings.schema.json).
 
 ---
 
@@ -272,7 +272,7 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 
 Finding нь өөрийн нэрлэсэн **бүх** зам цэвэр гэж батлагдсан үед л suppressed болно. Нэг л token-оор дүгнэдэг байсан үед `/tmp` доторх файлуудын тухай нэгтгэсэн finding далдлагдаж байсан — учир нь `dpkg -S /tmp` нь `base-files` гэж хариулдаг; одоо хавтас багцын эзэмшлийн дүрмийг хэзээ ч хангахгүй.
 
-Finding-ууд v2 талбаруудыг (`id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`) авч явах ба summary-д `activeFindingsCount` / `suppressedCount` нэмэгдэнэ (`schemaVersion 1.2`, хуучинтайгаа нийцтэй).
+Finding-ууд `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`, мөн schema 1.3-аас хойш нотолгооны талбарууд `confidenceReason`, `iocIndicator`, `module`, `collected_at`, `paths[]`-ийг авч явах ба summary-д `activeFindingsCount` / `suppressedCount` нэмэгдэнэ (`schemaVersion 1.3`, хуучинтайгаа нийцтэй — 1.3 зөвхөн заавал биш талбар нэмсэн).
 
 ---
 ## Гаралт
@@ -292,7 +292,7 @@ Finding-ууд v2 талбаруудыг (`id`, `confidence`, `suppressed`, `sup
 └─ logs/                             # уншигдахаар байсан auth/syslog/wtmp/btmp-ийн хуулбар
 ```
 
-`summary.json` нь Windows edition-тэйгээ таарна (`platform`, `host`, `os`, `stats`, `severity/category/message/detail` ба v2 талбарууд `id/confidence/suppressed/suppressReason/iocMatch`-тай `findings[]`) — тиймээс нэг parser хоёуланг уншина: `stats`-ийн түлхүүрүүд болон тэдгээрийн тоон төрөл хоёр платформ дээр ижил, мөн хоёр edition `manifest_sha256.txt`, `binary_hashes.txt`, `tatar.log`-ийг ижил нэрээр, ижил форматаар бичнэ. Schema: [`schema/summary.schema.json`](../schema/summary.schema.json), SOAR feed-д нь [`schema/findings.schema.json`](../schema/findings.schema.json).
+`summary.json` нь Windows edition-тэйгээ таарна (`platform`, `host`, `os`, `stats`, `severity/category/message/detail` ба `id/confidence/suppressed/suppressReason/iocMatch`, schema 1.3-ын нотолгооны талбарууд `confidenceReason/iocIndicator/module/collected_at/paths`-тай `findings[]`) — тиймээс нэг parser хоёуланг уншина: `stats`-ийн түлхүүрүүд болон тэдгээрийн тоон төрөл хоёр платформ дээр ижил, мөн хоёр edition `manifest_sha256.txt`, `binary_hashes.txt`, `tatar.log`-ийг ижил нэрээр, ижил форматаар бичнэ. Schema: [`schema/summary.schema.json`](../schema/summary.schema.json), SOAR feed-д нь [`schema/findings.schema.json`](../schema/findings.schema.json).
 
 ---
 

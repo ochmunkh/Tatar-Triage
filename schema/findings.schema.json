@@ -24,9 +24,10 @@
       "type": "string",
       "enum": [
         "1.1",
-        "1.2"
+        "1.2",
+        "1.3"
       ],
-      "description": "Version of THIS shared schema. Consumers key off this."
+      "description": "Version of THIS shared schema. Consumers key off this. 1.3 only ADDS optional finding properties, so a 1.2 consumer keeps working against a 1.3 document."
     },
     "platform": {
       "type": "string",
@@ -122,7 +123,30 @@
           },
           "iocMatch": {
             "type": "boolean",
-            "description": "True when an IOC matched this finding. The indicator itself is prefixed into detail as: IOC match: <indicator> | ..."
+            "description": "True when an IOC matched this finding. Since 1.3 the indicator itself is in iocIndicator; it is still prefixed into detail as 'IOC match: <indicator> | ...' for human readers."
+          },
+          "confidenceReason": {
+            "type": "string",
+            "description": "Why the tool assigned this confidence, in plain words. Derived from the same rule that derives confidence, so the number is auditable without having to read the collector. Added in 1.3; empty when unknown."
+          },
+          "iocIndicator": {
+            "type": "string",
+            "description": "The indicator from the supplied IOC feed that matched, when iocMatch is true; empty otherwise. Before 1.3 this could only be read by parsing the 'IOC match: <indicator> | ...' prefix of detail, which is still written for human readers."
+          },
+          "module": {
+            "type": "string",
+            "description": "The collector module that raised this finding, e.g. process, persistence. Added in 1.3; the IOC evidence pass uses 'ioc'."
+          },
+          "collected_at": {
+            "type": "string",
+            "description": "UTC time the finding was raised, ISO 8601 (YYYY-MM-DDTHH:MM:SSZ). Earlier than 'generated' by however long the remaining modules took. Added in 1.3."
+          },
+          "paths": {
+            "type": "array",
+            "description": "Absolute paths this finding names, de-duplicated, in order of appearance. This is exactly the set the allowlist, publisher, hash and IOC passes can reach, so it is also the audit trail for a suppression decision: a finding with an empty paths[] can never be suppressed by a path, publisher or hash rule. Added in 1.3.",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

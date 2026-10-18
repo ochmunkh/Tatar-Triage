@@ -74,7 +74,7 @@ The consolidated report flags suspicious activity as it goes (sample):
 
 ## Architecture
 
-TATAR ships as two parity editions — `Tatar.ps1` (Windows, 30 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.2`), so a SIEM/SOAR pipeline ingests either platform identically.
+TATAR ships as two parity editions — `Tatar.ps1` (Windows, 30 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.3`), so a SIEM/SOAR pipeline ingests either platform identically.
 
 ```
                     TATAR Triage
@@ -84,7 +84,7 @@ TATAR ships as two parity editions — `Tatar.ps1` (Windows, 30 modules) and `li
      (PowerShell, 30 modules)      (Bash, 18 modules)
           └──────────────┬──────────────┘
                          ▼
-             Unified JSON schema  (summary.schema.json · v1.2)
+             Unified JSON schema  (summary.schema.json · v1.3)
                          ▼
         ┌────────────────┼────────────────┐
         ▼                ▼                ▼
@@ -494,7 +494,7 @@ Triage гэдэг ойлголт эмнэлгээс гаралтай. Эмч ө�
 
 ## Архитектур
 
-TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 30 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.2`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
+TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 30 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.3`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
 
 ```
                     TATAR Triage
@@ -504,7 +504,7 @@ TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1`
      (PowerShell, 30 модуль)       (Bash, 18 модуль)
           └──────────────┬──────────────┘
                          ▼
-             Нэгдсэн JSON schema  (summary.schema.json · v1.2)
+             Нэгдсэн JSON schema  (summary.schema.json · v1.3)
                          ▼
         ┌────────────────┼────────────────┐
         ▼                ▼                ▼
