@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.2-blue" alt="v1.2">
+  <img src="https://img.shields.io/badge/version-1.3-blue" alt="v1.3">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows 10/11">
   <img src="https://img.shields.io/badge/modules-30-5eead4" alt="30 modules">
@@ -338,7 +338,11 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.2.5 — no more silent no-ops (current)
+### v1.3.0 — the seams between the two editions (current)
+- Contributed by Yalguun Tumenkhuu ([@fg0x0](https://github.com/fg0x0)), reviewed and merged by the maintainer — the project's first outside contribution. A minor version, not a patch: output filenames and several `stats` keys changed, so anything parsing a previous run needs updating.
+- The "unified" `summary.json` used six different key spellings for the same concepts; the Windows producer was never validated against the schema it is the flagship of; an unknown flag was swallowed by `-Silent`; a value-less `--output` wrote the evidence tree to `/`. All closed. Full list in [CHANGELOG.md](CHANGELOG.md).
+
+### v1.2.5 — no more silent no-ops
 - **An unreadable `--allowlist` / `--ioc` path was skipped in silence** — a typo in the filename meant the feed never ran, with no warning and exit code 0, so the analyst read "No active findings" believing it had been applied. Both paths are now validated before collection starts: an unreadable one warns in red, logs an error and forces exit code `2`.
 - Windows: IOC Pass A hashed only the first path named in a finding, so a hash indicator for the second file never matched. Every path is now considered.
 - Pass B tagged every new IOC finding `T1071` on both editions, including filename and hash hits. The technique now follows the indicator type (`T1071` / `T1071.004` / `T1204.002` / `T1588.001`).

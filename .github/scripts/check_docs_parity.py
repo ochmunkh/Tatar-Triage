@@ -85,6 +85,32 @@ def check_badge(name, text, pattern, expected):
         fail("%s: badge says %s modules, the code has %d" % (name, m.group(1), expected))
 
 
+def tool_version(ps1, sh):
+    """The single version constant each collector carries, as major.minor."""
+    w = re.search(r"\$script:ToolVersion\s*=\s*'([0-9]+\.[0-9]+)\.[0-9]+'", ps1)
+    l = re.search(r'^VERSION="([0-9]+\.[0-9]+)\.[0-9]+"', sh, re.M)
+    if not w:
+        fail("Tatar.ps1: could not read $script:ToolVersion")
+    if not l:
+        fail("linux/tatar-linux.sh: could not read VERSION")
+    if w and l and w.group(1) != l.group(1):
+        fail("the two editions disagree on the version: Windows %s, Linux %s"
+             % (w.group(1), l.group(1)))
+    return w.group(1) if w else None
+
+
+def check_version_badge(name, text, expected):
+    # The README version badge sat at 1.2 for the whole 1.3 line. A badge is
+    # the first thing a reader believes, so it is held to the code the way the
+    # module counts are.
+    m = re.search(r"badge/version-([0-9]+\.[0-9]+)-", text)
+    if not m:
+        fail("%s: version badge not found" % name)
+    elif m.group(1) != expected:
+        fail("%s: version badge says %s, the collectors are at %s"
+             % (name, m.group(1), expected))
+
+
 def main(argv):
     root = argv[1] if len(argv) > 1 else "."
     ps1 = read(root, "Tatar.ps1")
@@ -103,6 +129,12 @@ def main(argv):
     # 1. module-count badges
     check_badge("README.md", readme, r"badge/modules-(\d+)-", len(win))
     check_badge("linux/README.md", lreadme, r"badge/modules-(\d+)-", len(lin))
+
+    # 1b. version badges, against the one version constant per collector
+    ver = tool_version(ps1, sh)
+    if ver:
+        check_version_badge("README.md", readme, ver)
+        check_version_badge("linux/README.md", lreadme, ver)
 
     # 2. bilingual module lists
     en = slice_block(readme, "\n## Modules\n", "\n---")

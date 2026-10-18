@@ -65,6 +65,11 @@ function Assert-Contract {
     # host and fails on the other - and neither tells you what the consumer
     # actually received.
     param($S, [string]$Label, $Run = $null)
+    # A malformed Check argument once made three assertions ERROR instead of
+    # run, and the suite still printed "0 failed" with a quietly smaller total.
+    # An assertion that vanishes is worse than one that fails, so the error
+    # stream is watched for the length of the contract block.
+    $errAtEntry = $Error.Count
     Check "$Label : summary.json parses"            ($null -ne $S)
     if ($null -eq $S) { return }
 
@@ -77,7 +82,8 @@ function Assert-Contract {
     if (-not $hasFindings) { return }
 
     $f = @($S.findings)
-    Check "$Label : findings is never null"         ($null -ne $S.findings)
+    Check "$Label : findings is a list, never null" ($S.findings -is [System.Collections.IEnumerable] -and $S.findings -isnot [string]) `
+          $(if ($null -eq $S.findings) { 'null' } else { $S.findings.GetType().Name })
     Check "$Label : counts add up (active + suppressed = findings)" `
           (($S.activeFindingsCount + $S.suppressedCount) -eq $f.Count) `
           "active=$($S.activeFindingsCount) suppressed=$($S.suppressedCount) findings=$($f.Count)"
@@ -88,14 +94,23 @@ function Assert-Contract {
     # only to whoever reads the log.
     $hasSkipped = $S.PSObject.Properties.Name -contains 'modulesSkipped'
     Check "$Label : modulesSkipped key present"     $hasSkipped
-    if ($hasSkipped) {
-        Check "$Label : nothing was skipped for a valid module list" (@($S.modulesSkipped).Count -eq 0) `
-              ((@($S.modulesSkipped)) -join ',')
-    }
+    # Asserted unconditionally. Guarding it with "if the key exists" is the
+    # silent-skip shape this project keeps finding: a producer that drops the
+    # key would have made the assertion disappear instead of fail.
+    Check "$Label : modulesSkipped is a list, never null" `
+          ($hasSkipped -and $S.modulesSkipped -is [System.Collections.IEnumerable] -and $S.modulesSkipped -isnot [string]) `
+          $(if (-not $hasSkipped) { 'key missing' } else { "$($S.modulesSkipped.GetType().Name)" })
+    Check "$Label : nothing was skipped for a valid module list" (@($S.modulesSkipped).Count -eq 0) `
+          ((@($S.modulesSkipped)) -join ',')
 
     # summary.json is the cross-platform contract: a counter is a NUMBER on every
     # platform and uses the one canonical key the schema names for that concept.
-    if ($S.PSObject.Properties.Name -contains 'stats') {
+    # Same reason as modulesSkipped above: "stats is an object" is asserted
+    # whether or not the key is there, so a missing stats block fails loudly
+    # instead of taking the three checks below with it.
+    $hasStats = ($S.PSObject.Properties.Name -contains 'stats') -and ($null -ne $S.stats)
+    Check "$Label : stats is an object" $hasStats $(if ($hasStats) { '' } else { 'missing or null' })
+    if ($hasStats) {
         $statProps = @($S.stats.PSObject.Properties)
         $quoted = @($statProps | Where-Object { $_.Value -is [string] -and $_.Value -match '^-?\d+$' } | ForEach-Object { $_.Name })
         Check "$Label : stats counters are JSON numbers, not strings" ($quoted.Count -eq 0) ($quoted -join ',')
@@ -181,6 +196,9 @@ function Assert-Contract {
     } else {
         Check "$Label : collected_at is ISO 8601 UTC" $false 'output directory unavailable'
     }
+
+    Check "$Label : every contract check ran without an error" ($Error.Count -eq $errAtEntry) `
+          $(if ($Error.Count -ne $errAtEntry) { "$($Error.Count - $errAtEntry) error(s), newest: $($Error[0])" } else { '' })
 }
 
 function Get-IocFindings { param($S) @(@($S.findings) | Where-Object { $_.iocMatch -or $_.category -eq 'ioc' }) }

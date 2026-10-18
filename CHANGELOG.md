@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 ## [Unreleased]
 
 ### Added
+- `.github/scripts/check_contract_parity.py` — the Win↔Linux parity gate
+  described under **Changed**.
+- The docs gate now holds the **version badges** to the collectors' own version
+  constant, in both READMEs. The badge read `1.2` for the whole 1.3 line; a
+  badge is the first thing a reader believes, so it is checked like the module
+  counts are. The README changelog had also stopped at v1.2.5, still marked
+  `(current)` — v1.3.0 is now recorded there.
 - **Output schema 1.3 — findings now carry their evidence.** Five properties,
   on every finding, on both editions:
 
@@ -30,9 +37,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   the project's own constraint. `limitations[]` describes a *module* ("could
   not read /proc/N: permission denied"), not a finding, so putting it on each
   finding would have produced copy-pasted boilerplate; it belongs in the
-  summary. `found_in[]` (de-duplication) changes how many findings there are
-  rather than what one carries, and lands separately so a failing parity test
-  stays unambiguous.
+  summary. `found_in[]` (de-duplication) was then **dropped entirely**, on
+  evidence: see below.
 - `tests/test-gs-array.sh` — the Linux findings pipeline is a flat
   separator-delimited record, and `paths[]` is the first array in it. Carrying
   an array there is only safe while a string collected from the suspect host
@@ -43,6 +49,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   stop.
 
 ### Changed
+- **Both contract harnesses now assert the same rule set, and CI fails if they
+  drift.** `tests/run-tests.sh` and `tests/Invoke-Tests.ps1` run in separate
+  jobs on separate runners, so nothing had ever compared them: a rule dropped
+  from one would leave the schema valid, both jobs green, and that edition
+  quietly no longer held to the contract. `check_contract_parity.py` compares
+  the rules each harness claims to prove and names any the other is missing.
+  Four real gaps turned up on the first run, two of them silent-skip bugs:
+  Windows wrapped its `stats` and `modulesSkipped` assertions in
+  "if the key exists", so a producer that dropped either key would have made
+  the assertions **disappear** rather than fail. Both are now unconditional.
+- Both harnesses also assert that every contract check actually ran. A
+  malformed PowerShell argument had made three assertions raise an error
+  instead of run, and the suite still printed `0 failed` with a quietly
+  smaller total — an assertion that vanishes is worse than one that fails.
 - `paths[]` is carried between the Linux modules and the JSON writer as
   `0x1D`-separated elements inside the existing `0x1F` column, **not** as JSON
   in a column and not by moving the pipeline to NDJSON. The current design has
@@ -50,6 +70,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   NDJSON would have spread that one thing-that-must-never-be-wrong across all
   eighteen module emit sites. Both separators are now stripped from every
   collected string at the point it enters a finding.
+
+### Removed
+- **De-duplication (`found_in[]`) was cut after measuring, not after
+  discussing.** The plan assumed several modules raise the *same* finding.
+  They do not: all 13 Linux and all 22 Windows `Add-Finding` sites use
+  distinct message templates, and a crafted probe (an executable in `/tmp`,
+  running) produced two findings sharing one path with **no** duplicate
+  `(category, message)` anywhere. What the probe showed is the opposite of a
+  duplicate — `process` reporting *"executing from a suspicious path (PID 10)"*
+  and `indicators` reporting *"2 executable file(s) in /tmp"* are two
+  independent signals about one file, and merging them would have thrown away
+  the PID, the aggregate's count, and the fact that two separate checks fired.
+  Three weak signals agreeing is evidence; one merged record is not.
+  The real need behind the item — "don't make me notice the same file three
+  times" — is already met by `paths[]` from schema 1.3: grouping findings by
+  shared path is now one line in any consumer. Adding a field for something a
+  consumer can derive would be the schema bloat 1.3 was careful to avoid.
 
 ### Fixed
 - **The Linux JSON escaper emitted invalid JSON on a host without `python3`.**

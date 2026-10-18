@@ -177,3 +177,11 @@ jobs:
       # history shows each one has already needed a dedicated repair commit.
       - name: Docs match the code
         run: python3 .github/scripts/check_docs_parity.py .
+
+      # The Windows and Linux contract harnesses run in SEPARATE jobs on
+      # separate runners, so until now nothing compared them. A rule dropped
+      # from one of them would leave the schema valid, both jobs green, and
+      # that edition quietly no longer held to the contract. This job can read
+      # both files, so it is where the comparison belongs.
+      - name: Both editions are held to the same contract
+        run: python3 .github/scripts/check_contract_parity.py .

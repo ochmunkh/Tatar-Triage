@@ -49,7 +49,11 @@ and read-only on a host that may already be compromised.
    both editions to one shape, so one parser reads both. Field names do not
    change silently, `schemaVersion` changes only when the contract does, and the
    output filenames are part of it. The collectors could be rewritten in a
-   weekend; this agreement could not.
+   weekend; this agreement could not. The two editions are also held to the
+   same contract *in practice*: `tests/run-tests.sh` and
+   `tests/Invoke-Tests.ps1` must assert the same rule set, and
+   `.github/scripts/check_contract_parity.py` fails CI when they drift. They
+   run in separate jobs on separate runners, so nothing else compares them.
 7. **A finding is a lead, not a verdict.** `severity` is `High` or `Review` —
    deliberately two. A five-level scale manufactures false precision, when the
    analyst's decision is binary: look now, or not. `confidence` comes from a
@@ -73,7 +77,17 @@ and read-only on a host that may already be compromised.
     behave like what it hunts — bulk file-walking, hiding, muting alerts are the
     shape of ransomware staging. Modules that are visible to EDR are named in
     the docs.
-11. **Mongolian is a first-class output language**, not a translation pasted
+11. **Collected bytes are data, never structure.** The Linux findings pipeline
+    is a flat record: `0x1F` between columns, `0x1D` between the elements of an
+    array column, and exactly one place (`_emit_findings_json`) that turns it
+    into JSON. Keeping one JSON choke point instead of eighteen is worth it
+    only while a string taken from the suspect host cannot carry a separator
+    into the record, so both are stripped in `add_finding`. A crafted filename
+    is attacker-controlled input: without that, it buys a forged
+    `suppressReason` or a flipped `iocMatch`. If you add an array-valued field,
+    it goes in a column with `0x1D`, and escaping stays in the one place.
+    `tests/test-gs-array.sh` pins this.
+12. **Mongolian is a first-class output language**, not a translation pasted
     onto an English tool. The two halves of `README.md`, `linux/README.md` and
     `docs/MITRE_ATTACK.md` are parity-checked in CI. Technical terms (finding,
     allowlist, IOC, contract, pattern match, suppressed) stay in English in both
@@ -157,7 +171,7 @@ schema · chain of custody (hash/timestamp хадгална).
 
 **Архитектурын тогтвортой зарчим:** Fork хийх, PR явуулахын өмнө дээрх
 *Architectural invariants* хэсгийг уншина уу. Энэ tool-ын ихэнх нь нээлттэй,
-гэхдээ арван нэг зүйл нь биш — тус бүр нь энэ collector чимээгүйхэн triage
+гэхдээ арван хоёр зүйл нь биш — тус бүр нь энэ collector чимээгүйхэн triage
 хэрэгсэл байхаа болих нэг арга юм: хурдан, эрх багатай, аль хэдийн халдлагад
 өртсөн байж болох хост дээр зөвхөн уншдаг.
 
@@ -165,6 +179,16 @@ schema · chain of custody (hash/timestamp хадгална).
 шаардах эсэх (шаардахгүй нь анхдагч), гаралтын хэмжээ (мета, түүхий өгөгдөл
 биш), AV-ийн эрсдэл. Аль нэгэнд унавал default-д орохгүй, унтраалттай switch-ийн
 ард. Ямар ч артефакт энэ хаалтыг давах эрх худалдаж авахгүй.
+
+**Цуглуулсан байт бол өгөгдөл, бүтэц биш (12-р зарчим):** Linux-ийн findings
+pipeline нь хавтгай бичлэг — багана хооронд `0x1F`, массив баганын элемент
+хооронд `0x1D`, JSON болгох газар яг нэг (`_emit_findings_json`). Арван найман
+газрын оронд нэг choke point байх нь зөвхөн сэжигтэй хостоос авсан мөр
+тусгаарлагч авч орж чадахгүй үед утгатай — тиймээс `add_finding` хоёуланг нь
+тайрна. Зориудаар нэрлэсэн файл бол дайсны хяналтад байдаг оролт: тайралтгүй
+бол хуурамч `suppressReason` эсвэл эргүүлсэн `iocMatch` худалдаж авна. Массив
+талбар нэмэх бол `0x1D`-тэй багана, escape нь тэр нэг газартаа үлдэнэ.
+`tests/test-gs-array.sh` үүнийг барина.
 
 **Хувь нэмрийн чиглэл:** шинэ collector/artifact (Windows эсвэл Linux) · ATT&CK tagging ·
 schema сайжруулах · хоёр OS-ийн parity · баримт/орчуулга.

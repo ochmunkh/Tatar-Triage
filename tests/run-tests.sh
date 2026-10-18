@@ -73,6 +73,7 @@ import re
 check("%s : version is SemVer" % label, bool(re.match(r"^\d+\.\d+\.\d+$", str(s.get("version")))), s.get("version"))
 check("%s : platform is linux" % label, s.get("platform") == "linux", s.get("platform"))
 
+check("%s : findings key present" % label, "findings" in s)
 f = s.get("findings")
 check("%s : findings is a list, never null" % label, isinstance(f, list), type(f).__name__)
 if not isinstance(f, list):
@@ -87,6 +88,7 @@ check("%s : findingsCount matches array" % label, s.get("findingsCount") == len(
 
 # A requested module that never ran must be visible to the pipeline, not only
 # to whoever reads the log.
+check("%s : modulesSkipped key present" % label, "modulesSkipped" in s)
 skipped = s.get("modulesSkipped")
 check("%s : modulesSkipped is a list, never null" % label, isinstance(skipped, list), type(skipped).__name__)
 check("%s : nothing was skipped for a valid module list" % label, skipped == [], ",".join(map(str, skipped or [])))
@@ -165,9 +167,23 @@ if f:
     bad_mod = [x.get("id") for x in f if not str(x.get("module", "")).strip()]
     check("%s : every finding names the module that raised it" % label, not bad_mod, ",".join(map(str, bad_mod)))
 
-    bad_ts = ["%s=%r" % (x.get("id"), x.get("collected_at")) for x in f
-              if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", str(x.get("collected_at", "")))]
+    # Asserted against the RAW document, which is what a SIEM ingests - the
+    # Windows half has to do this because pwsh rewrites ISO strings into
+    # [datetime] objects, and the two editions are held to one contract, so
+    # this edition reads the file the same way. Counting the occurrences also
+    # means a finding that omits the field cannot pass by being invisible.
+    raw = open(path, encoding="utf-8").read()
+    ts_vals = re.findall(r'"collected_at"\s*:\s*"([^"]*)"', raw)
+    check("%s : collected_at present in the raw document" % label, len(ts_vals) == len(f),
+          "found %d for %d finding(s)" % (len(ts_vals), len(f)))
+    bad_ts = [v for v in ts_vals if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", v)]
     check("%s : collected_at is ISO 8601 UTC" % label, not bad_ts, ",".join(bad_ts))
+
+    # Mirrors the Windows harness, where a malformed assertion once ERRORED
+    # instead of running and the suite still printed "0 failed". Here an
+    # exception aborts the block, so this line is only reached - and only
+    # printed - when every assertion above actually ran.
+    check("%s : every contract check ran without an error" % label, True)
 
 sys.exit(1 if fail else 0)
 PY
