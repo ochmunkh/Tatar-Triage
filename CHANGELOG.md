@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 ## [Unreleased]
 
 ### Fixed
+- **The Linux JSON escaper emitted invalid JSON on a host without `python3`.**
+  `json_escape` escaped only `\` and `"` on its fallback path and passed every
+  other control character through untouched, so a single `0x07` or `0x1B` byte
+  in a filename on the suspect host — attacker-controlled input, on a forensic
+  tool — was enough to make `summary.json` and `findings.json` unparseable for
+  everything downstream. The fallback now escapes the whole C0 range (`\b \f
+  \n \r \t` named, the rest as `\u00XX`) in `awk`, and is covered by tests.
 - **`-EncodedCommand` was looked for in two places and both were wrong, in
   opposite directions.** `Collect-Process` matched the regex `'-enc '`, so every
   abbreviation and every form without a trailing space went unnoticed;
@@ -21,6 +28,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   confirm it against.
 
 ### Added
+- `tests/test-json-escape.sh` — twenty-nine inputs run through **every path**
+  `json_escape` has, including the no-`python3` fallback, which the test forces
+  by shadowing `python3`. The assertion is a round trip through a real JSON
+  parser rather than a byte comparison, so it pins the contract and not one
+  escaper's style. Wired into CI. Against the previous implementation it fails
+  fourteen cases.
 - `tests/Test-EncodedArg.ps1` and `tests/fixtures/encodedarg-cases.tsv` — fifteen
   cases that pin the pattern in both directions at once: the abbreviations must
   match, `-Encoding` and `-ExecutionPolicy` must not. Wired into CI.
@@ -29,6 +42,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   and the four things a new module must declare before it can be in the default
   set. Written because the project now takes outside contributions, and a forker
   needs to know which few things are not open to change.
+
+### Changed
+- `json_escape` no longer forks for a string that contains nothing to escape —
+  the overwhelmingly common case. It used to spawn a `python3` process per
+  field (~13 ms each, six per finding), so a run producing 200 findings spent
+  roughly 15 seconds escaping text that needed no escaping. Measured on the
+  same host, 100 calls went from 1.27 s to 0.001 s. No output changes.
 
 ## [1.3.0] — 2026-10-12
 

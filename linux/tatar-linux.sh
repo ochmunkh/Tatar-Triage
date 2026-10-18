@@ -291,10 +291,54 @@ detect_environment() {
     elif have aa-status || [ -d /sys/kernel/security/apparmor ]; then ENV_SECMOD="apparmor"; fi
 }
 
-# JSON string escaper (arg -> escaped, no surrounding quotes)
+# JSON string escaper (arg -> escaped, no surrounding quotes).
+#
+# Three paths, in cost order:
+#   1. nothing needs escaping  -> return the string, no fork at all
+#   2. python3 present         -> json.dumps, the reference implementation
+#   3. no python3              -> awk, which must be correct on its own
+#
+# Path 1 exists because this used to fork a python3 per field (~13ms each,
+# six per finding): a run with 200 findings spent ~15s escaping strings that
+# contained nothing to escape.
+#
+# Path 3 used to be a sed/tr pipeline that escaped only \ and " and passed
+# every other control character through untouched. A 0x07 or 0x1B byte in a
+# filename on the suspect host - attacker-controlled input, on a forensic
+# tool - was therefore enough to emit INVALID JSON and break every downstream
+# parser. It now escapes the whole C0 range.
+#
+# Note: every call site is "$(json_escape ...)", and command substitution
+# strips trailing newlines, so a trailing newline cannot survive on any path.
+# Embedded newlines are escaped correctly.
 json_escape() {
-    printf '%s' "$1" | python3 -c 'import json,sys; sys.stdout.write(json.dumps(sys.stdin.read())[1:-1])' 2>/dev/null \
-    || printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\r' | tr '\n\t' '  '
+    case "$1" in
+        *\\*|*\"*|*[[:cntrl:]]*) : ;;
+        *) printf '%s' "$1"; return 0 ;;
+    esac
+    printf '%s' "$1" | python3 -c 'import json,sys; sys.stdout.write(json.dumps(sys.stdin.read())[1:-1])' 2>/dev/null && return 0
+    printf '%s' "$1" | LC_ALL=C awk '
+        function esc(s,   i, n, c, o) {
+            n = length(s); o = ""
+            for (i = 1; i <= n; i++) {
+                c = substr(s, i, 1)
+                if      (c == "\\") o = o "\\\\"
+                else if (c == "\"") o = o "\\\""
+                else if (c == "\t") o = o "\\t"
+                else if (c == "\r") o = o "\\r"
+                else if (c == "\b") o = o "\\b"
+                else if (c == "\f") o = o "\\f"
+                else if (index(CTRL, c)) o = o sprintf("\\u%04x", ORD[c])
+                else o = o c
+            }
+            return o
+        }
+        BEGIN {
+            ORS = ""; first = 1
+            for (i = 1; i < 32; i++) { c = sprintf("%c", i); ORD[c] = i; CTRL = CTRL c }
+        }
+        { if (!first) printf "\\n"; first = 0; printf "%s", esc($0) }
+    '
 }
 
 banner() {

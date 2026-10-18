@@ -43,6 +43,13 @@ jobs:
       - name: IOC boundary unit tests
         run: bash tests/test-ioc-boundary.sh
 
+      # json_escape is the single point where collected bytes become JSON.
+      # The test drives all three of its paths - including the no-python3
+      # fallback, which it forces by shadowing python3, because CI always has
+      # python3 and that fallback therefore stayed broken for three releases.
+      - name: JSON escaper unit tests
+        run: bash tests/test-json-escape.sh
+
       - name: Allowlist path-extraction unit tests
         run: bash tests/test-allowlist-path.sh
 
