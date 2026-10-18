@@ -58,7 +58,13 @@ function Get-Summary {
 
 # ---- the output contract every run must satisfy -------------------------------
 function Assert-Contract {
-    param($S, [string]$Label)
+    # $Run is optional and carries the output directory. Some assertions have
+    # to read the FILE rather than the parsed object: pwsh's ConvertFrom-Json
+    # turns an ISO-8601 string into a [datetime] while Windows PowerShell 5.1
+    # leaves it a string, so a check written against the object passes on one
+    # host and fails on the other - and neither tells you what the consumer
+    # actually received.
+    param($S, [string]$Label, $Run = $null)
     Check "$Label : summary.json parses"            ($null -ne $S)
     if ($null -eq $S) { return }
 
@@ -164,8 +170,17 @@ function Assert-Contract {
     $badMod = @($f | Where-Object { [string]::IsNullOrWhiteSpace($_.module) })
     Check "$Label : every finding names the module that raised it" ($badMod.Count -eq 0) (($badMod | ForEach-Object { $_.id }) -join ',')
 
-    $badTs = @($f | Where-Object { "$($_.collected_at)" -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' })
-    Check "$Label : collected_at is ISO 8601 UTC" ($badTs.Count -eq 0) (($badTs | ForEach-Object { "$($_.id)=$($_.collected_at)" }) -join ',')
+    # Asserted against the raw document, which is what a SIEM ingests.
+    $jsonPath = if ($Run -and $Run.Dir) { Join-Path $Run.Dir 'summary.json' } else { $null }
+    if ($jsonPath -and (Test-Path $jsonPath)) {
+        $rawTxt = Get-Content $jsonPath -Raw -Encoding UTF8
+        $tsVals = @([regex]::Matches($rawTxt, '"collected_at"\s*:\s*"([^"]*)"') | ForEach-Object { $_.Groups[1].Value })
+        Check "$Label : collected_at present in the raw document" ($tsVals.Count -eq @($f).Count) "found $($tsVals.Count) for $(@($f).Count) finding(s)"
+        $badTs = @($tsVals | Where-Object { $_ -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' })
+        Check "$Label : collected_at is ISO 8601 UTC" ($badTs.Count -eq 0) ($badTs -join ',')
+    } else {
+        Check "$Label : collected_at is ISO 8601 UTC" $false 'output directory unavailable'
+    }
 }
 
 function Get-IocFindings { param($S) @(@($S.findings) | Where-Object { $_.iocMatch -or $_.category -eq 'ioc' }) }
@@ -180,7 +195,7 @@ Write-Host 'T1  baseline run (no allowlist, no IOC)'
 $t1 = Invoke-Collector 't1'
 Check 'T1 : exit code is 0 or 2' ($t1.ExitCode -in 0,2) "got $($t1.ExitCode)"
 $s1 = Get-Summary $t1
-Assert-Contract $s1 'T1'
+Assert-Contract $s1 'T1' $t1
 $ioc1 = @(Get-IocFindings $s1)
 Check 'T1 : no IOC findings without an IOC feed' ($ioc1.Count -eq 0) "got $($ioc1.Count)"
 # summary.txt tells the analyst to grep the log for FAILED, so a clean run must
@@ -216,7 +231,7 @@ Write-Host 'T2  IOC feed with partial tokens (must not match)'
 $t2 = Invoke-Collector 't2' @('-IOCFile', (Join-Path $Fixtures 'ioc-negative.json'))
 Check 'T2 : exit code is 0 or 2' ($t2.ExitCode -in 0,2) "got $($t2.ExitCode)"
 $s2 = Get-Summary $t2
-Assert-Contract $s2 'T2'
+Assert-Contract $s2 'T2' $t2
 $ioc2 = @(Get-IocFindings $s2)
 Check 'T2 : partial IOC tokens raise no finding' ($ioc2.Count -eq 0) `
       ("matched: " + (($ioc2 | ForEach-Object { $_.message }) -join ' | '))
@@ -226,7 +241,7 @@ Write-Host ''
 Write-Host 'T3  IOC feed with a whole token (must match)'
 $t3 = Invoke-Collector 't3' @('-IOCFile', (Join-Path $Fixtures 'ioc-positive.json'), '-CaseId', 'TATAR-IOC-PROBE-4711')
 $s3 = Get-Summary $t3
-Assert-Contract $s3 'T3'
+Assert-Contract $s3 'T3' $t3
 $ioc3 = @(Get-IocFindings $s3)
 Check 'T3 : whole IOC token is detected' ($ioc3.Count -ge 1) "got $($ioc3.Count)"
 
@@ -237,7 +252,7 @@ $t4 = Invoke-Collector 't4' @('-Allowlist', (Join-Path $Fixtures 'allowlist-malf
                               '-IOCFile',   (Join-Path $Fixtures 'ioc-malformed.json'))
 Check 'T4 : run still completes (exit 0 or 2)' ($t4.ExitCode -in 0,2) "got $($t4.ExitCode)"
 $s4 = Get-Summary $t4
-Assert-Contract $s4 'T4'
+Assert-Contract $s4 'T4' $t4
 
 # T5 - a path that does not exist must NOT be skipped in silence. Reading
 # "no active findings" while the IOC feed never ran is the failure mode this
@@ -248,7 +263,7 @@ $t5 = Invoke-Collector 't5' @('-Allowlist', (Join-Path $Fixtures 'does-not-exist
                               '-IOCFile',   (Join-Path $Fixtures 'also-missing.json'))
 Check 'T5 : unreadable feed paths force the error exit code' ($t5.ExitCode -eq 2) "got $($t5.ExitCode)"
 $s5 = Get-Summary $t5
-Assert-Contract $s5 'T5'
+Assert-Contract $s5 'T5' $t5
 Check 'T5 : the run records the errors' ($s5.errorsLogged -ge 2) "got $($s5.errorsLogged)"
 $log5 = if ($t5.Dir) { Get-Content (Join-Path $t5.Dir 'tatar.log') -Raw -ErrorAction SilentlyContinue } else { '' }
 Check 'T5 : the log names both files as NOT applied' (([regex]::Matches($log5, 'NOT applied')).Count -ge 2)
