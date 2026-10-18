@@ -314,6 +314,8 @@ sha256sum -c SHA256SUMS.txt                          # Linux
 (Get-FileHash .\Tatar.ps1 -Algorithm SHA256).Hash    # Windows - compare with SHA256SUMS.txt
 ```
 
+Hash the files **as downloaded from the release**. `Tatar.ps1` ships with CRLF line endings (see `.gitattributes`), so a copy taken from a `git clone` on a system that rewrites line endings will hash differently while being the same source. The release asset is the one `SHA256SUMS.txt` describes.
+
 Latest release: **[github.com/ochmunkh/Tatar-Triage/releases/latest](https://github.com/ochmunkh/Tatar-Triage/releases/latest)**
 
 ---
@@ -717,6 +719,8 @@ sha256sum -c SHA256SUMS.txt                          # Linux
 ```powershell
 (Get-FileHash .\Tatar.ps1 -Algorithm SHA256).Hash    # Windows — SHA256SUMS.txt-тэй тулгана
 ```
+
+Хэшийг **release-ээс татсан файл дээр** бодно. `Tatar.ps1` нь CRLF мөрийн төгсгөлтэй тул (`.gitattributes`-ийг үз) мөрийн төгсгөлийг өөрчилдөг системээс `git clone`-оор авсан хуулбар нь ижил эх кодтой хэрнээ өөр хэш өгнө. `SHA256SUMS.txt` нь release-ийн файлыг тодорхойлдог.
 
 Сүүлийн release: **[github.com/ochmunkh/Tatar-Triage/releases/latest](https://github.com/ochmunkh/Tatar-Triage/releases/latest)**
 

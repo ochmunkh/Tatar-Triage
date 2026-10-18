@@ -99,6 +99,22 @@ def tool_version(ps1, sh):
     return w.group(1) if w else None
 
 
+def check_single_version_literal(name, text, expected):
+    """A collector states its version ONCE. It used to say it twice: the
+    comment header carried 'TATAR Triage Toolkit v1.2.5' next to the constant,
+    which is the same trap the banner had before it was fixed -- a second
+    copy that a version bump silently leaves behind."""
+    # Counted as the exact current version string, with an optional "v"
+    # prefix: a looser \d+\.\d+\.\d+ pattern also matches the 127.0.0 inside
+    # an IP literal, and without the optional v the "v1.3.0" spelling - the
+    # exact one this check exists to catch - slips past the lookbehind.
+    hits = len(re.findall(r"(?<![\w.])v?%s(?![\w.])" % re.escape(expected), text))
+    if hits != 1:
+        fail("%s: the version %s appears %d time(s); it must appear exactly "
+             "once, in the single version constant. A second copy is one a "
+             "version bump leaves behind." % (name, expected, hits))
+
+
 def check_version_badge(name, text, expected):
     # The README version badge sat at 1.2 for the whole 1.3 line. A badge is
     # the first thing a reader believes, so it is held to the code the way the
@@ -135,6 +151,14 @@ def main(argv):
     if ver:
         check_version_badge("README.md", readme, ver)
         check_version_badge("linux/README.md", lreadme, ver)
+
+    # 1c. each collector states its version exactly once
+    full = re.search(r"\$script:ToolVersion\s*=\s*'([^']+)'", ps1)
+    if full:
+        check_single_version_literal("Tatar.ps1", ps1, full.group(1))
+    fullsh = re.search(r'^VERSION="([^"]+)"', sh, re.M)
+    if fullsh:
+        check_single_version_literal("linux/tatar-linux.sh", sh, fullsh.group(1))
 
     # 2. bilingual module lists
     en = slice_block(readme, "\n## Modules\n", "\n---")

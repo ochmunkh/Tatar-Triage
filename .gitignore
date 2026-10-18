@@ -3,3 +3,25 @@
 # source, and a `git add -A` then sweeps it in.
 __pycache__/
 *.py[cod]
+
+# Evidence written by the collectors. These used to live only in a local
+# .git/info/exclude, which is not committed - so anyone who cloned this repo
+# and ran the collector in it could commit a real host's triage output,
+# including a hostname, user list and process list from a machine that may be
+# under investigation. Ignoring them is part of the tool's read-only promise.
+*_20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*/
+tatar.log
+summary.json
+findings.json
+TATAR_Report_*.txt
+manifest_sha256.txt
+chain_of_custody.txt
+binary_hashes.txt
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/

@@ -9,6 +9,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 ### Added
 - `.github/scripts/check_contract_parity.py` — the Win↔Linux parity gate
   described under **Changed**.
+- The collectors stated their version **twice** — the comment header carried
+  `TATAR Triage Toolkit v1.3.0` a few lines above the single version constant,
+  the same trap the banner had before it was fixed: a second copy a bump
+  leaves behind. The header no longer names a version, and the docs gate now
+  fails if either collector mentions its version more than once.
+- `.gitignore` now ignores **collector output** (`summary.json`,
+  `findings.json`, `tatar.log`, the dated evidence folder, the manifest and
+  the chain-of-custody file). These were ignored only in a local
+  `.git/info/exclude`, which is not committed — so anyone who cloned the repo
+  and ran the collector inside it could commit a real host's triage output:
+  hostname, user list, process list, from a machine that may be under
+  investigation. Ignoring them is part of the tool's read-only promise.
+- README now says to hash the files **as downloaded from the release**:
+  `Tatar.ps1` ships CRLF per `.gitattributes`, so a copy from a `git clone`
+  on a system that rewrites line endings hashes differently while being the
+  same source. Verified against v1.3.0 — the published asset is exactly the
+  tagged blob with CRLF applied, and `SHA256SUMS.txt` matches it.
 - The docs gate now holds the **version badges** to the collectors' own version
   constant, in both READMEs. The badge read `1.2` for the whole 1.3 line; a
   badge is the first thing a reader believes, so it is checked like the module

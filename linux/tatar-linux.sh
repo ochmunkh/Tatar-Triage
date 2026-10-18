@@ -21,7 +21,7 @@
 #
 # Exit codes:  0 = success | 1 = fatal / usage error | 2 = completed with errors
 #
-# Author: Enkhbat.O (Security Analyst) | TATAR Triage Toolkit - Linux v1.3.0
+# Author: Enkhbat.O (Security Analyst) | TATAR Triage Toolkit - Linux
 # ---------------------------------------------------------------------------
 
 # Do NOT 'set -e': a failing collector must never abort the whole run.
