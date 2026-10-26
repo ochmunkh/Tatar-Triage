@@ -183,6 +183,16 @@ if f:
     # instead of running and the suite still printed "0 failed". Here an
     # exception aborts the block, so this line is only reached - and only
     # printed - when every assertion above actually ran.
+    # The document a SIEM ingests has to START with the JSON. A UTF-8 BOM is
+    # not valid JSON text to a strict parser - json.load refuses the file - and
+    # it is exactly what Out-File -Encoding UTF8 produces on Windows PowerShell
+    # 5.1 while producing nothing on pwsh 7. Asserted on both editions so the
+    # one that cannot hit it still states the rule.
+    with open(path, "rb") as fh:
+        first = fh.read(3)
+    check("%s : the document has no UTF-8 BOM" % label, first[:3] != b"\xef\xbb\xbf",
+          "starts with %r" % (first,))
+
     check("%s : every contract check ran without an error" % label, True)
 
 sys.exit(1 if fail else 0)

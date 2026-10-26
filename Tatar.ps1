@@ -213,6 +213,17 @@ function Get-Technique {
             elseif ($Message -match 'certutil|bitsadmin') { return @('T1105','T1140') }
             else { return @('T1059') }
         }
+        'rmm'        { return @('T1219') }
+        'useractivity' {
+            # The evidence source does not decide the technique; what the
+            # evidence SHOWS does. A cached download is ingress, a typed
+            # command is a command interpreter, a shell-launched binary is
+            # user execution.
+            if     ($Message -match 'crypto stack')   { return @('T1105','T1140') }
+            elseif ($Message -match 'Run dialog')     { return @('T1059') }
+            elseif ($Message -match 'over the network') { return @('T1021.002') }
+            else { return @('T1204.002') }
+        }
         'sessions'   { return @('T1110') }
         'users'      { return @('T1078') }
         'network'    { return @('T1565.001') }
@@ -394,6 +405,20 @@ function Invoke-Ext {
             Add-Err ("{0} {1} exit code {2}" -f $File, ($Arguments -join ' '), $LASTEXITCODE)
         }
     } catch { Add-Err ("Invoke-Ext {0} failed: {1}" -f $File, $_) }
+}
+
+# The two JSON documents are the machine contract, so they are written through
+# one function with an encoding that does not depend on which PowerShell is
+# running. `Out-File -Encoding UTF8` means UTF-8 WITH a byte-order mark on
+# Windows PowerShell 5.1 - the version this tool declares as its minimum - and
+# WITHOUT one on PowerShell 7. A leading BOM is not valid JSON text to a strict
+# parser: Python's json.load refuses the file outright. CI runs pwsh 7, so for
+# three releases the flagship producer shipped a document that a standard
+# parser rejected on the very version most responders run it with, and nothing
+# noticed. Both harnesses now assert the first byte.
+function Write-JsonNoBom {
+    param([string]$Json, [string]$Path)
+    [System.IO.File]::WriteAllText($Path, $Json, (New-Object System.Text.UTF8Encoding $false))
 }
 
 function New-SubDir { param([string]$Name) $p = Join-Path $script:OutDir $Name; New-Item -ItemType Directory -Force -Path $p | Out-Null; return $p }
@@ -1256,6 +1281,16 @@ function Collect-Timeline {
 # though it is not a strict prefix: it is what gets typed in the wild, and for
 # a detection pattern the cost of catching it is a Review lead on an odd token,
 # while the cost of missing it is the whole point of the check.
+# One definition of "a location a standard user can write to". Two modules now
+# judge a path by it (rmm, useractivity), and a second copy is a second answer:
+# the whole point is that both agree on what counts as outside Program Files.
+# Deliberately narrow - the user profile, Windows\Temp and the public share.
+# ProgramData is NOT in it on purpose: standard users can write to parts of it,
+# but it is also where AnyDesk, TeamViewer and ScreenConnect legitimately keep
+# their files, so including it would have made the High finding fire on every
+# normal RMM install. High has to stay rare to mean anything.
+$script:UserWritablePattern = '(?i)\\(?:Users\\[^\\]+\\(?:AppData|Downloads|Desktop|Documents)|Windows\\Temp|Users\\Public)\\'
+
 $script:EncArgPattern = '(?<=^|\s)[-/](?:encodedcommand|encodedcomman|encodedcomma|encodedcomm|encodedcom|encodedco|encodedc|encoded|encode|encod|enco|enc|ec|en|e)(?![A-Za-z])'
 
 function Get-IocPattern {
@@ -1515,7 +1550,7 @@ function Write-Summary {
         suppressedCount      = $suppressed.Count
         findings        = $sorted
     }
-    $jsonObj | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $script:OutDir 'summary.json') -Encoding UTF8
+    Write-JsonNoBom ($jsonObj | ConvertTo-Json -Depth 6) (Join-Path $script:OutDir 'summary.json')
 
     # findings-only file for SOAR / SIEM ingestion
     $findObj = [pscustomobject]@{
@@ -1530,7 +1565,432 @@ function Write-Summary {
         suppressedCount      = $suppressed.Count
         findings      = $sorted
     }
-    $findObj | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $script:OutDir 'findings.json') -Encoding UTF8
+    Write-JsonNoBom ($findObj | ConvertTo-Json -Depth 6) (Join-Path $script:OutDir 'findings.json')
+}
+
+# ---------------------------------------------------------------------
+#  31  Remote monitoring & management (RMM) evidence
+# ---------------------------------------------------------------------
+# Declared per CONTRIBUTING "Adding a module":
+#   time        < 1s   (process/service enumeration already in memory, plus a
+#                       handful of Test-Path checks and two small text reads)
+#   admin       not required - every path read here is readable by a standard
+#                       user; admin adds nothing
+#   output      metadata only: product name, where it lives, and the tail of a
+#                       connection log that is already plain text
+#   AV risk     none - no executable is read, hashed or parsed
+#
+# Why the module exists: a legitimate-looking RMM agent is how a large share of
+# intrusions keep their hands on a host, and the tooling is signed, allow-listed
+# and often already in use by the IT team - so presence alone is a lead, not a
+# verdict. What distinguishes the two is WHERE the client runs from and WHO
+# connected: both are cheap to read, and until now neither was collected.
+#
+# The product table is deliberately detection-by-presence: a wrong path or a
+# renamed process yields a MISS, never a false positive. It is not exhaustive
+# and does not pretend to be.
+$script:RmmProducts = @(
+    @{ Name = 'AnyDesk';                Proc = @('AnyDesk');                              Svc = @('AnyDesk');                 Dirs = @("$env:ProgramData\AnyDesk", "$env:APPDATA\AnyDesk") }
+    @{ Name = 'TeamViewer';             Proc = @('TeamViewer','TeamViewer_Service');      Svc = @('TeamViewer');              Dirs = @("$env:ProgramData\TeamViewer", "$env:APPDATA\TeamViewer") }
+    @{ Name = 'ConnectWise ScreenConnect'; Proc = @('ScreenConnect.ClientService','ScreenConnect.WindowsClient','ConnectWiseControl.Client'); Svc = @('ScreenConnect Client'); Dirs = @("$env:ProgramData\ScreenConnect Client") }
+    @{ Name = 'LogMeIn';                Proc = @('LogMeIn','LMIGuardianSvc','LMIIgnition');Svc = @('LMIGuardianSvc','LogMeIn');Dirs = @("$env:ProgramData\LogMeIn") }
+    @{ Name = 'Atera';                  Proc = @('AteraAgent');                           Svc = @('AteraAgent');              Dirs = @("$env:ProgramFiles\ATERA Networks") }
+    @{ Name = 'Splashtop';              Proc = @('SRService','SRManager','SRServer');     Svc = @('SplashtopRemoteService');  Dirs = @("${env:ProgramFiles(x86)}\Splashtop") }
+    @{ Name = 'RemotePC';               Proc = @('RemotePCService','RPCPerformanceService');Svc = @('RemotePCService');       Dirs = @("$env:ProgramFiles\RemotePC") }
+    @{ Name = 'Pulseway';               Proc = @('PCMonitorSrv');                         Svc = @('PCMonitorSrv');            Dirs = @("$env:ProgramFiles\Pulseway") }
+    @{ Name = 'Supremo';                Proc = @('Supremo','SupremoService');             Svc = @('SupremoService');          Dirs = @("$env:ProgramData\SupremoRemoteDesktop") }
+    @{ Name = 'Ammyy Admin';            Proc = @('AA_v3','AMMYY_Admin');                  Svc = @('AmmyyAdmin');              Dirs = @("$env:ProgramData\AMMYY") }
+    @{ Name = 'NinjaOne';               Proc = @('NinjaRMMAgent','ninjarmm-cli');          Svc = @('NinjaRMMAgent');           Dirs = @("${env:ProgramFiles(x86)}\NinjaRMMAgent") }
+    @{ Name = 'Action1';                Proc = @('action1_agent');                        Svc = @('A1Agent');                 Dirs = @("$env:ProgramFiles\Action1") }
+    @{ Name = 'Syncro';                 Proc = @('Syncro.Service','SyncroLive.Agent.Service'); Svc = @('Syncro');             Dirs = @("$env:ProgramFiles\RepairTech\Syncro") }
+    @{ Name = 'Kaseya VSA';             Proc = @('AgentMon','KaseyaEndpoint');            Svc = @('KaseyaAgent');             Dirs = @("${env:ProgramFiles(x86)}\Kaseya") }
+    @{ Name = 'DWService';              Proc = @('dwagsvc','dwagent');                    Svc = @('DWAgent');                 Dirs = @("$env:ProgramFiles\DWAgent") }
+    @{ Name = 'UltraViewer';            Proc = @('UltraViewer_Desktop','UltraViewer_Service'); Svc = @('UltraViewer_Service');Dirs = @("${env:ProgramFiles(x86)}\UltraViewer") }
+    @{ Name = 'Chrome Remote Desktop';  Proc = @('remoting_host');                        Svc = @('chromoting');              Dirs = @("${env:ProgramFiles(x86)}\Google\Chrome Remote Desktop") }
+    @{ Name = 'MeshCentral agent';      Proc = @('MeshAgent');                            Svc = @('Mesh Agent');              Dirs = @("$env:ProgramFiles\Mesh Agent") }
+    @{ Name = 'Tactical RMM';           Proc = @('tacticalrmm','tacticalagent');          Svc = @('tacticalrmm');             Dirs = @("$env:ProgramFiles\TacticalAgent") }
+    @{ Name = 'Zoho Assist';            Proc = @('ZA_Access','ZohoMeeting');              Svc = @('ZohoMeeting');             Dirs = @("$env:ProgramFiles\ZohoMeeting") }
+    @{ Name = 'GoTo / GoToAssist';      Proc = @('g2aservice','g2acomm','GoToAssist');     Svc = @('GoToAssist Remote Support');Dirs = @("${env:ProgramFiles(x86)}\GoToAssist Remote Support Customer") }
+    @{ Name = 'Quick Assist';           Proc = @('quickassist');                          Svc = @();                          Dirs = @() }
+)
+
+# Connection histories that are plain text and readable without admin. Only
+# products whose log format is a documented, stable text file are read; for
+# every other product the module reports WHERE to look instead of guessing at
+# a format.
+$script:RmmConnLogs = @(
+    @{ Name = 'AnyDesk';    Path = "$env:ProgramData\AnyDesk\connection_trace.txt" }
+    @{ Name = 'AnyDesk';    Path = "$env:APPDATA\AnyDesk\connection_trace.txt" }
+    @{ Name = 'TeamViewer'; Path = "$env:ProgramData\TeamViewer\Connections_incoming.txt" }
+    @{ Name = 'TeamViewer'; Path = "$env:APPDATA\TeamViewer\Connections.txt" }
+)
+
+function Collect-RMM {
+    Add-Section '31 Remote monitoring & management (RMM) evidence'
+    try {
+        $found = New-Object System.Collections.Generic.List[string]
+
+        # --- running processes and services (cheapest, most reliable) -------
+        $procs = @()
+        try { $procs = @(Get-Process -ErrorAction SilentlyContinue | Select-Object Name, Id, Path) } catch {}
+        $svcs = @()
+        try { $svcs = @(Get-Service -ErrorAction SilentlyContinue | Select-Object Name, DisplayName, Status) } catch {}
+
+        foreach ($p in $script:RmmProducts) {
+            $hits = New-Object System.Collections.Generic.List[string]
+
+            foreach ($pn in $p.Proc) {
+                foreach ($pr in ($procs | Where-Object { $_.Name -eq $pn })) {
+                    $where = if ($pr.Path) { $pr.Path } else { '(path unavailable)' }
+                    $hits.Add("process $($pr.Name) (PID $($pr.Id)) -> $where")
+                    # A signed RMM client is normal in C:\Program Files. The same
+                    # client running out of a user-writable directory is the
+                    # portable-client pattern: dropped, run once, uninstalled.
+                    if ($pr.Path -and $pr.Path -match $script:UserWritablePattern) {
+                        Add-Finding -Severity 'High' -Category 'rmm' `
+                            -Message ("RMM client running from a user-writable location: {0} (PID {1})" -f $p.Name, $pr.Id) `
+                            -Detail ("{0} - a portable remote-access client dropped outside Program Files is how an operator keeps hands-on access without installing anything. Confirm with the IT owner of this host before treating it as benign." -f $pr.Path)
+                    }
+                }
+            }
+            foreach ($sn in $p.Svc) {
+                foreach ($sv in ($svcs | Where-Object { $_.Name -like "$sn*" -or $_.DisplayName -like "$sn*" })) {
+                    $hits.Add("service $($sv.Name) [$($sv.Status)]")
+                }
+            }
+            foreach ($d in $p.Dirs) {
+                if ($d -and (Test-PathSafe $d)) { $hits.Add("directory $d") }
+            }
+
+            if ($hits.Count) {
+                $found.Add($p.Name)
+                Add-Report ("[{0}]" -f $p.Name)
+                foreach ($h in $hits) { Add-Report "    $h" }
+                Add-Finding -Category 'rmm' `
+                    -Message ("Remote access / RMM tool present: {0}" -f $p.Name) `
+                    -Detail ("{0} | Remote access software is frequently legitimate IT tooling AND a common hands-on-keyboard channel. This finding says it is here, not that it is malicious - check it against the asset's approved software list and the connection history below." -f ($hits -join ' ; '))
+            }
+        }
+
+        if (-not $found.Count) { Add-Report 'No known RMM product detected by process, service or install path.' }
+        $script:Stats['RmmProductsPresent'] = $found.Count
+
+        # --- connection history --------------------------------------------
+        Add-Report ''
+        Add-Report '-- connection history (plain-text logs, most recent last) --'
+        $anyLog = $false
+        foreach ($l in $script:RmmConnLogs) {
+            if (-not (Test-PathSafe $l.Path)) { continue }
+            $anyLog = $true
+            $lines = @()
+            try { $lines = @(Get-Content -LiteralPath $l.Path -ErrorAction SilentlyContinue) } catch {}
+            $lines = @($lines | Where-Object { $_ -and $_.Trim() })
+            Add-Report ("[{0}] {1}  ({2} line(s))" -f $l.Name, $l.Path, $lines.Count)
+            # The whole file goes in the report; only a bounded tail goes in the
+            # finding, because a finding detail is read by a human and by a SIEM.
+            $lines | Out-File $script:ReportFile -Append -Encoding UTF8
+            if ($lines.Count -gt 0) {
+                $tail = @($lines | Select-Object -Last 5)
+                Add-Finding -Category 'rmm' `
+                    -Message ("{0} connection history present: {1} entr(y/ies)" -f $l.Name, $lines.Count) `
+                    -Detail ("{0} | last {1}: {2} | each entry is a session this host took part in - match the timestamps against the incident window and the IDs against your own technicians." -f $l.Path, $tail.Count, (($tail -join ' // ') -replace '\s+', ' '))
+            }
+        }
+        if (-not $anyLog) { Add-Report 'No readable RMM connection log found.' }
+    } catch { Add-Err "RMM failed: $_" }
+}
+
+# ---------------------------------------------------------------------
+#  32  User activity & download remnants
+# ---------------------------------------------------------------------
+# Declared per CONTRIBUTING "Adding a module":
+#   time        < 2s   (four small registry keys, one folder listing, and a
+#                       bounded read of files that are a few KB each)
+#   admin       not required - and deliberately so: every source here is in
+#                       HKCU or the running user's own profile. Other users'
+#                       NTUSER.DAT is locked on a live host and would need
+#                       admin plus VSS, which is the SRUM/Amcache trade this
+#                       project already refused. See the limitation below.
+#   output      metadata only: names, counts, timestamps, extracted paths
+#   AV risk     none - no executable is read, hashed or parsed
+#
+# LIMITATION, stated in the report and in a note: this module sees ONE user,
+# the one running the collector. "No evidence found" here does not mean the
+# host was not used - it means this account shows nothing. On a shared or
+# service-account host that distinction decides the investigation.
+#
+# Why it exists: the toolkit could say what is running and what persists, but
+# not what a PERSON ran. UserAssist, MUICache and RunMRU answer that from three
+# independent places, cost milliseconds, and need no privilege.
+
+# What makes a HISTORICAL execution record worth reading.
+#
+# The obvious rule - "flag anything outside Program Files" - was written first
+# and measured on a real workstation: it produced 142 findings, every one of
+# them an installer in Downloads, a Package Cache MSI or an Electron app's
+# updater. On modern Windows, AppData and Downloads ARE where ordinary user
+# software lives, so location alone carries almost no signal and burying two
+# real findings under 142 false ones is worse than raising none.
+#
+# What is left is genuinely unusual: a script host or an executable-by-another-
+# name started through the shell, a double extension, and the three directories
+# that ordinary software does not launch from.
+$script:UserActivityOddExt = '(?i)\.(scr|hta|pif|vbs|vbe|jse?|wsf|wsh|bat|cmd|ps1|com|cpl)$'
+$script:UserActivityDoubleExt = '(?i)\.(pdf|doc|docx|xls|xlsx|jpe?g|png|txt|rtf|zip)\.(exe|scr|com|pif|bat|cmd|js|vbs|hta)$'
+$script:UserActivitySuspectDir = '(?i)(\\Windows\\Temp\\|\\Users\\Public\\|\\\$Recycle\.Bin\\|^\\\\[^\\]+\\)'
+
+function Test-UserActivitySuspect {
+    param([string]$Path)
+    if (-not $Path) { return $false }
+    # A double extension is a lie about the file type wherever it sits.
+    if ($Path -match $script:UserActivityDoubleExt) { return $true }
+    # A .lnk is a pointer, not a program. Every installer drops one on the
+    # Public Desktop, so judging shortcuts by WHERE they live flagged Acrobat,
+    # Wireshark and Steam on the first real run. Follow the target, or say
+    # nothing - do not report the signpost as the destination.
+    if ($Path -match '(?i)\.lnk$') { return $false }
+    return ($Path -match $script:UserActivityOddExt) -or
+           ($Path -match $script:UserActivitySuspectDir)
+}
+
+function Get-Rot13 {
+    param([string]$Text)
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($c in $Text.ToCharArray()) {
+        if     ($c -cmatch '[a-z]') { [void]$sb.Append([char](((([int]$c - 97) + 13) % 26) + 97)) }
+        elseif ($c -cmatch '[A-Z]') { [void]$sb.Append([char](((([int]$c - 65) + 13) % 26) + 65)) }
+        else                        { [void]$sb.Append($c) }
+    }
+    return $sb.ToString()
+}
+
+function Collect-UserActivity {
+    Add-Section '32 User activity & download remnants (current user only)'
+    try {
+        Add-Report 'SCOPE: HKCU and this user profile only. Another account on this host'
+        Add-Report 'leaves its own copies of these artifacts, which are not readable here'
+        Add-Report 'without Administrator and a shadow copy. Absence is NOT evidence of'
+        Add-Report 'absence for other accounts.'
+        Add-Report ''
+        Add-Report 'NOTE: UserAssist records some paths with a {GUID} prefix - a Windows'
+        Add-Report 'KNOWNFOLDERID standing in for a directory. They are left as recorded'
+        Add-Report 'rather than translated: a guessed folder mapping in a forensic record'
+        Add-Report 'is worse than an untranslated one. Resolve the GUID against the'
+        Add-Report 'published KNOWNFOLDERID list if the path matters to the case.'
+        Add-Report ''
+        Add-Note 'useractivity covers the running user only; other accounts need Administrator + VSS'
+
+        # ---- UserAssist ------------------------------------------------
+        # Value names are ROT13-encoded program paths. The Win7+ blob carries
+        # the run count at offset 4 and the last-executed FILETIME at offset 60.
+        Add-Report '-- UserAssist (GUI program execution, per user) --'
+        $uaRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist'
+        $uaCount = 0
+        if (Test-PathSafe $uaRoot) {
+            foreach ($g in @(Get-ChildItem $uaRoot -ErrorAction SilentlyContinue)) {
+                $cnt = Join-Path $g.PSPath 'Count'
+                if (-not (Test-PathSafe $cnt)) { continue }
+                $props = $null
+                try { $props = Get-ItemProperty -LiteralPath $cnt -ErrorAction SilentlyContinue } catch {}
+                if (-not $props) { continue }
+                foreach ($p in @($props.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' })) {
+                    $name = Get-Rot13 $p.Name
+                    $runs = $null; $last = $null
+                    $blob = $p.Value
+                    if ($blob -is [byte[]] -and $blob.Length -ge 68) {
+                        try {
+                            $runs = [BitConverter]::ToUInt32($blob, 4)
+                            $ft   = [BitConverter]::ToInt64($blob, 60)
+                            # 0 and absurd values appear in the wild; only
+                            # convert what FromFileTime will actually accept.
+                            if ($ft -gt 0 -and $ft -lt 2650467743999999999) { $last = [DateTime]::FromFileTime($ft).ToString('yyyy-MM-dd HH:mm:ss') }
+                        } catch {}
+                    }
+                    $uaCount++
+                    Add-Report ("    {0,-6} {1,-20} {2}" -f ($(if ($null -ne $runs) { $runs } else { '?' })), ($(if ($last) { $last } else { '-' })), $name)
+                    if (Test-UserActivitySuspect $name) {
+                        Add-Finding -Category 'useractivity' `
+                            -Message ("Script or unusual executable started from the shell by this user: {0}" -f $name) `
+                            -Detail ("UserAssist records {0} launch(es), last {1}. UserAssist only records what was started through the shell - Explorer, the Start menu, a desktop or Run shortcut - so a person double-clicked this, it was not spawned by a script. Installers and portable tools in Downloads are deliberately NOT flagged here; what is flagged is a script host, a double extension, or a launch from Windows\\Temp, Public or a UNC path." -f ($(if ($null -ne $runs) { $runs } else { 'an unknown number of' })), ($(if ($last) { $last } else { 'at an unknown time' })))
+                    }
+                }
+            }
+        }
+        if ($uaCount -eq 0) { Add-Report '    (no UserAssist entries)' }
+        $script:Stats['UserAssistEntries'] = $uaCount
+
+        # ---- MUICache ---------------------------------------------------
+        Add-Report ''
+        Add-Report '-- MUICache (programs the shell has displayed a name for) --'
+        $mui = 'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache'
+        $muiCount = 0
+        if (Test-PathSafe $mui) {
+            $props = $null
+            try { $props = Get-ItemProperty -LiteralPath $mui -ErrorAction SilentlyContinue } catch {}
+            if ($props) {
+                foreach ($p in @($props.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' })) {
+                    $exe = $p.Name -replace '\.FriendlyAppName$', '' -replace '\.ApplicationCompany$', ''
+                    if ($p.Name -notmatch 'FriendlyAppName$') { continue }
+                    $muiCount++
+                    Add-Report ("    {0}  =  {1}" -f $exe, $p.Value)
+                    # MUICache carries no timestamp and no run count, so on its
+                    # own it is inventory, not a lead - 98 findings' worth of it
+                    # on an ordinary workstation. It earns a finding only when
+                    # the entry is BOTH unusual in kind and no longer on disk:
+                    # the shell once displayed a name for this file, and the
+                    # file is gone.
+                    if ((Test-UserActivitySuspect $exe) -and -not (Test-PathSafe $exe)) {
+                        Add-Finding -Category 'useractivity' `
+                            -Message ("MUICache names a script or unusual executable that is no longer on disk: {0}" -f $exe) `
+                            -Detail ("Shell friendly name: {0}. The shell displayed a name for this file at some point, so it existed on this host; it is not there now. MUICache carries no timestamp - correlate with UserAssist, the Recycle Bin and the filesystem timeline. Uninstalled software also leaves entries here." -f $p.Value)
+                    }
+                }
+            }
+        }
+        if ($muiCount -eq 0) { Add-Report '    (no MUICache entries)' }
+
+        # ---- RunMRU ------------------------------------------------------
+        # Everything typed into Win+R, in order. Short, and attackers type here.
+        Add-Report ''
+        Add-Report '-- RunMRU (typed into the Run dialog, newest first) --'
+        $runmru = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU'
+        $mruCount = 0
+        if (Test-PathSafe $runmru) {
+            $props = $null
+            try { $props = Get-ItemProperty -LiteralPath $runmru -ErrorAction SilentlyContinue } catch {}
+            if ($props) {
+                $order = [string]$props.MRUList
+                $names = @($props.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' -and $_.Name -ne 'MRUList' } | ForEach-Object { $_.Name })
+                # MRUList gives the order; anything it does not mention is still
+                # reported, so a tampered MRUList cannot hide an entry.
+                $ordered = @()
+                foreach ($ch in $order.ToCharArray()) { if ($names -contains [string]$ch) { $ordered += [string]$ch } }
+                foreach ($n in $names) { if ($ordered -notcontains $n) { $ordered += $n } }
+                foreach ($n in $ordered) {
+                    $cmd = ([string]$props.$n) -replace "`0", '' -replace '\\1$', ''
+                    if (-not $cmd) { continue }
+                    $mruCount++
+                    Add-Report ("    [{0}] {1}" -f $n, $cmd)
+                    if ($cmd -match '(?i)(powershell|cmd\.exe|\\\\|https?://|\.ps1|\.vbs|\.hta|\.bat|certutil|bitsadmin|curl|mshta|rundll32|regsvr32)') {
+                        Add-Finding -Category 'useractivity' `
+                            -Message ("Command typed into the Run dialog: {0}" -f $cmd) `
+                            -Detail ("RunMRU entry [{0}]. This was typed by a person at the keyboard of this account, not launched by a script - which is why it is worth reading even when the command itself is ordinary administration." -f $n)
+                    }
+                }
+            }
+        }
+        if ($mruCount -eq 0) { Add-Report '    (no RunMRU entries)' }
+
+        # ---- Jump Lists ---------------------------------------------------
+        # The files are OLE compound documents. Rather than ship an OLE parser
+        # in a single-file collector, the UTF-16 paths inside are extracted
+        # directly: imperfect, bounded, and enough to answer "what did this
+        # application open". The raw files are already copied by fsartifacts.
+        Add-Report ''
+        Add-Report '-- Jump Lists (per-application recent items; AppID is not decoded) --'
+        $jlCount = 0
+        # A time budget, enforced rather than hoped for. Decoding 5 MB of jump
+        # lists to UTF-16 and running a path regex over it took 5s on an
+        # ordinary workstation - more than this whole module is allowed. Newest
+        # first, stop extracting at the budget, and SAY so instead of silently
+        # doing less than the section header claims.
+        $jlBudgetBytes = 6MB
+        $jlSpent = 0
+        $jlTruncated = $false
+        $jlRemote = New-Object System.Collections.Generic.List[string]
+        foreach ($jd in @("$env:APPDATA\Microsoft\Windows\Recent\AutomaticDestinations",
+                          "$env:APPDATA\Microsoft\Windows\Recent\CustomDestinations")) {
+            if (-not (Test-PathSafe $jd)) { continue }
+            $files = @()
+            try { $files = @(Get-ChildItem -LiteralPath $jd -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 40) } catch {}
+            foreach ($f in $files) {
+                $jlCount++
+                $appId = $f.BaseName -replace '\.automaticDestinations-ms$','' -replace '\.customDestinations-ms$',''
+                $paths = @()
+                try {
+                    if ($f.Length -le 512KB -and $jlSpent -lt $jlBudgetBytes) {
+                        $jlSpent += $f.Length
+                        $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+                        $txt = [System.Text.Encoding]::Unicode.GetString($bytes)
+                        $paths = @([regex]::Matches($txt, '(?:[A-Za-z]:\\|\\\\)[^\x00-\x1f"*?<>|]{3,180}') |
+                                   ForEach-Object { $_.Value.Trim() } |
+                                   Where-Object { $_ -match '\\' } |
+                                   Select-Object -Unique | Select-Object -First 15)
+                    } elseif ($f.Length -gt 512KB -or $jlSpent -ge $jlBudgetBytes) {
+                        $jlTruncated = $true
+                    }
+                } catch {}
+                Add-Report ("    {0}  {1,-18} {2} item path(s)" -f $f.LastWriteTime.ToString('yyyy-MM-dd HH:mm'), $appId, $paths.Count)
+                foreach ($pp in $paths) { Add-Report "        $pp" }
+                foreach ($pp in @($paths | Where-Object { $_ -like '\\\\*' })) {
+                    if (-not $jlRemote.Contains($pp)) { $jlRemote.Add($pp) }
+                }
+            }
+        }
+        if ($jlCount -eq 0) { Add-Report '    (no Jump Lists)' }
+        if ($jlTruncated) {
+            Add-Report '    NOTE: some jump lists were not read - per-file or total size budget reached.'
+            Add-Note 'useractivity: jump-list extraction hit its size budget; the newest files were read first'
+        }
+        # ONE finding for all of them. A per-file finding would scale with the
+        # number of applications the user has, which is not the thing being
+        # measured - the distinct remote locations are.
+        if ($jlRemote.Count) {
+            Add-Finding -Category 'useractivity' `
+                -Message ("{0} item(s) opened over the network appear in this user's Jump Lists" -f $jlRemote.Count) `
+                -Detail ("{0}{1} | Opened from a UNC path by this user. On an intrusion this is often how tooling or data moved between hosts; on a normal estate it is a file share. The AppID is deliberately not decoded to an application name - a guessed mapping would be worse than none; see report section 32 for which AppID held which item." -f ((@($jlRemote) | Select-Object -First 8) -join ' ; '), $(if ($jlRemote.Count -gt 8) { ' ...' } else { '' }))
+        }
+        $script:Stats['JumpListFiles'] = $jlCount
+
+        # ---- CryptnetUrlCache ---------------------------------------------
+        # Written by the Windows crypto stack, which means MOST of it is
+        # certificate revocation traffic (.crl / OCSP) from ordinary software.
+        # The signal is the remainder: `certutil -urlcache -f <url>` leaves its
+        # download here, and the entry outlives the process.
+        Add-Report ''
+        Add-Report '-- CryptnetUrlCache (URLs fetched through the crypto stack) --'
+        $cuCount = 0; $cuOther = 0
+        $cuOtherUrls = New-Object System.Collections.Generic.List[string]
+        $meta = "$env:APPDATA\Microsoft\CryptnetUrlCache\MetaData"
+        if (Test-PathSafe $meta) {
+            $files = @()
+            try { $files = @(Get-ChildItem -LiteralPath $meta -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 200) } catch {}
+            foreach ($f in $files) {
+                $url = $null
+                try {
+                    if ($f.Length -le 256KB) {
+                        $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+                        foreach ($enc in @([System.Text.Encoding]::Unicode, [System.Text.Encoding]::ASCII)) {
+                            $m = [regex]::Match($enc.GetString($bytes), 'https?://[^\x00-\x1f"<>|]{4,300}')
+                            if ($m.Success) { $url = $m.Value.Trim(); break }
+                        }
+                    }
+                } catch {}
+                if (-not $url) { continue }
+                $cuCount++
+                $isRevocation = $url -match '(?i)(\.crl$|\.crt$|\.cer$|/ocsp|ocsp\.|crl\.|\.p7c$|pki\.|/pki/|certificates?\.)'
+                Add-Report ("    {0}  {1}  {2}" -f $f.LastWriteTime.ToString('yyyy-MM-dd HH:mm'), $(if ($isRevocation) { 'revocation' } else { 'OTHER     ' }), $url)
+                if (-not $isRevocation) {
+                    $cuOther++
+                    $cuOtherUrls.Add($url)
+                    if ($cuOther -gt 10) { continue }
+                    Add-Finding -Category 'useractivity' `
+                        -Message ("URL fetched through the crypto stack that is not revocation traffic: {0}" -f $url) `
+                        -Detail ("CryptnetUrlCache entry, cached {0}. Nearly everything in this cache is certificate-revocation traffic; an entry that is not is often `certutil -urlcache -f <url>` being used to download a file, and it survives the process that did it. Some installers and update clients also appear here - verify the URL before concluding." -f $f.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))
+                }
+            }
+        }
+        if ($cuCount -eq 0) { Add-Report '    (no CryptnetUrlCache entries)' }
+        else { Add-Report ("    {0} entr(y/ies), {1} not revocation traffic" -f $cuCount, $cuOther) }
+        # Past ten, one-per-URL stops being a lead and becomes a list. Raise the
+        # list itself instead, so the count is still visible and the finding
+        # count stays bounded.
+        if ($cuOther -gt 10) {
+            Add-Finding -Category 'useractivity' `
+                -Message ("{0} URLs fetched through the crypto stack are not revocation traffic" -f $cuOther) `
+                -Detail ("First 10 were raised individually; see report section 32 for all {0}. A cache this busy with non-revocation URLs is usually an updater or a security product rather than certutil - identify the fetching software before treating the list as downloads." -f $cuOther)
+        }
+    } catch { Add-Err "UserActivity failed: $_" }
 }
 
 # =====================================================================
@@ -1565,6 +2025,8 @@ $script:Collectors = [ordered]@{
     hives       = ${function:Collect-Hives}
     mft         = ${function:Collect-MFT}
     indicators  = ${function:Collect-Indicators}
+    rmm         = ${function:Collect-RMM}
+    useractivity = ${function:Collect-UserActivity}
     hashes      = ${function:Collect-Hashes}
     timeline    = ${function:Collect-Timeline}
 }

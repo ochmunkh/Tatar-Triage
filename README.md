@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/version-1.3-blue" alt="v1.3">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows 10/11">
-  <img src="https://img.shields.io/badge/modules-30-5eead4" alt="30 modules">
+  <img src="https://img.shields.io/badge/modules-32-5eead4" alt="32 modules">
   <img src="https://img.shields.io/badge/read--only-first-14b8a6" alt="read-only first">
   <img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT">
 </p>
@@ -204,11 +204,11 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check tat
 
 Order of volatility, top to bottom:
 
-**Windows (30):** `memory` · `network` · `process` · `sessions` · `services` · `sysinfo` · `users` · `persistence` · `autoruns` · `shares` · `firewall` · `drivers` · `apps` · `prefetch` · `usb` · `pshistory` · `obfscan` · `rdp` · `lateral` · `privesc` · `browser` · `fsartifacts` · `deleted` · `shadow` · `eventlogs` · `hives` · `mft` · `indicators` · `hashes` · `timeline`
+**Windows (32):** `memory` · `network` · `process` · `sessions` · `services` · `sysinfo` · `users` · `persistence` · `autoruns` · `shares` · `firewall` · `drivers` · `apps` · `prefetch` · `usb` · `pshistory` · `obfscan` · `rdp` · `lateral` · `privesc` · `browser` · `fsartifacts` · `deleted` · `shadow` · `eventlogs` · `hives` · `mft` · `indicators` · `rmm` · `useractivity` · `hashes` · `timeline`
 
 **Linux (18):** `sysinfo` · `network` · `process` · `sessions` · `users` · `services` · `persistence` · `apps` · `suid` · `sshkeys` · `bashhistory` · `kernelmods` · `indicators` · `hashes` · `logs` · `timeline` · `containers` · `integrity`
 
-Coverage includes: system/user/network state, running processes with LOLBAS pattern flags, services & drivers, startup/Run-key/scheduled-task persistence, RDP activity, lateral-movement artifacts (SMB sessions, mapped drives, WMI persistence, PsExec), privilege-escalation indicators (unquoted service paths, `AlwaysInstallElevated`, token privileges), obfuscated-script scan, browser artifact metadata (all profiles, no decryption), Recent/Amcache/Prefetch, Recycle Bin, shadow copies, key Windows event IDs, optional registry hive & EVTX export, NTFS/MFT info, file hashing for IOC matching, and a lightweight super-timeline CSV.
+Coverage includes: system/user/network state, running processes with LOLBAS pattern flags, services & drivers, startup/Run-key/scheduled-task persistence, RDP activity, lateral-movement artifacts (SMB sessions, mapped drives, WMI persistence, PsExec), privilege-escalation indicators (unquoted service paths, `AlwaysInstallElevated`, token privileges), obfuscated-script scan, browser artifact metadata (all profiles, no decryption), Recent/Amcache/Prefetch, Recycle Bin, shadow copies, key Windows event IDs, optional registry hive & EVTX export, NTFS/MFT info, file hashing for IOC matching, remote-access/RMM presence **and connection history**, per-user execution evidence (UserAssist, MUICache, RunMRU, Jump Lists) and crypto-stack download remnants, and a lightweight super-timeline CSV.
 
 On Linux: cron / systemd persistence, SUID/SGID enumeration, SSH keys, container & cloud context, and a critical-file integrity baseline — see [`linux/README.md`](linux/README.md).
 
@@ -617,11 +617,11 @@ sudo ./tatar-linux.sh --all --dry-run   # төлөвлөгөө харах (юу 
 
 ## Модулиуд
 
-**Windows (30):** memory · network · process · sessions · services · sysinfo · users · persistence · autoruns · shares · firewall · drivers · apps · prefetch · usb · pshistory · obfscan · rdp · lateral · privesc · browser · fsartifacts · deleted · shadow · eventlogs · hives · mft · indicators · hashes · timeline
+**Windows (32):** memory · network · process · sessions · services · sysinfo · users · persistence · autoruns · shares · firewall · drivers · apps · prefetch · usb · pshistory · obfscan · rdp · lateral · privesc · browser · fsartifacts · deleted · shadow · eventlogs · hives · mft · indicators · rmm · useractivity · hashes · timeline
 
 **Linux (18):** sysinfo · network · process · sessions · users · services · persistence · apps · suid · sshkeys · bashhistory · kernelmods · indicators · hashes · logs · timeline · containers · integrity
 
-Хамрах хүрээ: систем/хэрэглэгч/сүлжээний төлөв, LOLBAS command-line флагтай процессууд, process genealogy, persistence (Run keys, scheduled tasks, IFEO/AppInit/LSA/Winlogon ASEP-ууд), RDP/lateral movement, privilege-escalation индикатор, обфускаци скан, browser artifact мета, Recent/Amcache/Prefetch, shadow copy, чухал Windows event ID, NTFS/MFT, IOC-д зориулсан file hashing, super-timeline. Linux талд: cron/systemd persistence, SUID/SGID, SSH түлхүүр, container/cloud context, критикал файлын integrity baseline гэх мэт — дэлгэрэнгүйг [`linux/README.md`](linux/README.md)-ийн монгол хэсгээс үз.
+Хамрах хүрээ: систем/хэрэглэгч/сүлжээний төлөв, LOLBAS command-line флагтай процессууд, process genealogy, persistence (Run keys, scheduled tasks, IFEO/AppInit/LSA/Winlogon ASEP-ууд), RDP/lateral movement, privilege-escalation индикатор, обфускаци скан, browser artifact мета, Recent/Amcache/Prefetch, shadow copy, чухал Windows event ID, NTFS/MFT, IOC-д зориулсан file hashing, remote access/RMM-ийн оршин байдал **ба холболтын түүх**, хэрэглэгчийн гүйцэтгэлийн нотолгоо (UserAssist, MUICache, RunMRU, Jump List), crypto stack-аар татсан файлын ул мөр, super-timeline. Linux талд: cron/systemd persistence, SUID/SGID, SSH түлхүүр, container/cloud context, критикал файлын integrity baseline гэх мэт — дэлгэрэнгүйг [`linux/README.md`](linux/README.md)-ийн монгол хэсгээс үз.
 
 ---
 

@@ -7,6 +7,147 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 ## [Unreleased]
 
 ### Added
+- **Two Windows modules: `rmm` and `useractivity`** (30 → 32). Both answer a
+  question the toolkit could not: *who else has hands on this host*, and
+  *what did a person actually run*.
+
+  | | `rmm` | `useractivity` |
+  |---|---|---|
+  | Time | 0.4 s measured | 0.9 s measured |
+  | Admin | not required | not required, by design |
+  | Output | metadata + the tail of a plain-text log | names, counts, timestamps, extracted paths |
+  | AV risk | none — no executable is read, hashed or parsed | none |
+
+  `rmm` detects 22 remote-access products by running process, service and
+  install path, then reads the connection histories that are plain text and
+  readable without admin (AnyDesk `connection_trace.txt`, TeamViewer
+  `Connections_incoming.txt`). Presence is `Review` — this tooling is usually
+  the IT team's. An RMM client running from a **user-writable** location is
+  `High`: that is the portable-client pattern, dropped and run rather than
+  installed. The product table is detection-by-presence, so a wrong path or a
+  renamed process is a miss, never a false positive; it is not exhaustive.
+
+  `useractivity` reads UserAssist (ROT13 names, run count, last-run FILETIME),
+  MUICache, RunMRU, Jump Lists and CryptnetUrlCache — all from HKCU and the
+  running user's own profile.
+
+  **It therefore sees one user.** Another account's `NTUSER.DAT` is locked on a
+  live host and would need Administrator plus a shadow copy, which is the trade
+  this project already refused for SRUM and Amcache. The module says so in the
+  report and raises a `NOTE`, because on a shared or service-account host
+  "nothing found" and "nothing found *for this account*" are different answers.
+- Both new modules are **Windows-only**, so the module counts are now 32 and 18.
+  That is a deliberate widening: the output contract is what the two editions
+  share, not the module list, and these artifacts have no Linux equivalent.
+  Nothing in `schema/` or the contract harnesses changes shape.
+
+- `tests/test-json-escape.sh` — twenty-nine inputs run through **every path**
+  `json_escape` has, including the no-`python3` fallback, which the test forces
+  by shadowing `python3`. The assertion is a round trip through a real JSON
+  parser rather than a byte comparison, so it pins the contract and not one
+  escaper's style. Wired into CI. Against the previous implementation it fails
+  fourteen cases.
+- `tests/Test-EncodedArg.ps1` and `tests/fixtures/encodedarg-cases.tsv` — fifteen
+  cases that pin the pattern in both directions at once: the abbreviations must
+  match, `-Encoding` and `-ExecutionPolicy` must not. Wired into CI.
+- `CONTRIBUTING.md` now states the **architectural invariants** — the short list
+  of properties that cannot be traded away, each with the failure it prevents —
+  and the four things a new module must declare before it can be in the default
+  set. Written because the project now takes outside contributions, and a forker
+  needs to know which few things are not open to change.
+
+### Changed
+- **Both contract harnesses now assert the same rule set, and CI fails if they
+  drift.** `tests/run-tests.sh` and `tests/Invoke-Tests.ps1` run in separate
+  jobs on separate runners, so nothing had ever compared them: a rule dropped
+  from one would leave the schema valid, both jobs green, and that edition
+  quietly no longer held to the contract. `check_contract_parity.py` compares
+  the rules each harness claims to prove and names any the other is missing.
+  Four real gaps turned up on the first run, two of them silent-skip bugs:
+  Windows wrapped its `stats` and `modulesSkipped` assertions in
+  "if the key exists", so a producer that dropped either key would have made
+  the assertions **disappear** rather than fail. Both are now unconditional.
+- Both harnesses also assert that every contract check actually ran. A
+  malformed PowerShell argument had made three assertions raise an error
+  instead of run, and the suite still printed `0 failed` with a quietly
+  smaller total — an assertion that vanishes is worse than one that fails.
+- `paths[]` is carried between the Linux modules and the JSON writer as
+  `0x1D`-separated elements inside the existing `0x1F` column, **not** as JSON
+  in a column and not by moving the pipeline to NDJSON. The current design has
+  modules write raw bytes with exactly one place turning them into JSON;
+  NDJSON would have spread that one thing-that-must-never-be-wrong across all
+  eighteen module emit sites. Both separators are now stripped from every
+  collected string at the point it enters a finding.
+
+- `json_escape` no longer forks for a string that contains nothing to escape —
+  the overwhelmingly common case. It used to spawn a `python3` process per
+  field (~13 ms each, six per finding), so a run producing 200 findings spent
+  roughly 15 seconds escaping text that needed no escaping. Measured on the
+  same host, 100 calls went from 1.27 s to 0.001 s. No output changes.
+
+### Removed
+- **De-duplication (`found_in[]`) was cut after measuring, not after
+  discussing.** The plan assumed several modules raise the *same* finding.
+  They do not: all 13 Linux and all 22 Windows `Add-Finding` sites use
+  distinct message templates, and a crafted probe (an executable in `/tmp`,
+  running) produced two findings sharing one path with **no** duplicate
+  `(category, message)` anywhere. What the probe showed is the opposite of a
+  duplicate — `process` reporting *"executing from a suspicious path (PID 10)"*
+  and `indicators` reporting *"2 executable file(s) in /tmp"* are two
+  independent signals about one file, and merging them would have thrown away
+  the PID, the aggregate's count, and the fact that two separate checks fired.
+  Three weak signals agreeing is evidence; one merged record is not.
+  The real need behind the item — "don't make me notice the same file three
+  times" — is already met by `paths[]` from schema 1.3: grouping findings by
+  shared path is now one line in any consumer. Adding a field for something a
+  consumer can derive would be the schema bloat 1.3 was careful to avoid.
+
+### Fixed
+- **`summary.json` and `findings.json` were written with a UTF-8 BOM on Windows
+  PowerShell 5.1** — the version this tool declares as its minimum and the one
+  most responders run it with. `Out-File -Encoding UTF8` means *with* a BOM on
+  5.1 and *without* on PowerShell 7; a leading BOM is not valid JSON text to a
+  strict parser, and Python's `json.load` refuses the file outright. CI runs
+  pwsh 7, so for three releases the flagship producer shipped a machine
+  contract that a standard parser rejected, on the edition it is most often
+  used with, and nothing noticed. Both documents now go through one writer with
+  an explicit BOM-less encoding, and **both harnesses assert the first three
+  bytes** rather than trusting whichever PowerShell they happen to run under.
+  Found while validating the two new modules' output — the second defect this
+  month whose whole cause was CI exercising one PowerShell and users another.
+- **The first draft of `useractivity` raised 142 false findings, and the fix is
+  the interesting part.** The obvious rule — flag any execution record outside
+  Program Files — was written first and then measured on a real workstation. It
+  produced 144 findings: installers in `Downloads`, MSIs in `Package Cache`, an
+  Electron app's `updater.exe`. On modern Windows, `AppData` and `Downloads`
+  *are* where ordinary user software lives, so location alone carries almost no
+  signal, and burying two real findings under 142 false ones is worse than
+  raising none at all.
+
+  What replaced it: a script host or an executable-by-another-name
+  (`.hta`, `.scr`, `.pif`, `.vbs`, `.bat`, `.ps1`, …), a double extension
+  (`invoice.pdf.exe`), or a launch from `Windows\Temp`, `Users\Public` or a
+  UNC path. A `.lnk` is exempt from the directory rule, because a shortcut is
+  a pointer and every installer drops one on the Public Desktop — judging
+  shortcuts by where they live had flagged Acrobat, Wireshark and Steam.
+  MUICache carries no timestamp and no run count, so on its own it is inventory,
+  not a lead; it earns a finding only when the entry is both unusual in kind
+  **and** no longer on disk. Same workstation, after: **10 findings**, and the
+  one that matters is a crypto miner's `.bat` that is no longer there.
+- **The same draft took 5.7 s, against a declared budget of 2.** 5 MB of Jump
+  Lists were being decoded to UTF-16 and regexed in full. The module now reads
+  newest-first under a 6 MB budget with a 512 KB per-file cap, and when it hits
+  the budget it **says so** in the report and raises a `NOTE` — a module that
+  quietly does less than its own section header claims is the silent-skip defect
+  this project keeps finding. Measured after: **0.9 s**.
+- Jump List and CryptnetUrlCache findings are now bounded aggregates rather than
+  one-per-item: a per-file finding would scale with how many applications the
+  user has, which is not the thing being measured.
+- `useractivity` leaves `{GUID}`-prefixed UserAssist paths untranslated and
+  explains why in the report. A guessed KNOWNFOLDERID or Jump List AppID mapping
+  in a forensic record is worse than an untranslated one — the same reason the
+  AppID is not decoded to an application name.
+
 - `.github/scripts/check_contract_parity.py` — the Win↔Linux parity gate
   described under **Changed**.
 - The collectors stated their version **twice** — the comment header carried
@@ -64,48 +205,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   assertions fail — including `module` reading back as `T1059` and
   `collected_at` as `0.4`, which is the column-shifting forgery it exists to
   stop.
-
-### Changed
-- **Both contract harnesses now assert the same rule set, and CI fails if they
-  drift.** `tests/run-tests.sh` and `tests/Invoke-Tests.ps1` run in separate
-  jobs on separate runners, so nothing had ever compared them: a rule dropped
-  from one would leave the schema valid, both jobs green, and that edition
-  quietly no longer held to the contract. `check_contract_parity.py` compares
-  the rules each harness claims to prove and names any the other is missing.
-  Four real gaps turned up on the first run, two of them silent-skip bugs:
-  Windows wrapped its `stats` and `modulesSkipped` assertions in
-  "if the key exists", so a producer that dropped either key would have made
-  the assertions **disappear** rather than fail. Both are now unconditional.
-- Both harnesses also assert that every contract check actually ran. A
-  malformed PowerShell argument had made three assertions raise an error
-  instead of run, and the suite still printed `0 failed` with a quietly
-  smaller total — an assertion that vanishes is worse than one that fails.
-- `paths[]` is carried between the Linux modules and the JSON writer as
-  `0x1D`-separated elements inside the existing `0x1F` column, **not** as JSON
-  in a column and not by moving the pipeline to NDJSON. The current design has
-  modules write raw bytes with exactly one place turning them into JSON;
-  NDJSON would have spread that one thing-that-must-never-be-wrong across all
-  eighteen module emit sites. Both separators are now stripped from every
-  collected string at the point it enters a finding.
-
-### Removed
-- **De-duplication (`found_in[]`) was cut after measuring, not after
-  discussing.** The plan assumed several modules raise the *same* finding.
-  They do not: all 13 Linux and all 22 Windows `Add-Finding` sites use
-  distinct message templates, and a crafted probe (an executable in `/tmp`,
-  running) produced two findings sharing one path with **no** duplicate
-  `(category, message)` anywhere. What the probe showed is the opposite of a
-  duplicate — `process` reporting *"executing from a suspicious path (PID 10)"*
-  and `indicators` reporting *"2 executable file(s) in /tmp"* are two
-  independent signals about one file, and merging them would have thrown away
-  the PID, the aggregate's count, and the fact that two separate checks fired.
-  Three weak signals agreeing is evidence; one merged record is not.
-  The real need behind the item — "don't make me notice the same file three
-  times" — is already met by `paths[]` from schema 1.3: grouping findings by
-  shared path is now one line in any consumer. Adding a field for something a
-  consumer can derive would be the schema bloat 1.3 was careful to avoid.
-
-### Fixed
 - **The Linux JSON escaper emitted invalid JSON on a host without `python3`.**
   `json_escape` escaped only `\` and `"` on its fallback path and passed every
   other control character through untouched, so a single `0x07` or `0x1B` byte
@@ -125,29 +224,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   `PasswordRequired` is a policy flag, not proof that an account has no password
   or that it can be logged into; the detail now says **UNCONFIRMED** and what to
   confirm it against.
-
-### Added
-- `tests/test-json-escape.sh` — twenty-nine inputs run through **every path**
-  `json_escape` has, including the no-`python3` fallback, which the test forces
-  by shadowing `python3`. The assertion is a round trip through a real JSON
-  parser rather than a byte comparison, so it pins the contract and not one
-  escaper's style. Wired into CI. Against the previous implementation it fails
-  fourteen cases.
-- `tests/Test-EncodedArg.ps1` and `tests/fixtures/encodedarg-cases.tsv` — fifteen
-  cases that pin the pattern in both directions at once: the abbreviations must
-  match, `-Encoding` and `-ExecutionPolicy` must not. Wired into CI.
-- `CONTRIBUTING.md` now states the **architectural invariants** — the short list
-  of properties that cannot be traded away, each with the failure it prevents —
-  and the four things a new module must declare before it can be in the default
-  set. Written because the project now takes outside contributions, and a forker
-  needs to know which few things are not open to change.
-
-### Changed
-- `json_escape` no longer forks for a string that contains nothing to escape —
-  the overwhelmingly common case. It used to spawn a `python3` process per
-  field (~13 ms each, six per finding), so a run producing 200 findings spent
-  roughly 15 seconds escaping text that needed no escaping. Measured on the
-  same host, 100 calls went from 1.27 s to 0.001 s. No output changes.
 
 ## [1.3.0] — 2026-10-12
 

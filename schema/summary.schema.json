@@ -50,7 +50,7 @@
         "ExecInTempDirs",
         "HashedBinaries",
         "TimelineEntries",
-        "RunningContainers"
+        "RunningContainers", "RmmProductsPresent", "UserAssistEntries", "JumpListFiles"
       ],
       "additionalProperties": { "type": ["string", "number"] }
     },

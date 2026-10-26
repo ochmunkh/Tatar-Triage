@@ -75,6 +75,8 @@ technique without raising a finding for it.
 | `rdp` | 4624 (LogonType 10), 4778/4779, TS Operational logs, client MRU | T1021.001 Remote Desktop Protocol |
 | `lateral` | SMB sessions, mapped drives, admin shares | T1021.002 SMB / Windows Admin Shares |
 | `lateral` | Other remote-service artifacts | T1021 Remote Services |
+| `rmm` | Remote monitoring & management agents present, and their connection history | T1219 Remote Access Software |
+| `useractivity` | Jump List items opened over a UNC path | T1021.002 SMB / Windows Admin Shares |
 
 ### Collection / C2 / Impact / Access
 | Module | Evidence | Technique |
@@ -82,6 +84,9 @@ technique without raising a finding for it.
 | `network` | Established connections, DNS cache | T1071 Application Layer Protocol (C2) |
 | `usb` | USBSTOR device history | T1091 Replication Through Removable Media · T1200 Hardware Additions |
 | `shadow` | Volume Shadow Copy state | T1490 Inhibit System Recovery |
+| `useractivity` | Non-revocation URL cached by the crypto stack (`certutil -urlcache`) | T1105 Ingress Tool Transfer · T1140 Deobfuscate/Decode |
+| `useractivity` | Command typed into the Run dialog | T1059 Command and Scripting Interpreter |
+| `useractivity` | Script or double-extension file started from the shell | T1204.002 User Execution: Malicious File |
 
 ## By tactic (Linux — `linux/tatar-linux.sh`)
 
@@ -133,6 +138,10 @@ or a hash — a wrong mapping is worse than no mapping, so the type now decides.
 | `mft` | NTFS/MFT info | Timeline / anti-forensics context |
 | `hashes` | SHA-256 of running/service binaries | IOC / VirusTotal matching |
 | `timeline` | Merged CSV (process, prefetch, recent, installs) | Super-timeline lite |
+| `useractivity` | UserAssist, MUICache, RunMRU | Per-user execution history (current user only) |
+| `useractivity` | Jump Lists (paths extracted, AppID not decoded) | Per-application file-access history |
+| `useractivity` | CryptnetUrlCache | URLs fetched through the crypto stack |
+| `rmm` | AnyDesk / TeamViewer connection logs | Who connected to this host, and when |
 
 ---
 
@@ -224,6 +233,8 @@ finding үүсгэхгүйгээр техникийн *нотолгоог* л б
 | `rdp` | 4624 (LogonType 10), 4778/4779, TS Operational лог, client MRU | T1021.001 Remote Desktop Protocol |
 | `lateral` | SMB session, холбогдсон драйв, admin share | T1021.002 SMB / Windows Admin Shares |
 | `lateral` | Бусад алсын үйлчилгээний артефакт | T1021 Remote Services |
+| `rmm` | Remote monitoring & management агент оршин байгаа эсэх, холболтын түүх | T1219 Remote Access Software |
+| `useractivity` | Jump List-д UNC замаар нээсэн зүйл | T1021.002 SMB / Windows Admin Shares |
 
 #### Collection / C2 / Impact / Access
 | Модуль | Нотолгоо | Техник |
@@ -231,6 +242,9 @@ finding үүсгэхгүйгээр техникийн *нотолгоог* л б
 | `network` | Тогтсон холболт, DNS кэш | T1071 Application Layer Protocol (C2) |
 | `usb` | USBSTOR төхөөрөмжийн түүх | T1091 Replication Through Removable Media · T1200 Hardware Additions |
 | `shadow` | Volume Shadow Copy-ийн төлөв | T1490 Inhibit System Recovery |
+| `useractivity` | Crypto stack-ийн кэшэд revocation биш URL (`certutil -urlcache`) | T1105 Ingress Tool Transfer · T1140 Deobfuscate/Decode |
+| `useractivity` | Run цонхонд бичигдсэн команд | T1059 Command and Scripting Interpreter |
+| `useractivity` | Shell-ээс ажиллуулсан скрипт эсвэл давхар өргөтгөлтэй файл | T1204.002 User Execution: Malicious File |
 
 ### Tactic-аар (Linux — `linux/tatar-linux.sh`)
 
@@ -282,6 +296,10 @@ v1.2.5 хүртэл эдгээр бүгд `T1071` гэж тэмдэглэгдд�
 | `mft` | NTFS/MFT мэдээлэл | Timeline / anti-forensics контекст |
 | `hashes` | Ажиллаж буй/service binary-ийн SHA-256 | IOC / VirusTotal тулгалт |
 | `timeline` | Нэгтгэсэн CSV (процесс, prefetch, recent, суулгацууд) | Хөнгөн super-timeline |
+| `useractivity` | UserAssist, MUICache, RunMRU | Хэрэглэгчийн гүйцэтгэлийн түүх (зөвхөн одоогийн хэрэглэгч) |
+| `useractivity` | Jump List (замыг нь гаргана, AppID-г тайлахгүй) | Апп тус бүрийн файлд хандсан түүх |
+| `useractivity` | CryptnetUrlCache | Crypto stack-аар татагдсан URL |
+| `rmm` | AnyDesk / TeamViewer холболтын лог | Энэ хост руу хэн, хэзээ холбогдсон |
 
 *ATT&CK® нь The MITRE Corporation-ы бүртгэлтэй барааны тэмдэг. Техникийн ID-г энд
 зөвхөн лавлагаа болгон ашиглав.*

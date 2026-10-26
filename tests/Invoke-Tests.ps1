@@ -197,6 +197,19 @@ function Assert-Contract {
         Check "$Label : collected_at is ISO 8601 UTC" $false 'output directory unavailable'
     }
 
+    # The document a SIEM ingests has to START with the JSON. Out-File
+    # -Encoding UTF8 writes a BOM on Windows PowerShell 5.1 and none on pwsh 7,
+    # and a BOM is not valid JSON text to a strict parser - Python's json.load
+    # refuses the file. CI runs pwsh, so this went unnoticed for three releases;
+    # the assertion reads raw bytes rather than trusting the edition it runs on.
+    if ($jsonPath -and (Test-Path $jsonPath)) {
+        $firstBytes = [byte[]](Get-Content -LiteralPath $jsonPath -Encoding Byte -TotalCount 3 -ErrorAction SilentlyContinue)
+        $hasBom = ($firstBytes.Count -eq 3 -and $firstBytes[0] -eq 0xEF -and $firstBytes[1] -eq 0xBB -and $firstBytes[2] -eq 0xBF)
+        Check "$Label : the document has no UTF-8 BOM" (-not $hasBom) $(if ($hasBom) { 'starts with EF BB BF' } else { '' })
+    } else {
+        Check "$Label : the document has no UTF-8 BOM" $false 'output directory unavailable'
+    }
+
     Check "$Label : every contract check ran without an error" ($Error.Count -eq $errAtEntry) `
           $(if ($Error.Count -ne $errAtEntry) { "$($Error.Count - $errAtEntry) error(s), newest: $($Error[0])" } else { '' })
 }
