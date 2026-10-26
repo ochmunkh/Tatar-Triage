@@ -115,6 +115,72 @@ def check_single_version_literal(name, text, expected):
              "version bump leaves behind." % (name, expected, hits))
 
 
+def schema_version(ps1, sh):
+    """The schemaVersion each producer writes. Both must agree."""
+    w = re.search(r"schemaVersion\s+=\s*'([0-9.]+)'", ps1)
+    l = re.search(r'"schemaVersion":\s*\\"%s\\"', sh)
+    l = re.search(r'schemaVersion\\": \\"([0-9.]+)', sh) or re.search(r'"schemaVersion": "([0-9.]+)"', sh)
+    if not w:
+        fail("Tatar.ps1: could not read the emitted schemaVersion")
+    if not l:
+        fail("linux/tatar-linux.sh: could not read the emitted schemaVersion")
+    if w and l and w.group(1) != l.group(1):
+        fail("the two editions emit different schemaVersions: Windows %s, Linux %s"
+             % (w.group(1), l.group(1)))
+    return w.group(1) if w else None
+
+
+def check_prose_counts(name, text, win_n, lin_n):
+    """Module counts written into PROSE and the architecture diagram.
+
+    The badge and the "Windows (N):" labels were already checked, and both were
+    correct at 33 while five other places in the same file still said 30: the
+    Highlights bullet, two "(Windows, N modules)" sentences and two lines of the
+    ASCII diagram, in both languages. A reader believes the sentence, not the
+    badge. Each pattern is REQUIRED to match: reword the README and this check
+    fails until it is taught the new wording, which is the point - a silent
+    pass is how the count drifted in the first place.
+    """
+    patterns = [
+        (r"\*\*(\d+) modules\*\*", win_n, "Highlights bullet"),
+        (r"Windows, (\d+) modules", win_n, "parity sentence (EN)"),
+        (r"Windows, (\d+) \u043c\u043e\u0434\u0443\u043b\u044c", win_n, "parity sentence (MN)"),
+        (r"PowerShell, (\d+) modules", win_n, "diagram (EN)"),
+        (r"PowerShell, (\d+) \u043c\u043e\u0434\u0443\u043b\u044c", win_n, "diagram (MN)"),
+        (r"Linux, (\d+) modules", lin_n, "parity sentence (EN)"),
+        (r"Linux, (\d+) \u043c\u043e\u0434\u0443\u043b\u044c", lin_n, "parity sentence (MN)"),
+        (r"Bash, (\d+) modules", lin_n, "diagram (EN)"),
+        (r"Bash, (\d+) \u043c\u043e\u0434\u0443\u043b\u044c", lin_n, "diagram (MN)"),
+    ]
+    for pat, expected, where in patterns:
+        found = re.findall(pat, text)
+        if not found:
+            fail("%s: no %r (%s) found - the wording changed, so update "
+                 ".github/scripts/check_docs_parity.py to match" % (name, pat, where))
+            continue
+        wrong = [v for v in found if int(v) != expected]
+        if wrong:
+            fail("%s: %s says %s module(s), the code has %d"
+                 % (name, where, ", ".join(wrong), expected))
+
+
+def check_schema_mentions(name, text, expected):
+    """Every schemaVersion the docs state as CURRENT.
+
+    Historical wording ("schema 1.2 added ...") is deliberately not matched:
+    only `schemaVersion X.Y` and the diagram's `summary.schema.json - vX.Y`,
+    which both describe what the tool emits today.
+    """
+    hits = re.findall(r"schemaVersion (\d+\.\d+)", text) + \
+           re.findall(r"summary\.schema\.json \u00b7 v(\d+\.\d+)", text)
+    if not hits:
+        return
+    wrong = sorted(set(h for h in hits if h != expected))
+    if wrong:
+        fail("%s: states schemaVersion %s, the collectors emit %s"
+             % (name, ", ".join(wrong), expected))
+
+
 def check_version_badge(name, text, expected):
     # The README version badge sat at 1.2 for the whole 1.3 line. A badge is
     # the first thing a reader believes, so it is held to the code the way the
@@ -151,6 +217,14 @@ def main(argv):
     if ver:
         check_version_badge("README.md", readme, ver)
         check_version_badge("linux/README.md", lreadme, ver)
+
+    # 1b-ii. module counts in prose and the diagram, and the schemaVersion the
+    # docs state as current. Both drifted while the gated badge stayed right.
+    check_prose_counts("README.md", readme, len(win), len(lin))
+    sv = schema_version(ps1, sh)
+    if sv:
+        check_schema_mentions("README.md", readme, sv)
+        check_schema_mentions("linux/README.md", lreadme, sv)
 
     # 1c. each collector states its version exactly once
     full = re.search(r"\$script:ToolVersion\s*=\s*'([^']+)'", ps1)

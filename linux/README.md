@@ -103,7 +103,7 @@ Both paths are checked **before collection starts**. A path that cannot be read 
 
 A finding is only suppressed when **every** path it names is known-good. Judging it by one token meant an aggregate about files in `/tmp` was hidden because `dpkg -S /tmp` answers `base-files`, and a directory now never satisfies the package-ownership rule.
 
-Findings carry `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`, and since schema 1.3 the evidence fields `confidenceReason`, `iocIndicator`, `module`, `collected_at` and `paths[]`; summaries gain `activeFindingsCount` / `suppressedCount` (`schemaVersion 1.3`, backward compatible — 1.3 only adds optional properties).
+Findings carry `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`, and since schema 1.3 the evidence fields `confidenceReason`, `iocIndicator`, `module`, `collected_at` and `paths[]`; summaries gain `activeFindingsCount` / `suppressedCount` (`schemaVersion 1.4`, backward compatible — the 1.3 and 1.4 additions are all optional properties).
 
 ---
 ## Output
@@ -272,7 +272,7 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 
 Finding нь өөрийн нэрлэсэн **бүх** зам цэвэр гэж батлагдсан үед л suppressed болно. Нэг л token-оор дүгнэдэг байсан үед `/tmp` доторх файлуудын тухай нэгтгэсэн finding далдлагдаж байсан — учир нь `dpkg -S /tmp` нь `base-files` гэж хариулдаг; одоо хавтас багцын эзэмшлийн дүрмийг хэзээ ч хангахгүй.
 
-Finding-ууд `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`, мөн schema 1.3-аас хойш нотолгооны талбарууд `confidenceReason`, `iocIndicator`, `module`, `collected_at`, `paths[]`-ийг авч явах ба summary-д `activeFindingsCount` / `suppressedCount` нэмэгдэнэ (`schemaVersion 1.3`, хуучинтайгаа нийцтэй — 1.3 зөвхөн заавал биш талбар нэмсэн).
+Finding-ууд `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`, мөн schema 1.3-аас хойш нотолгооны талбарууд `confidenceReason`, `iocIndicator`, `module`, `collected_at`, `paths[]`-ийг авч явах ба summary-д `activeFindingsCount` / `suppressedCount` нэмэгдэнэ (`schemaVersion 1.4`, хуучинтайгаа нийцтэй — 1.3 ба 1.4-ийн нэмэлтүүд бүгд заавал биш талбар).
 
 ---
 ## Гаралт

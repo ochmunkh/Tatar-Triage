@@ -60,7 +60,7 @@ The consolidated report flags suspicious activity as it goes (sample):
 ## Highlights
 
 - **One script, no install.** Drop it on the host (or a USB), run it, done.
-- **30 modules**, executed in **RFC 3227 order of volatility** (memory → network → processes → … → disk / registry / logs).
+- **33 modules**, executed in **RFC 3227 order of volatility** (memory → network → processes → … → disk / registry / logs).
 - **Analyst-first summary.** Every run writes `summary.txt` + `summary.json`: host/OS/case metadata, quick stats, and an aggregated **Suspicious findings** list — leads for review, *not* verdicts. The JSON feeds straight into SIEM / SOAR pipelines.
 - **Execution log.** `tatar.log` records every module with timestamps and `START / OK / WARN / FAILED` status — clean audit trail, easy troubleshooting.
 - **Automation-friendly.** `-Silent` suppresses all console output (WinRM / scheduled / remote runs) and the script returns meaningful **exit codes** (see below).
@@ -68,23 +68,24 @@ The consolidated report flags suspicious activity as it goes (sample):
 - **Chain of custody.** Per-run metadata, examiner / case ID, and a SHA-256 manifest of every collected file.
 - **Transparent by design.** No obfuscation, no AMSI/AV bypass. Meant to be code-signed and allow-listed on the forensic host.
 - **Does NOT extract or decrypt passwords.**
+- **What this is not.** It does not detonate malware in a sandbox the way an analyzer does, it does not take and parse a memory image the way Volatility does, and it does not do full-disk forensics the way Autopsy does. It answers one question quickly — *what is the current state of this host, and what in it deserves a closer look* — and hands the deeper work to the tools built for it. (The Mongolian half of this README has said so since launch; the English half had not.)
 - **Cross-platform.** Emits the shared [`summary.schema.json`](schema/summary.schema.json) contract; a [Linux edition](linux/) (`tatar-linux.sh`) produces identical `summary.json` outputs.
 
 ---
 
 ## Architecture
 
-TATAR ships as two parity editions — `Tatar.ps1` (Windows, 30 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.3`), so a SIEM/SOAR pipeline ingests either platform identically.
+TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.4`), so a SIEM/SOAR pipeline ingests either platform identically.
 
 ```
                     TATAR Triage
                          │
           ┌──────────────┴──────────────┐
      Windows · Tatar.ps1           Linux · tatar-linux.sh
-     (PowerShell, 30 modules)      (Bash, 18 modules)
+     (PowerShell, 33 modules)      (Bash, 18 modules)
           └──────────────┬──────────────┘
                          ▼
-             Unified JSON schema  (summary.schema.json · v1.3)
+             Unified JSON schema  (summary.schema.json · v1.4)
                          ▼
         ┌────────────────┼────────────────┐
         ▼                ▼                ▼
@@ -506,17 +507,17 @@ Triage гэдэг ойлголт эмнэлгээс гаралтай. Эмч ө�
 
 ## Архитектур
 
-TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 30 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.3`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
+TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 33 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.4`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
 
 ```
                     TATAR Triage
                          │
           ┌──────────────┴──────────────┐
      Windows · Tatar.ps1           Linux · tatar-linux.sh
-     (PowerShell, 30 модуль)       (Bash, 18 модуль)
+     (PowerShell, 33 модуль)       (Bash, 18 модуль)
           └──────────────┬──────────────┘
                          ▼
-             Нэгдсэн JSON schema  (summary.schema.json · v1.3)
+             Нэгдсэн JSON schema  (summary.schema.json · v1.4)
                          ▼
         ┌────────────────┼────────────────┐
         ▼                ▼                ▼
