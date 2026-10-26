@@ -25,7 +25,8 @@
       "enum": [
         "1.1",
         "1.2",
-        "1.3"
+        "1.3",
+        "1.4"
       ],
       "description": "Version of THIS shared schema. Consumers key off this. 1.3 only ADDS optional finding properties, so a 1.2 consumer keeps working against a 1.3 document."
     },
@@ -151,5 +152,19 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["schemaVersion"],
+        "properties": { "schemaVersion": { "const": "1.4" } }
+      },
+      "then": {
+        "description": "From schemaVersion 1.4 every timestamp in this document is ISO 8601 UTC at second precision - YYYY-MM-DDTHH:MM:SSZ - on every platform. Earlier versions are not held to it: the Windows producer wrote local time with an offset while the Linux producer wrote Z, so output from the two editions could not be sorted together and a 1.3 document carried both shapes at once (collected_at in Z beside generated with an offset). Constrained here rather than only described, because 'ISO-8601 string' was what the 1.1 schema already said.",
+        "properties": {
+          "generated": { "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" }
+        }
+      }
+    }
+  ]
 }

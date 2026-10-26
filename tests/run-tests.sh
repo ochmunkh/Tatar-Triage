@@ -68,7 +68,7 @@ except Exception as e:
     sys.exit(1)
 
 check("%s : summary.json parses" % label, True)
-check("%s : schemaVersion is 1.3" % label, s.get("schemaVersion") == "1.3", s.get("schemaVersion"))
+check("%s : schemaVersion is 1.4" % label, s.get("schemaVersion") == "1.4", s.get("schemaVersion"))
 import re
 check("%s : version is SemVer" % label, bool(re.match(r"^\d+\.\d+\.\d+$", str(s.get("version")))), s.get("version"))
 check("%s : platform is linux" % label, s.get("platform") == "linux", s.get("platform"))
@@ -88,6 +88,16 @@ check("%s : findingsCount matches array" % label, s.get("findingsCount") == len(
 
 # A requested module that never ran must be visible to the pipeline, not only
 # to whoever reads the log.
+# A module that collected less than its section header claims must be visible
+# to the pipeline, not only to whoever opens the log. Asserted unconditionally:
+# guarding it with "if the key exists" is the silent-skip shape this suite
+# keeps catching.
+lim = s.get("moduleLimitations")
+check("%s : moduleLimitations is a list, never null" % label, isinstance(lim, list), type(lim).__name__)
+bad_lim = [repr(x) for x in (lim if isinstance(lim, list) else [])
+           if not isinstance(x, dict) or not str(x.get("limitation", "")).strip()]
+check("%s : every limitation says what was not done" % label, not bad_lim, ",".join(bad_lim))
+
 check("%s : modulesSkipped key present" % label, "modulesSkipped" in s)
 skipped = s.get("modulesSkipped")
 check("%s : modulesSkipped is a list, never null" % label, isinstance(skipped, list), type(skipped).__name__)
@@ -192,6 +202,14 @@ if f:
         first = fh.read(3)
     check("%s : the document has no UTF-8 BOM" % label, first[:3] != b"\xef\xbb\xbf",
           "starts with %r" % (first,))
+
+    # One timestamp format, document-wide. The two editions disagreed until 1.4
+    # (local time with an offset on Windows, Z on Linux) and a 1.3 document
+    # carried both shapes at once, so this is asserted on the producer rather
+    # than left to the consumer to normalise.
+    ts_bad = ["%s=%r" % (k, s.get(k)) for k in ("started", "finished", "generated")
+              if k in s and not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", str(s.get(k)))]
+    check("%s : started/finished/generated are ISO 8601 UTC" % label, not ts_bad, ",".join(ts_bad))
 
     check("%s : every contract check ran without an error" % label, True)
 

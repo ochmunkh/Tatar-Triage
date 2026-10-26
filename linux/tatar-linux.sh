@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -99,7 +99,8 @@ ERROR_COUNT=0
 OUTDIR=""
 REPORT=""
 EXECLOG=""
-FINDINGS_FILE=""      # tab-separated: severity \t category \t message \t detail
+FINDINGS_FILE=""      # FSEP-separated; see add_finding for the column list
+LIMITS_FILE=""        # FSEP-separated: module | limitation (see add_note)
 STATS_FILE=""         # key \t value
 
 c_out() {   # console output, suppressed by --silent
@@ -118,6 +119,20 @@ execlog() {  # execlog LEVEL MESSAGE
 
 report() { printf '%s\n' "$1" >> "$REPORT"; }
 section() { printf '\n===== %s =====\n\n' "$1" >> "$REPORT"; }
+
+# A NOTE is an expected condition that means the module did LESS than its
+# section header claims - not an error, so it must not change the exit code,
+# but not invisible either. The Windows edition has carried these as Add-Note
+# for releases; recording them in one place makes the whole set machine-readable
+# through summary.moduleLimitations. Schema 1.3 refused to put this on every
+# finding because it describes a MODULE, not a finding; this is that field at
+# the level it belongs to.
+add_note() {  # add_note MESSAGE
+    local msg="$1"
+    execlog "WARN" "$msg"
+    [ -n "${LIMITS_FILE:-}" ] && printf '%s\037%s\n' "$CURRENT_MODULE" "$(printf '%s' "$msg" | tr '\t\n\035\037' '    ')" >> "$LIMITS_FILE"
+    return 0
+}
 
 add_err() {  # add_err MESSAGE
     ERROR_COUNT=$((ERROR_COUNT+1))
@@ -1086,7 +1101,7 @@ EOF
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
         printf '  "version": "%s",\n' "$VERSION"
-        printf '  "schemaVersion": "1.3",\n'
+        printf '  "schemaVersion": "1.4",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "os": "%s",\n' "$(json_escape "$os")"
@@ -1100,6 +1115,18 @@ EOF
         printf '  "privileged": %s,\n' "$is_root"
         printf '  "environment": {"virtualization":"%s","container":%s,"containerRuntime":"%s","securityModule":"%s"},\n' "$(json_escape "$ENV_VIRT")" "$ENV_CONTAINER" "$(json_escape "$ENV_RUNTIME")" "$(json_escape "$ENV_SECMOD")"
         printf '  "errorsLogged": %s,\n' "$ERROR_COUNT"
+        # What each module could not do. Written by add_note, so every NOTE the
+        # log already carried is now queryable instead of only readable.
+        printf '  "moduleLimitations": ['
+        local lfirst=1 lmod ltext
+        if [ -s "${LIMITS_FILE:-/nonexistent}" ]; then
+            while IFS="$FSEP" read -r lmod ltext; do
+                [ -n "$ltext" ] || continue
+                [ $lfirst -eq 1 ] && lfirst=0 || printf ', '
+                printf '{"module":"%s","limitation":"%s"}' "$(json_escape "$lmod")" "$(json_escape "$ltext")"
+            done < "$LIMITS_FILE"
+        fi
+        printf '],\n'
         printf '  "modulesRun": ['
         local first=1 m
         for m in $mods; do [ $first -eq 1 ] && first=0 || printf ', '; printf '"%s"' "$m"; done
@@ -1144,7 +1171,7 @@ EOF
     {
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
-        printf '  "schemaVersion": "1.3",\n'
+        printf '  "schemaVersion": "1.4",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "caseId": "%s",\n' "$(json_escape "$CASE_ID")"
@@ -1297,12 +1324,12 @@ if ! mkdir -p "$OUTDIR" 2>/dev/null; then
 fi
 REPORT="$OUTDIR/TATAR_Report_${HOSTN}_${STAMP}.txt"
 EXECLOG="$OUTDIR/tatar.log"
-FINDINGS_FILE="$(mktemp)"; STATS_FILE="$(mktemp)"
+FINDINGS_FILE="$(mktemp)"; STATS_FILE="$(mktemp)"; LIMITS_FILE="$(mktemp)"
 
 execlog "INFO" "$TOOL_DISPLAY v$VERSION starting on $HOSTN as $(id -un) (root=$IS_ROOT, silent=$SILENT)"
 execlog "INFO" "CaseId='$CASE_ID' Examiner='$EXAMINER' OutDir=$OUTDIR"
 execlog "INFO" "Modules selected: $TO_RUN"
-[ "$IS_ROOT" = false ] && execlog "WARN" "Not running as root - collection will be incomplete."
+[ "$IS_ROOT" = false ] && add_note "Not running as root: every module that needs privilege collected less than its section header claims."
 
 {
     echo "$TOOL_DISPLAY v$VERSION - Collection Report"
@@ -1342,7 +1369,7 @@ for u in $UNKNOWN; do add_err "Unknown option ignored: $u"; done
 
 if on_root_fs; then
     c_out "[!] WARNING: $(root_fs_note). Writing evidence there can overwrite deleted-file evidence. Prefer external media that is already mounted."
-    execlog "WARN" "$(root_fs_note); prefer external media that is already mounted."
+    add_note "$(root_fs_note); prefer external media that is already mounted."
 fi
 
 c_out ""; c_out "[i] Output: $OUTDIR"

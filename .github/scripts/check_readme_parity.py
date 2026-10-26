@@ -84,8 +84,8 @@ ACCEPTED_DELTA_BY_FILE = {
     "README.md": {
         # The English half carries a per-version changelog; the Mongolian half
         # deliberately does not (it points at CHANGELOG.md instead), so every
-        # release adds one English-only heading here. 11 as of v1.3.0.
-        "headings": 11,      # EN 36 vs MN 25 -- the condensed changelog + Legal
+        # release adds one English-only heading here. 12 as of v1.4.0.
+        "headings": 12,      # EN 37 vs MN 25 -- the condensed changelog + Legal
         "table_rows": 0,     # in sync
         # -1: the Mongolian half is MORE complete here. Its "Ашиглах" section
         # documents Windows AND Linux usage inline (a powershell block and a

@@ -14,7 +14,7 @@
       * -IOCFile <json>   - offline IOC feed (hashes/ips/domains/filenames); a hit
         overrides the allowlist and escalates to High / 0.95.
       * findings v2 fields (id, confidence, suppressed, suppressReason, iocMatch),
-        schemaVersion 1.3.
+        schemaVersion 1.4.
 
     v1.1 additions:
       * summary.txt / summary.json - analyst-first triage summary with an
@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.3.0'
+$script:ToolVersion = '1.4.0'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -159,6 +159,11 @@ $script:ErrorCount = 0
 $script:ExecLog    = $null
 $script:Findings   = New-Object System.Collections.Generic.List[object]
 $script:Stats      = [ordered]@{}
+# What a module could not do, machine-readable. Schema 1.3 considered putting
+# this on every finding and refused: "could not read /proc/N" describes a
+# MODULE, not a finding, so per-finding it would have been copy-pasted
+# boilerplate. This is that field at the level it belongs to.
+$script:ModuleLimitations = New-Object System.Collections.Generic.List[object]
 $script:ModulesSkipped = New-Object System.Collections.Generic.List[string]
 
 # Windows is not always on C:. The collector hardcoded 'C:\Windows' / 'C:' in
@@ -214,6 +219,7 @@ function Get-Technique {
             else { return @('T1059') }
         }
         'rmm'        { return @('T1219') }
+        'motw'       { return @('T1189','T1566.001') }
         'useractivity' {
             # The evidence source does not decide the technique; what the
             # evidence SHOWS does. A cached download is ingress, a typed
@@ -255,6 +261,23 @@ function Get-Technique {
         }
         default      { return @() }
     }
+}
+
+# ONE timestamp format for the whole tool: ISO 8601, UTC, second precision.
+#
+# It used to be two. `.ToString('o')` on a local DateTime yields
+# 2026-10-26T21:01:29.1909204+08:00 while the Linux edition writes
+# 2026-10-26T13:01:29Z, so a single "unified" document carried both shapes and
+# output from the two editions could not be sorted together without a parser
+# that normalises offsets. Within ONE document it was worse: schema 1.3 added
+# collected_at in UTC Z next to a `generated` in local time with an offset.
+#
+# Quoted 'Z' on purpose: unquoted Z is not a .NET format specifier, and relying
+# on an unrecognised character being echoed literally is not a format, it is a
+# coincidence that happens to hold.
+function Get-IsoUtc {
+    param([datetime]$When = (Get-Date))
+    return $When.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss'Z'")
 }
 
 function Get-PathCandidate {
@@ -319,7 +342,7 @@ function Add-Finding {
         iocMatch         = $false
         iocIndicator     = ''
         module           = $script:CurrentModule
-        collected_at     = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        collected_at     = Get-IsoUtc
         paths            = $fpaths
     })
 }
@@ -431,11 +454,22 @@ function Copy-Safe {
 }
 
 # Note = expected/benign condition. Logged as WARN; does NOT count as an error or change exit code.
+#
+# Every existing call site is already a statement of what a module could not do
+# - "RecentFailedLogons was NOT measured", "capped at N by -MaxEvents", "fell
+# back to netstat". They were readable only by whoever opened the log. Recording
+# them here as well makes the whole set machine-readable through
+# summary.moduleLimitations without touching a single call site, which is the
+# point: a limitation nobody can query is a limitation nobody acts on.
 function Add-Note {
     param([string]$Msg)
     $t = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     "[$t] NOTE: $Msg" | Out-File -FilePath $script:ReportFile -Append -Encoding UTF8
     Write-ExecLog 'WARN' $Msg
+    $script:ModuleLimitations.Add([pscustomobject]@{
+        module     = $(if ($script:CurrentModule) { $script:CurrentModule } else { '' })
+        limitation = $Msg
+    })
 }
 
 # Best-effort copy for files commonly locked on a live host (Amcache.hve, NTUSER.DAT...).
@@ -1350,8 +1384,8 @@ function Write-Summary {
     $L.Add(("User       : {0}" -f $env:USERNAME))
     $L.Add(("Case ID    : {0}" -f $CaseId))
     $L.Add(("Examiner   : {0}" -f $Examiner))
-    $L.Add(("Started    : {0}" -f $Start.ToString('o')))
-    $L.Add(("Finished   : {0}" -f $End.ToString('o')))
+    $L.Add(("Started    : {0}" -f (Get-IsoUtc $Start)))
+    $L.Add(("Finished   : {0}" -f (Get-IsoUtc $End)))
     $L.Add(("Duration   : {0} min" -f [math]::Round(($End - $Start).TotalMinutes, 2)))
     $L.Add(("Privileged : {0}" -f $IsAdmin))
     $L.Add(("Environment: virt={0} container={1} runtime={2} secmod={3}" -f $envVirt, $envContainer, $envRuntime, $envSecmod))
@@ -1481,7 +1515,7 @@ function Write-Summary {
                         suppressed       = $false; suppressReason = ''; iocMatch = $true
                         iocIndicator     = $val
                         module           = 'ioc'
-                        collected_at     = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                        collected_at     = Get-IsoUtc
                         paths            = @(Get-PathCandidate "$bMsg $bDet")
                     })
                 }
@@ -1528,7 +1562,7 @@ function Write-Summary {
     $jsonObj = [pscustomobject]@{
         tool            = 'TATAR Triage Toolkit'
         version         = $script:ToolVersion
-        schemaVersion   = '1.3'
+        schemaVersion   = '1.4'
         platform        = 'windows'
         host            = $hn
         os              = $osCap
@@ -1537,11 +1571,17 @@ function Write-Summary {
         privileged      = $IsAdmin
         caseId          = $CaseId
         examiner        = $Examiner
-        started         = $Start.ToString('o')
-        finished        = $End.ToString('o')
+        started         = Get-IsoUtc $Start
+        finished        = Get-IsoUtc $End
         durationSeconds = [math]::Round(($End - $Start).TotalSeconds, 0)
         environment     = [pscustomobject]@{ virtualization = $envVirt; container = $envContainer; containerRuntime = $envRuntime; securityModule = $envSecmod }
         errorsLogged    = $script:ErrorCount
+        # .ToArray(), not @(...): on Windows PowerShell 5.1 an array
+        # subexpression over a List[object] inside an [ordered]@{} literal
+        # throws "Argument types do not match", and assigned to a variable
+        # first it silently evaluates to EMPTY. Either way the limitations
+        # would have been lost - the second one without a single error.
+        moduleLimitations = $script:ModuleLimitations.ToArray()
         modulesRun      = @($ModulesRun)
         modulesSkipped  = @($script:ModulesSkipped)
         stats           = [pscustomobject]$script:Stats
@@ -1555,11 +1595,11 @@ function Write-Summary {
     # findings-only file for SOAR / SIEM ingestion
     $findObj = [pscustomobject]@{
         tool          = 'TATAR Triage Toolkit'
-        schemaVersion = '1.3'
+        schemaVersion = '1.4'
         platform      = 'windows'
         host          = $hn
         caseId        = $CaseId
-        generated     = $End.ToString('o')
+        generated     = Get-IsoUtc $End
         findingsCount        = $sorted.Count
         activeFindingsCount  = $active.Count
         suppressedCount      = $suppressed.Count
@@ -1993,6 +2033,99 @@ function Collect-UserActivity {
     } catch { Add-Err "UserActivity failed: $_" }
 }
 
+# ---------------------------------------------------------------------
+#  33  Mark-of-the-Web (Zone.Identifier)
+# ---------------------------------------------------------------------
+# Declared per CONTRIBUTING "Adding a module":
+#   time        3.3s measured on a profile where 290 files carry the stream -
+#                      the slowest module in the set, and declared as measured
+#                      rather than as hoped. Bounded at the 400 newest files
+#                      per location, depth 2; when a location holds more, the
+#                      module SAYS so through Add-Note instead of quietly
+#                      checking fewer than its section header claims.
+#   admin       not required - the user's own download locations
+#   output      metadata only: path, zone, and the URL the file came from
+#   AV risk     none - the Zone.Identifier STREAM is read, never the file
+#
+# Why: every other execution-evidence module answers "what ran". This one
+# answers "where did it come from", which is the question that turns a
+# suspicious binary into an incident narrative. Windows records it for free -
+# the browser or mail client writes a Zone.Identifier alternate data stream
+# carrying the zone and, on modern Windows, ReferrerUrl and HostUrl. It is
+# read with -Stream, so the file's own contents are never touched.
+#
+# LIMITATION, recorded via Add-Note: MOTW lives in the NTFS stream. A copy
+# through a FAT/exFAT volume, most archive tools, or a deliberate
+# Unblock-File drops it - so a file WITHOUT the stream is not evidence that it
+# came from the machine. Absence proves nothing here; presence is the evidence.
+function Collect-MOTW {
+    Add-Section '33 Mark-of-the-Web (Zone.Identifier) - where downloaded files came from'
+    try {
+        Add-Report 'Zone 3 = Internet, 4 = Restricted. The stream is NTFS-only: copying'
+        Add-Report 'through FAT/exFAT, unpacking with most archive tools, or Unblock-File'
+        Add-Report 'removes it, so a file WITHOUT this stream is not evidence that it was'
+        Add-Report 'not downloaded. Presence is the evidence; absence is not.'
+        Add-Report ''
+        Add-Note 'motw: Mark-of-the-Web is an NTFS stream, so its absence does not prove local origin'
+
+        $roots = @(
+            "$env:USERPROFILE\Downloads",
+            "$env:USERPROFILE\Desktop",
+            "$env:USERPROFILE\Documents",
+            "$env:TEMP",
+            "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup",
+            "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+        )
+        # Bounded on purpose: this is a triage collector, not a filesystem
+        # crawler. Newest first, so a truncated walk keeps the useful end.
+        $maxPerRoot = 400
+        $seen = 0; $withMotw = 0; $truncated = $false
+        $interesting = New-Object System.Collections.Generic.List[string]
+
+        foreach ($r in $roots) {
+            if (-not (Test-PathSafe $r)) { continue }
+            $files = @()
+            try {
+                $files = @(Get-ChildItem -LiteralPath $r -File -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+                           Sort-Object LastWriteTime -Descending | Select-Object -First ($maxPerRoot + 1))
+            } catch {}
+            if ($files.Count -gt $maxPerRoot) { $truncated = $true; $files = @($files | Select-Object -First $maxPerRoot) }
+            foreach ($f in $files) {
+                $seen++
+                $zoneRaw = $null
+                try { $zoneRaw = Get-Content -LiteralPath $f.FullName -Stream 'Zone.Identifier' -ErrorAction SilentlyContinue -Raw } catch {}
+                if (-not $zoneRaw) { continue }
+                $withMotw++
+                $zoneId   = ([regex]::Match($zoneRaw, '(?im)^\s*ZoneId\s*=\s*(\d+)')).Groups[1].Value
+                $hostUrl  = ([regex]::Match($zoneRaw, '(?im)^\s*HostUrl\s*=\s*(\S.*)$')).Groups[1].Value.Trim()
+                $referrer = ([regex]::Match($zoneRaw, '(?im)^\s*ReferrerUrl\s*=\s*(\S.*)$')).Groups[1].Value.Trim()
+                Add-Report ("    zone={0}  {1}" -f $(if ($zoneId) { $zoneId } else { '?' }), $f.FullName)
+                if ($hostUrl)  { Add-Report "        from: $hostUrl" }
+                if ($referrer) { Add-Report "        ref : $referrer" }
+
+                # A document or archive from the internet is ordinary. An
+                # EXECUTABLE one is the first half of almost every phishing
+                # chain, so that is what earns a finding - with the URL, which
+                # is the part an analyst cannot reconstruct later.
+                if ($f.Extension -match '(?i)^\.(exe|dll|scr|com|pif|bat|cmd|ps1|vbs|js|jse|hta|msi|lnk|iso|img|vhd|vhdx)$' -and
+                    $zoneId -in @('3','4')) {
+                    if ($interesting.Count -lt 25) { $interesting.Add([string]$f.FullName) }
+                    Add-Finding -Category 'motw' `
+                        -Message ("Executable or container downloaded from the internet: {0}" -f $f.FullName) `
+                        -Detail ("ZoneId={0}{1}{2} | Windows recorded this file as arriving from outside the machine. The URL is the part that cannot be reconstructed after the fact - check it against the incident window and the user's account of where the file came from. Ordinary software downloads look exactly like this, which is why it is Review." -f `
+                                 $zoneId, `
+                                 $(if ($hostUrl)  { "; HostUrl=$hostUrl" }   else { '' }), `
+                                 $(if ($referrer) { "; Referrer=$referrer" } else { '' }))
+                }
+            }
+        }
+        if ($truncated) { Add-Note ("motw: a download location held more than {0} files; the newest {0} were checked" -f $maxPerRoot) }
+        Add-Report ''
+        Add-Report ("    {0} file(s) checked, {1} carry a Zone.Identifier" -f $seen, $withMotw)
+        $script:Stats['FilesWithMotw'] = $withMotw
+    } catch { Add-Err "MOTW failed: $_" }
+}
+
 # =====================================================================
 #  Module registry  (ORDER = order of volatility, then derived artifacts)
 # =====================================================================
@@ -2027,6 +2160,7 @@ $script:Collectors = [ordered]@{
     indicators  = ${function:Collect-Indicators}
     rmm         = ${function:Collect-RMM}
     useractivity = ${function:Collect-UserActivity}
+    motw        = ${function:Collect-MOTW}
     hashes      = ${function:Collect-Hashes}
     timeline    = ${function:Collect-Timeline}
 }
@@ -2143,7 +2277,7 @@ TATAR Triage Toolkit v$($script:ToolVersion) - Collection Report
 Host        : $hostn
 Case ID     : $CaseId
 Examiner    : $Examiner
-Started     : $($start.ToString('o'))
+Started     : $(Get-IsoUtc $start)
 TimeZone    : $((Get-TimeZone).Id)
 Admin       : $isAdmin
 Modules     : $($toRun -join ', ')
@@ -2213,8 +2347,8 @@ try { if ($PSCommandPath) { $selfHash = (Get-FileHash -Path $PSCommandPath -Algo
 Case ID      : $CaseId
 Examiner     : $Examiner
 Host         : $hostn
-Started      : $($start.ToString('o'))
-Finished     : $($end.ToString('o'))
+Started      : $(Get-IsoUtc $start)
+Finished     : $(Get-IsoUtc $end)
 Duration     : $([math]::Round(($end-$start).TotalMinutes,2)) min
 Script       : $PSCommandPath
 Script SHA256: $selfHash
@@ -2226,7 +2360,7 @@ try { Write-Summary -Start $start -End $end -ModulesRun $toRun -IsAdmin $isAdmin
 
 # The report trailer has to be written BEFORE the manifest hashes the report:
 # appending to an already-hashed file left one entry permanently wrong.
-Add-Report "`n=== Collection finished: $($end.ToString('o')) ==="
+Add-Report "`n=== Collection finished: $(Get-IsoUtc $end) ==="
 
 try {
     # Same name and the same "<sha256>  ./<relative path>" format as the Linux

@@ -4,9 +4,31 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.4.0] — 2026-10-26
 
 ### Added
+- **`motw` module** (32 → 33): Mark-of-the-Web from the `Zone.Identifier`
+  alternate data stream — which files arrived from outside the machine, and the
+  URL they came from. Every other execution-evidence module answers *what ran*;
+  this one answers *where it came from*, which is what turns a suspicious binary
+  into a narrative. The stream is read with `-Stream`, so the file's own
+  contents are never touched. Declared at **3.3 s measured** — the slowest
+  module in the set, bounded at the 400 newest files per location, and it says
+  so through a limitation when a location holds more.
+  Stated in the output and as a limitation: MOTW lives in an NTFS stream, so a
+  copy through FAT/exFAT, most archive tools, or `Unblock-File` drops it. A file
+  *without* the stream is not evidence of local origin — presence is evidence,
+  absence is not.
+- **`summary.moduleLimitations`**: what each module could *not* do, as
+  `{module, limitation}`. This is the field schema 1.3 considered putting on
+  every finding and refused, because *"could not read /proc/N"* describes a
+  module. On Windows it needed no call-site changes at all: every existing
+  `Add-Note` — *"RecentFailedLogons was NOT measured"*, *"capped at N by
+  -MaxEvents"*, *"fell back to netstat"* — was already a limitation statement
+  readable only by whoever opened the log, and is now queryable. Linux gains the
+  same `add_note`. **Absence of a finding means nothing until this array is
+  read**: a module that collected less than its section header claims is the
+  difference between "clean" and "not looked at".
 - **Two Windows modules: `rmm` and `useractivity`** (30 → 32). Both answer a
   question the toolkit could not: *who else has hands on this host*, and
   *what did a person actually run*.
@@ -141,6 +163,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   consumer can derive would be the schema bloat 1.3 was careful to avoid.
 
 ### Fixed
+- **Every timestamp is now one format: ISO 8601 UTC, second precision, on both
+  editions.** Windows wrote `2026-10-26T21:01:29.1909204+08:00` while Linux
+  wrote `2026-10-26T13:01:29Z`, so output from the two editions could not be
+  sorted together without a parser that normalises offsets — and a 1.3 document
+  carried both shapes at once, `collected_at` in `Z` beside `generated` with an
+  offset. One `Get-IsoUtc` now produces every timestamp the Windows edition
+  writes, the shape is a `pattern` in both schemas from 1.4 on, and both
+  harnesses assert it on the raw text rather than through a parser that would
+  erase the very thing being checked.
+- **`moduleLimitations` would have shipped empty, silently.** On Windows
+  PowerShell 5.1 an array subexpression over a `List[object]` inside an
+  `[ordered]@{}` literal throws *"Argument types do not match"* — and assigned
+  to a variable first it evaluates to **empty with no error at all**. The first
+  form broke `summary.json` outright, which is how it was caught; the second
+  would have produced a well-formed document that simply never reported a single
+  limitation. `.ToArray()` has neither behaviour.
 - **`summary.json` and `findings.json` were written with a UTF-8 BOM on Windows
   PowerShell 5.1** — the version this tool declares as its minimum and the one
   most responders run it with. `Out-File -Encoding UTF8` means *with* a BOM on
@@ -560,6 +598,7 @@ Release-hygiene patch for 1.2.0 — no collector or schema changes.
 - Initial release: 30 Windows collectors in RFC 3227 order of volatility, chain
   of custody, SHA-256 manifest, optional archive, and hive/EVTX/memory switches.
 
+[1.4.0]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.4.0
 [1.3.0]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.3.0
 [1.2.5]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.5
 [1.2.4]: https://github.com/ochmunkh/Tatar-Triage/releases/tag/v1.2.4

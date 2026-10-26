@@ -76,6 +76,7 @@ technique without raising a finding for it.
 | `lateral` | SMB sessions, mapped drives, admin shares | T1021.002 SMB / Windows Admin Shares |
 | `lateral` | Other remote-service artifacts | T1021 Remote Services |
 | `rmm` | Remote monitoring & management agents present, and their connection history | T1219 Remote Access Software |
+| `motw` | Executable or container carrying a Zone.Identifier from the internet, with the URL | T1189 Drive-by Compromise · T1566.001 Spearphishing Attachment |
 | `useractivity` | Jump List items opened over a UNC path | T1021.002 SMB / Windows Admin Shares |
 
 ### Collection / C2 / Impact / Access
@@ -142,6 +143,7 @@ or a hash — a wrong mapping is worse than no mapping, so the type now decides.
 | `useractivity` | Jump Lists (paths extracted, AppID not decoded) | Per-application file-access history |
 | `useractivity` | CryptnetUrlCache | URLs fetched through the crypto stack |
 | `rmm` | AnyDesk / TeamViewer connection logs | Who connected to this host, and when |
+| `motw` | Zone.Identifier alternate data stream | Where a downloaded file came from (NTFS-only; absence proves nothing) |
 
 ---
 
@@ -234,6 +236,7 @@ finding үүсгэхгүйгээр техникийн *нотолгоог* л б
 | `lateral` | SMB session, холбогдсон драйв, admin share | T1021.002 SMB / Windows Admin Shares |
 | `lateral` | Бусад алсын үйлчилгээний артефакт | T1021 Remote Services |
 | `rmm` | Remote monitoring & management агент оршин байгаа эсэх, холболтын түүх | T1219 Remote Access Software |
+| `motw` | Интернетээс ирснийг заасан Zone.Identifier-тэй executable/контейнер, URL-тай нь | T1189 Drive-by Compromise · T1566.001 Spearphishing Attachment |
 | `useractivity` | Jump List-д UNC замаар нээсэн зүйл | T1021.002 SMB / Windows Admin Shares |
 
 #### Collection / C2 / Impact / Access
@@ -300,6 +303,7 @@ v1.2.5 хүртэл эдгээр бүгд `T1071` гэж тэмдэглэгдд�
 | `useractivity` | Jump List (замыг нь гаргана, AppID-г тайлахгүй) | Апп тус бүрийн файлд хандсан түүх |
 | `useractivity` | CryptnetUrlCache | Crypto stack-аар татагдсан URL |
 | `rmm` | AnyDesk / TeamViewer холболтын лог | Энэ хост руу хэн, хэзээ холбогдсон |
+| `motw` | Zone.Identifier alternate data stream | Татсан файл хаанаас ирсэн (зөвхөн NTFS; байхгүй нь юу ч нотлохгүй) |
 
 *ATT&CK® нь The MITRE Corporation-ы бүртгэлтэй барааны тэмдэг. Техникийн ID-г энд
 зөвхөн лавлагаа болгон ашиглав.*

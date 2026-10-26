@@ -73,7 +73,7 @@ function Assert-Contract {
     Check "$Label : summary.json parses"            ($null -ne $S)
     if ($null -eq $S) { return }
 
-    Check "$Label : schemaVersion is 1.3"           ($S.schemaVersion -eq '1.3') "got '$($S.schemaVersion)'"
+    Check "$Label : schemaVersion is 1.4"           ($S.schemaVersion -eq '1.4') "got '$($S.schemaVersion)'"
     Check "$Label : version is SemVer"              ($S.version -match '^\d+\.\d+\.\d+$') "got '$($S.version)'"
     Check "$Label : platform is windows"            ($S.platform -eq 'windows')
 
@@ -92,6 +92,16 @@ function Assert-Contract {
 
     # A requested module that never ran must be visible to the pipeline, not
     # only to whoever reads the log.
+    # A module that collected less than its header claims must be visible to
+    # the pipeline, not only to whoever opens the log. Asserted unconditionally,
+    # for the same reason as stats and modulesSkipped below.
+    $hasLim = ($S.PSObject.Properties.Name -contains 'moduleLimitations') -and ($null -ne $S.moduleLimitations)
+    Check "$Label : moduleLimitations is a list, never null" `
+          ($hasLim -and $S.moduleLimitations -is [System.Collections.IEnumerable] -and $S.moduleLimitations -isnot [string]) `
+          $(if (-not $hasLim) { 'missing or null' } else { $S.moduleLimitations.GetType().Name })
+    $badLim = @(@($S.moduleLimitations) | Where-Object { [string]::IsNullOrWhiteSpace($_.limitation) })
+    Check "$Label : every limitation says what was not done" ($badLim.Count -eq 0) (($badLim | ForEach-Object { "$_" }) -join ',')
+
     $hasSkipped = $S.PSObject.Properties.Name -contains 'modulesSkipped'
     Check "$Label : modulesSkipped key present"     $hasSkipped
     # Asserted unconditionally. Guarding it with "if the key exists" is the
@@ -213,6 +223,23 @@ function Assert-Contract {
         try { $firstBytes = [System.IO.File]::ReadAllBytes($jsonPath) } catch {}
         $hasBom = ($firstBytes.Count -ge 3 -and $firstBytes[0] -eq 0xEF -and $firstBytes[1] -eq 0xBB -and $firstBytes[2] -eq 0xBF)
         Check "$Label : the document has no UTF-8 BOM" (-not $hasBom) $(if ($hasBom) { 'starts with EF BB BF' } else { '' })
+    }
+
+    # One timestamp format, document-wide. The two editions disagreed until 1.4
+    # - local time with an offset here, Z on Linux - and a 1.3 document carried
+    # both shapes at once: collected_at in Z beside generated with an offset.
+    # Read as text, because a parser that turns these into [datetime] erases
+    # the very thing being asserted.
+    if ($jsonPath -and (Test-Path $jsonPath)) {
+        $rawTxt2 = Get-Content $jsonPath -Raw -Encoding UTF8
+        $tsBad = @()
+        foreach ($k in 'started','finished','generated') {
+            $m = [regex]::Match($rawTxt2, '"' + $k + '"\s*:\s*"([^"]*)"')
+            if ($m.Success -and $m.Groups[1].Value -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') {
+                $tsBad += "$k=$($m.Groups[1].Value)"
+            }
+        }
+        Check "$Label : started/finished/generated are ISO 8601 UTC" ($tsBad.Count -eq 0) ($tsBad -join ',')
     } else {
         Check "$Label : the document has no UTF-8 BOM" $false 'output directory unavailable'
     }

@@ -11,10 +11,10 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.3-blue" alt="v1.3">
+  <img src="https://img.shields.io/badge/version-1.4-blue" alt="v1.4">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows 10/11">
-  <img src="https://img.shields.io/badge/modules-32-5eead4" alt="32 modules">
+  <img src="https://img.shields.io/badge/modules-33-5eead4" alt="33 modules">
   <img src="https://img.shields.io/badge/read--only-first-14b8a6" alt="read-only first">
   <img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT">
 </p>
@@ -204,11 +204,11 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check tat
 
 Order of volatility, top to bottom:
 
-**Windows (32):** `memory` · `network` · `process` · `sessions` · `services` · `sysinfo` · `users` · `persistence` · `autoruns` · `shares` · `firewall` · `drivers` · `apps` · `prefetch` · `usb` · `pshistory` · `obfscan` · `rdp` · `lateral` · `privesc` · `browser` · `fsartifacts` · `deleted` · `shadow` · `eventlogs` · `hives` · `mft` · `indicators` · `rmm` · `useractivity` · `hashes` · `timeline`
+**Windows (33):** `memory` · `network` · `process` · `sessions` · `services` · `sysinfo` · `users` · `persistence` · `autoruns` · `shares` · `firewall` · `drivers` · `apps` · `prefetch` · `usb` · `pshistory` · `obfscan` · `rdp` · `lateral` · `privesc` · `browser` · `fsartifacts` · `deleted` · `shadow` · `eventlogs` · `hives` · `mft` · `indicators` · `rmm` · `useractivity` · `motw` · `hashes` · `timeline`
 
 **Linux (18):** `sysinfo` · `network` · `process` · `sessions` · `users` · `services` · `persistence` · `apps` · `suid` · `sshkeys` · `bashhistory` · `kernelmods` · `indicators` · `hashes` · `logs` · `timeline` · `containers` · `integrity`
 
-Coverage includes: system/user/network state, running processes with LOLBAS pattern flags, services & drivers, startup/Run-key/scheduled-task persistence, RDP activity, lateral-movement artifacts (SMB sessions, mapped drives, WMI persistence, PsExec), privilege-escalation indicators (unquoted service paths, `AlwaysInstallElevated`, token privileges), obfuscated-script scan, browser artifact metadata (all profiles, no decryption), Recent/Amcache/Prefetch, Recycle Bin, shadow copies, key Windows event IDs, optional registry hive & EVTX export, NTFS/MFT info, file hashing for IOC matching, remote-access/RMM presence **and connection history**, per-user execution evidence (UserAssist, MUICache, RunMRU, Jump Lists) and crypto-stack download remnants, and a lightweight super-timeline CSV.
+Coverage includes: system/user/network state, running processes with LOLBAS pattern flags, services & drivers, startup/Run-key/scheduled-task persistence, RDP activity, lateral-movement artifacts (SMB sessions, mapped drives, WMI persistence, PsExec), privilege-escalation indicators (unquoted service paths, `AlwaysInstallElevated`, token privileges), obfuscated-script scan, browser artifact metadata (all profiles, no decryption), Recent/Amcache/Prefetch, Recycle Bin, shadow copies, key Windows event IDs, optional registry hive & EVTX export, NTFS/MFT info, file hashing for IOC matching, remote-access/RMM presence **and connection history**, per-user execution evidence (UserAssist, MUICache, RunMRU, Jump Lists), crypto-stack download remnants, Mark-of-the-Web (which files came from the internet, and the URL), and a lightweight super-timeline CSV.
 
 On Linux: cron / systemd persistence, SUID/SGID enumeration, SSH keys, container & cloud context, and a critical-file integrity baseline — see [`linux/README.md`](linux/README.md).
 
@@ -340,7 +340,13 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.3.0 — the seams between the two editions (current)
+### v1.4.0 — where it came from, and what we could not see (current)
+- **Three new Windows modules** (30 → 33): `rmm` (22 remote-access products plus the connection histories that are plain text and need no admin), `useractivity` (UserAssist, MUICache, RunMRU, Jump Lists, CryptnetUrlCache — current user only, and it says so), and `motw` (Mark-of-the-Web: which files came from the internet, and the URL).
+- **`summary.moduleLimitations`** — what each module could *not* do, machine-readable. Absence of a finding means nothing until you have read it: a module that collected less than its section header claims is the difference between "clean" and "not looked at".
+- **Schema 1.4**: one timestamp format everywhere (ISO 8601 UTC), pinned by a pattern and asserted by both harnesses. Windows used to write local time with an offset while Linux wrote `Z`.
+- **Fixed, and older than all of it**: `summary.json` and `findings.json` were written with a UTF-8 BOM on Windows PowerShell 5.1 — the declared minimum — which a strict JSON parser rejects outright. CI runs pwsh 7, so it went unnoticed for three releases. Full list in [CHANGELOG.md](CHANGELOG.md).
+
+### v1.3.0 — the seams between the two editions
 - Contributed by Yalguun Tumenkhuu ([@fg0x0](https://github.com/fg0x0)), reviewed and merged by the maintainer — the project's first outside contribution. A minor version, not a patch: output filenames and several `stats` keys changed, so anything parsing a previous run needs updating.
 - The "unified" `summary.json` used six different key spellings for the same concepts; the Windows producer was never validated against the schema it is the flagship of; an unknown flag was swallowed by `-Silent`; a value-less `--output` wrote the evidence tree to `/`. All closed. Full list in [CHANGELOG.md](CHANGELOG.md).
 
@@ -617,11 +623,11 @@ sudo ./tatar-linux.sh --all --dry-run   # төлөвлөгөө харах (юу 
 
 ## Модулиуд
 
-**Windows (32):** memory · network · process · sessions · services · sysinfo · users · persistence · autoruns · shares · firewall · drivers · apps · prefetch · usb · pshistory · obfscan · rdp · lateral · privesc · browser · fsartifacts · deleted · shadow · eventlogs · hives · mft · indicators · rmm · useractivity · hashes · timeline
+**Windows (33):** memory · network · process · sessions · services · sysinfo · users · persistence · autoruns · shares · firewall · drivers · apps · prefetch · usb · pshistory · obfscan · rdp · lateral · privesc · browser · fsartifacts · deleted · shadow · eventlogs · hives · mft · indicators · rmm · useractivity · motw · hashes · timeline
 
 **Linux (18):** sysinfo · network · process · sessions · users · services · persistence · apps · suid · sshkeys · bashhistory · kernelmods · indicators · hashes · logs · timeline · containers · integrity
 
-Хамрах хүрээ: систем/хэрэглэгч/сүлжээний төлөв, LOLBAS command-line флагтай процессууд, process genealogy, persistence (Run keys, scheduled tasks, IFEO/AppInit/LSA/Winlogon ASEP-ууд), RDP/lateral movement, privilege-escalation индикатор, обфускаци скан, browser artifact мета, Recent/Amcache/Prefetch, shadow copy, чухал Windows event ID, NTFS/MFT, IOC-д зориулсан file hashing, remote access/RMM-ийн оршин байдал **ба холболтын түүх**, хэрэглэгчийн гүйцэтгэлийн нотолгоо (UserAssist, MUICache, RunMRU, Jump List), crypto stack-аар татсан файлын ул мөр, super-timeline. Linux талд: cron/systemd persistence, SUID/SGID, SSH түлхүүр, container/cloud context, критикал файлын integrity baseline гэх мэт — дэлгэрэнгүйг [`linux/README.md`](linux/README.md)-ийн монгол хэсгээс үз.
+Хамрах хүрээ: систем/хэрэглэгч/сүлжээний төлөв, LOLBAS command-line флагтай процессууд, process genealogy, persistence (Run keys, scheduled tasks, IFEO/AppInit/LSA/Winlogon ASEP-ууд), RDP/lateral movement, privilege-escalation индикатор, обфускаци скан, browser artifact мета, Recent/Amcache/Prefetch, shadow copy, чухал Windows event ID, NTFS/MFT, IOC-д зориулсан file hashing, remote access/RMM-ийн оршин байдал **ба холболтын түүх**, хэрэглэгчийн гүйцэтгэлийн нотолгоо (UserAssist, MUICache, RunMRU, Jump List), crypto stack-аар татсан файлын ул мөр, Mark-of-the-Web (аль файл интернетээс ирсэн, ямар URL-аас), super-timeline. Linux талд: cron/systemd persistence, SUID/SGID, SSH түлхүүр, container/cloud context, критикал файлын integrity baseline гэх мэт — дэлгэрэнгүйг [`linux/README.md`](linux/README.md)-ийн монгол хэсгээс үз.
 
 ---
 
