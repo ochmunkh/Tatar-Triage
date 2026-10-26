@@ -40,7 +40,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   That is a deliberate widening: the output contract is what the two editions
   share, not the module list, and these artifacts have no Linux equivalent.
   Nothing in `schema/` or the contract harnesses changes shape.
-
 - `tests/test-json-escape.sh` — twenty-nine inputs run through **every path**
   `json_escape` has, including the no-`python3` fallback, which the test forces
   by shadowing `python3`. The assertion is a round trip through a real JSON
@@ -55,6 +54,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   and the four things a new module must declare before it can be in the default
   set. Written because the project now takes outside contributions, and a forker
   needs to know which few things are not open to change.
+- `.github/scripts/check_contract_parity.py` — the Win↔Linux parity gate
+  described under **Changed**.
+- **Output schema 1.3 — findings now carry their evidence.** Five properties,
+  on every finding, on both editions:
+
+  | Field | What it answers |
+  |---|---|
+  | `paths[]` | *Which files is this about?* Exactly the set the allowlist, publisher, hash and IOC passes can reach — so it is also the audit trail for a suppression: a finding with an empty `paths[]` can never be hidden by a path, publisher or hash rule. |
+  | `confidenceReason` | *Why that number?* `confidence` was a magic constant the consumer had to look up. |
+  | `iocIndicator` | *Which indicator matched?* Previously readable only by parsing the `IOC match: <indicator> \| ...` prefix of `detail` (still written, for human readers). |
+  | `module` | *Which collector made this claim?* |
+  | `collected_at` | *When within the run?* Not the same as `generated`. |
+
+  Additive and optional: a 1.2 consumer keeps working against a 1.3 document.
+  Both test harnesses nonetheless require all five on **every** finding —
+  optional is a promise to the consumer, not a licence for the producer to
+  skip them. A field that is present nine times out of ten is worse than no
+  field, because a rule written against it fails on the tenth.
+
+  Three fields that were proposed were **left out**, and the reasons are the
+  point: `hashes[]` would hash files at finding time, which is extra I/O and,
+  worse, reads executables — the behaviour most likely to wake an EDR, against
+  the project's own constraint. `limitations[]` describes a *module* ("could
+  not read /proc/N: permission denied"), not a finding, so putting it on each
+  finding would have produced copy-pasted boilerplate; it belongs in the
+  summary. `found_in[]` (de-duplication) was then **dropped entirely**, on
+  evidence: see below.
+- `tests/test-gs-array.sh` — the Linux findings pipeline is a flat
+  separator-delimited record, and `paths[]` is the first array in it. Carrying
+  an array there is only safe while a string collected from the suspect host
+  cannot smuggle a separator into the record, so that defence is pinned by a
+  test instead of a comment. Removing the sanitisation makes five of its
+  assertions fail — including `module` reading back as `T1059` and
+  `collected_at` as `0.4`, which is the column-shifting forgery it exists to
+  stop.
 
 ### Changed
 - **Both contract harnesses now assert the same rule set, and CI fails if they
@@ -78,12 +112,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   NDJSON would have spread that one thing-that-must-never-be-wrong across all
   eighteen module emit sites. Both separators are now stripped from every
   collected string at the point it enters a finding.
-
 - `json_escape` no longer forks for a string that contains nothing to escape —
   the overwhelmingly common case. It used to spawn a `python3` process per
   field (~13 ms each, six per finding), so a run producing 200 findings spent
   roughly 15 seconds escaping text that needed no escaping. Measured on the
   same host, 100 calls went from 1.27 s to 0.001 s. No output changes.
+- The docs gate now holds the **version badges** to the collectors' own version
+  constant, in both READMEs. The badge read `1.2` for the whole 1.3 line; a
+  badge is the first thing a reader believes, so it is checked like the module
+  counts are. The README changelog had also stopped at v1.2.5, still marked
+  `(current)` — v1.3.0 is now recorded there.
 
 ### Removed
 - **De-duplication (`found_in[]`) was cut after measuring, not after
@@ -154,9 +192,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   explains why in the report. A guessed KNOWNFOLDERID or Jump List AppID mapping
   in a forensic record is worse than an untranslated one — the same reason the
   AppID is not decoded to an application name.
-
-- `.github/scripts/check_contract_parity.py` — the Win↔Linux parity gate
-  described under **Changed**.
 - The collectors stated their version **twice** — the comment header carried
   `TATAR Triage Toolkit v1.3.0` a few lines above the single version constant,
   the same trap the banner had before it was fixed: a second copy a bump
@@ -174,44 +209,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   on a system that rewrites line endings hashes differently while being the
   same source. Verified against v1.3.0 — the published asset is exactly the
   tagged blob with CRLF applied, and `SHA256SUMS.txt` matches it.
-- The docs gate now holds the **version badges** to the collectors' own version
-  constant, in both READMEs. The badge read `1.2` for the whole 1.3 line; a
-  badge is the first thing a reader believes, so it is checked like the module
-  counts are. The README changelog had also stopped at v1.2.5, still marked
-  `(current)` — v1.3.0 is now recorded there.
-- **Output schema 1.3 — findings now carry their evidence.** Five properties,
-  on every finding, on both editions:
-
-  | Field | What it answers |
-  |---|---|
-  | `paths[]` | *Which files is this about?* Exactly the set the allowlist, publisher, hash and IOC passes can reach — so it is also the audit trail for a suppression: a finding with an empty `paths[]` can never be hidden by a path, publisher or hash rule. |
-  | `confidenceReason` | *Why that number?* `confidence` was a magic constant the consumer had to look up. |
-  | `iocIndicator` | *Which indicator matched?* Previously readable only by parsing the `IOC match: <indicator> \| ...` prefix of `detail` (still written, for human readers). |
-  | `module` | *Which collector made this claim?* |
-  | `collected_at` | *When within the run?* Not the same as `generated`. |
-
-  Additive and optional: a 1.2 consumer keeps working against a 1.3 document.
-  Both test harnesses nonetheless require all five on **every** finding —
-  optional is a promise to the consumer, not a licence for the producer to
-  skip them. A field that is present nine times out of ten is worse than no
-  field, because a rule written against it fails on the tenth.
-
-  Three fields that were proposed were **left out**, and the reasons are the
-  point: `hashes[]` would hash files at finding time, which is extra I/O and,
-  worse, reads executables — the behaviour most likely to wake an EDR, against
-  the project's own constraint. `limitations[]` describes a *module* ("could
-  not read /proc/N: permission denied"), not a finding, so putting it on each
-  finding would have produced copy-pasted boilerplate; it belongs in the
-  summary. `found_in[]` (de-duplication) was then **dropped entirely**, on
-  evidence: see below.
-- `tests/test-gs-array.sh` — the Linux findings pipeline is a flat
-  separator-delimited record, and `paths[]` is the first array in it. Carrying
-  an array there is only safe while a string collected from the suspect host
-  cannot smuggle a separator into the record, so that defence is pinned by a
-  test instead of a comment. Removing the sanitisation makes five of its
-  assertions fail — including `module` reading back as `T1059` and
-  `collected_at` as `0.4`, which is the column-shifting forgery it exists to
-  stop.
 - **The Linux JSON escaper emitted invalid JSON on a host without `python3`.**
   `json_escape` escaped only `\` and `"` on its fallback path and passed every
   other control character through untouched, so a single `0x07` or `0x1B` byte
