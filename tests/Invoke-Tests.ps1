@@ -203,8 +203,15 @@ function Assert-Contract {
     # refuses the file. CI runs pwsh, so this went unnoticed for three releases;
     # the assertion reads raw bytes rather than trusting the edition it runs on.
     if ($jsonPath -and (Test-Path $jsonPath)) {
-        $firstBytes = [byte[]](Get-Content -LiteralPath $jsonPath -Encoding Byte -TotalCount 3 -ErrorAction SilentlyContinue)
-        $hasBom = ($firstBytes.Count -eq 3 -and $firstBytes[0] -eq 0xEF -and $firstBytes[1] -eq 0xBB -and $firstBytes[2] -eq 0xBF)
+        # [IO.File]::ReadAllBytes, not Get-Content -Encoding Byte: that
+        # parameter value exists only on Windows PowerShell 5.1 and throws on
+        # pwsh 7, which is the very edition split this assertion is about. The
+        # first version of this check made that mistake and CI caught it -
+        # through the "every contract check ran without an error" assertion,
+        # which is exactly the vanished-assertion case that guard exists for.
+        $firstBytes = @()
+        try { $firstBytes = [System.IO.File]::ReadAllBytes($jsonPath) } catch {}
+        $hasBom = ($firstBytes.Count -ge 3 -and $firstBytes[0] -eq 0xEF -and $firstBytes[1] -eq 0xBB -and $firstBytes[2] -eq 0xBF)
         Check "$Label : the document has no UTF-8 BOM" (-not $hasBom) $(if ($hasBom) { 'starts with EF BB BF' } else { '' })
     } else {
         Check "$Label : the document has no UTF-8 BOM" $false 'output directory unavailable'

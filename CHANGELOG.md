@@ -115,6 +115,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   bytes** rather than trusting whichever PowerShell they happen to run under.
   Found while validating the two new modules' output — the second defect this
   month whose whole cause was CI exercising one PowerShell and users another.
+  The first version of that assertion read the bytes with
+  `Get-Content -Encoding Byte`, which exists only on 5.1 and throws on pwsh —
+  the same edition split, in the opposite direction. CI caught it, and it caught
+  it through the *"every contract check ran without an error"* guard added last
+  week: the BOM check errored instead of running, and that guard is precisely
+  what stops a vanished assertion from passing as a green suite. It now reads
+  bytes with `[IO.File]::ReadAllBytes`, which has no edition.
 - **The first draft of `useractivity` raised 142 false findings, and the fix is
   the interesting part.** The obvious rule — flag any execution record outside
   Program Files — was written first and then measured on a real workstation. It
