@@ -266,3 +266,14 @@ jobs:
       # both files, so it is where the comparison belongs.
       - name: Both editions are held to the same contract
         run: python3 .github/scripts/check_contract_parity.py .
+
+      # TATAR is run on live production endpoints on the strength of eight
+      # claims in docs/AV-SAFETY.md -- no egress, no credential dumping, no
+      # AMSI tampering, nothing EDR-sensitive on by default. Those are easy
+      # promises to make in a document and easy to break in a commit; one
+      # Invoke-WebRequest for a "quick version check" and the document is a
+      # lie that nobody notices until a customer's EDR notices for us. Each
+      # claim has an ID and a check, cross-referenced both ways: an
+      # undocumented check and an unenforced claim both fail here.
+      - name: The AV-safety claims still hold
+        run: python3 .github/scripts/check_av_safety.py .

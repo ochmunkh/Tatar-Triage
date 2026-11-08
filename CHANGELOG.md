@@ -7,6 +7,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 ## [Unreleased]
 
 ### Added
+- **`docs/AV-SAFETY.md` + `check_av_safety.py`** — the eight claims this tool
+  is run on a live production endpoint on the strength of, each one gated.
+
+  The claim that TATAR will not trip EDR has lived in prose since launch, and
+  prose does not fail a build. One `Invoke-WebRequest` added for a "quick
+  version check", one default flipped to `$true` for convenience, and the
+  document becomes a lie that nobody notices until a customer's EDR notices for
+  us. So each claim now has an ID — **AV-01 … AV-08**: no egress, no credential
+  material, no AMSI/ETW tampering, no dynamic execution, EDR-sensitive
+  operations off by default, no binary shipped, no host modification, no
+  persistence — and each ID has a named function enforcing it on every push.
+
+  Three details worth recording, because each was a wrong first attempt:
+
+  - The checks run against a **comment- and string-stripped** view of the
+    source. The collector *looks for* `Invoke-Expression` and
+    `FromBase64String` — they are detection strings in the Windows edition.
+    What is forbidden is executing them, not naming them.
+  - **AV-02 and AV-03 are the exception** and read strings too. A real AMSI
+    bypass hides its identifiers in exactly that place —
+    `GetField("amsiInitFailed")` — and the first version of the gate missed a
+    planted one for that reason. The collector has no reason to name LSASS or
+    the AMSI internals at all, so for those two the ban is absolute.
+  - **`rm` is not banned outright**, which would have been a lie in the other
+    direction, since the Linux edition does clean up after itself. Every `rm`
+    operand must be a variable assigned from `mktemp`. A literal path fails.
+
+  The document and the script are cross-referenced **both ways**: a claim with
+  no check fails the build, and a check with no claim fails it too — as does
+  rewording a claim away from what is actually enforced. The gate was
+  mutation-tested against 16 planted violations before being trusted.
+
+- **Sigma handoff documented** (`README.md`, both halves) — and a misreading
+  corrected in the process. The per-event-ID CSVs are capped at 50 events and
+  are a triage preview, **not** a hunting corpus; Hayabusa and Chainsaw take
+  **EVTX**, which is what `-ExportEvtx` produces. The README now says which
+  output goes to which tool, with the commands.
 - **`-Quick` / `--quick`** — a named high-signal profile, for the case this
   tool exists for: a responder on a host they want to be off again quickly.
   Membership was chosen by **measurement**, not by taste, and the two editions

@@ -269,6 +269,35 @@ Each collector maps to the adversary techniques it helps **detect / investigate*
 
 ---
 
+## Handing off to a Sigma hunter
+
+The event-log module writes `EventLogs\evt_<ID>.csv` for 15 high-signal event
+IDs, capped at 50 events each. That is a preview to read on the spot during
+triage. It is deliberately small, and it is **not** a hunting corpus — a common
+misreading worth stating plainly.
+
+When you want Sigma rules run over the full history, add `-ExportEvtx`. That
+writes `Security.evtx`, `System.evtx`, `Application.evtx` and, where Sysmon is
+installed, `Sysmon.evtx` into the same `EventLogs\` folder. EVTX — not CSV — is
+what [Hayabusa](https://github.com/Yamato-Security/hayabusa) and
+[Chainsaw](https://github.com/WithSecureLabs/chainsaw) take as input, so the
+folder can be handed to either one unchanged:
+
+```bash
+hayabusa csv-timeline -d EventLogs/ -o timeline.csv
+chainsaw hunt EventLogs/ -s sigma/ --mapping mappings/sigma-event-logs-all.yml
+```
+
+`-ExportEvtx` is off by default because exporting full logs is noisy and
+occasionally flagged — see [AV / EDR safety](docs/AV-SAFETY.md).
+
+The division of labour is the point. TATAR answers *what is the state of this
+host right now*; a Sigma engine answers *what matched across the whole log
+history*. Those are different questions, and this folder is the seam between
+them.
+
+---
+
 ## Output
 
 ```
@@ -297,6 +326,7 @@ C:\Forensic\<HOST>_<YYYY-MM-DD_HH-mm-ss>\
 - **Do not reboot / shut down** the host before collection finishes.
 - The output can contain **sensitive data** (registry hives, browser metadata). Encrypt the archive and transfer it securely.
 - Some modules (`hives`, `memorydump`, `exportevtx`) are known to trigger EDR/AV. This is expected — **coordinate with your SOC and allow-list the tool in advance** rather than disabling EDR.
+- What the collector will and will not do on a live endpoint is written down as eight numbered claims in **[AV / EDR safety](docs/AV-SAFETY.md)**, each enforced by a CI check. If a commit breaks one, the build fails and names it.
 
 ### Getting past AV without evading it
 
@@ -687,6 +717,37 @@ Collector бүр нь халдагчийн аль техникийг **илрү�
 
 ---
 
+## Sigma hunter-т дамжуулах
+
+Үйл явдлын логийн модуль нь өндөр дохиотой 15 event ID тутамд
+`EventLogs\evt_<ID>.csv` бичиж, тус бүрийг 50 event-ээр хязгаарлана. Энэ нь
+triage хийж байх үедээ шууд уншихад зориулсан урьдчилсан харагдац. Зориудаар
+жижиг бөгөөд **hunting-ийн өгөгдлийн сан биш** — энэ бол түгээмэл буруу
+ойлголт учир ил хэлэх нь зүйтэй.
+
+Sigma дүрмийг бүх түүхэн лог дээр ажиллуулахыг хүсвэл `-ExportEvtx` нэм. Тэгвэл
+`Security.evtx`, `System.evtx`, `Application.evtx`, Sysmon суулгасан бол
+`Sysmon.evtx`-г мөн тэр `EventLogs\` хавтас руу бичнэ. CSV биш, яг EVTX бол
+[Hayabusa](https://github.com/Yamato-Security/hayabusa) болон
+[Chainsaw](https://github.com/WithSecureLabs/chainsaw)-ийн оролтоор авдаг
+формат. Тиймээс тэр хавтсыг аль алинд нь хэвээр нь дамжуулж болно:
+
+```bash
+hayabusa csv-timeline -d EventLogs/ -o timeline.csv
+chainsaw hunt EventLogs/ -s sigma/ --mapping mappings/sigma-event-logs-all.yml
+```
+
+`-ExportEvtx` анхдагчаар унтраалттай, учир нь бүрэн лог экспортлох нь чимээ
+шуугиантай бөгөөд хааяа тэмдэглэгддэг — [AV / EDR аюулгүй
+байдал](docs/AV-SAFETY.md)-ыг үз.
+
+Ажлын хуваарилалт нь гол санаа. TATAR нь *энэ хост яг одоо ямар төлөвтэй байна
+вэ* гэдэгт хариулдаг; Sigma хөдөлгүүр нь *бүх логийн түүхэнд юу таарсан бэ*
+гэдэгт хариулдаг. Эдгээр нь өөр асуултууд бөгөөд энэ хавтас бол тэдгээрийн
+хоорондох зангилаа юм.
+
+---
+
 ## Гаралт
 
 ```
@@ -713,7 +774,7 @@ Collector бүр нь халдагчийн аль техникийг **илрү�
 
 ### AV-г тойрч гарахгүйгээр ажиллуулах
 
-Энэ хэрэгсэл зориудаар **ил тод** бичигдсэн (обфускаци, AMSI bypass үгүй). AV саад болохгүйгээр ажиллуулах зөв, аудит хийгдэх боломжтой арга:
+Энэ хэрэгсэл зориудаар **ил тод** бичигдсэн (обфускаци, AMSI bypass үгүй). Цуглуулагч амьд хост дээр юу хийх, юу хийхгүйг **[AV / EDR аюулгүй байдал](docs/AV-SAFETY.md)** дотор номерлэсэн найман мэдэгдлээр бичсэн бөгөөд тус бүрийг CI шалгалт баталгаажуулна. Хэрэв нэг commit мэдэгдлийг зөрчвөл build унаж, аль мэдэгдэлийг нэрлэнэ. AV саад болохгүйгээр ажиллуулах зөв, аудит хийгдэх боломжтой арга:
 
 1. Скриптэд **code-sign** хий (`Set-AuthenticodeSignature`).
 2. Түүний SHA-256-ийг **нийтэл** — хариу үзүүлэгч шалгаад allow-list хийж чадна.
