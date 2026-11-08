@@ -4,6 +4,65 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **`-Quick` / `--quick`** — a named high-signal profile, for the case this
+  tool exists for: a responder on a host they want to be off again quickly.
+  Membership was chosen by **measurement**, not by taste, and the two editions
+  differ because the measurements do:
+
+  | | Windows | Linux |
+  |---|---|---|
+  | Modules | 9 of 33 | 10 of 18 |
+  | Measured | **10.1 s** | **under 1 s** |
+  | Excluded, and why | `indicators` 16.9 s — walks temp/appdata for executables, more than the other nine together, and its finding is the noisiest the tool raises · `motw` 3.0 s — answers *how did it get here*, which is the `-All` question | `suid` 4.05 s — `find / -xdev`, against 0.10–0.27 s for everything else |
+
+  It answers *"is something wrong on this host"*. `-All` answers *"how did it
+  get here"*. Naming the question a profile answers is more useful than listing
+  what it leaves out.
+
+  The membership lives in **one place — the code**. `-List` marks it with
+  `[quick]` rather than the README repeating it, because four hand-maintained
+  lists in this repo have already gone stale (module list, version badge,
+  README changelog, version literal), and `check_docs_parity.py` now fails if a
+  profile names something that is not a module.
+
+  Giving two module selectors at once (`-Quick -All`, `--quick --modules …`) is
+  a **usage error, exit 1**, not a silent precedence rule — the same reasoning
+  as a value-taking flag that consumes the next token: the run would look fine
+  and collect something other than what was asked for.
+- **CI now runs the suite on Windows PowerShell 5.1**, the version
+  `#Requires -Version 5.1` declares and the one preinstalled on every Windows
+  10/11 host. Every step of the existing Windows job uses pwsh 7, so the
+  declared minimum had never been executed in CI — which is how `summary.json`
+  shipped with a UTF-8 BOM for three releases, and how an array subexpression
+  over a `List[object]` came to evaluate to empty on 5.1 alone. Both were found
+  by hand, late.
+
+  The job asserts it really is 5.x Desktop before doing anything (a silent
+  fallback to pwsh would duplicate the other job while appearing to add
+  coverage), and reads the first **bytes** of each document rather than only
+  parsing it — `ConvertFrom-Json` on 5.1 accepts a BOM happily, so a parse-only
+  check would have passed on the exact bug the job exists for.
+
+### Fixed
+- **A contract test blamed the collector for a host that would not run its own
+  probe.** T9 raises a finding on purpose by copying the system `sleep` to
+  `/tmp` and running it. On a distribution that builds coreutils as a single
+  multi-call binary, `sleep` dispatches on `argv[0]`: copied to another name it
+  prints `coreutils: unknown program` and exits at once. The probe never
+  existed, so the assertion reported `NOFINDING` — which reads as *the
+  collector missed it* and sends whoever is looking at the wrong component. A
+  runner image change was enough to expose it.
+
+  The probe is now a copy of `bash`, which does not dispatch on its own name
+  (and is run as `-c 'sleep 300; :'`, because bash `exec`s a lone external
+  command and would otherwise point `/proc/PID/exe` at `/bin/sleep`). The probe
+  being **running** is its own assertion now: *"the allowlist engine is broken"*
+  and *"this host would not run the probe"* are two findings that need two
+  different people, and the suite says which one it has.
+
 ## [1.4.0] — 2026-10-26
 
 ### Added

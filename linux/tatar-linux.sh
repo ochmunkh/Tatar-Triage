@@ -52,10 +52,27 @@ GSEP="$(printf '\035')"   # ASCII Group Separator (0x1D)
 # analyst can tell which collector made the claim. Set by the dispatch loop.
 CURRENT_MODULE=""
 
+# --quick: the highest-signal subset, for the case this tool exists for - a
+# responder on a host they want to be off again quickly. Chosen by MEASUREMENT
+# on this edition, not by taste:
+#
+#   every module below          0.10 - 0.27s each   (~1.3s for the whole set)
+#   suid                        4.05s               excluded: find / -xdev
+#
+# It answers "is something wrong on this host". It does NOT answer "how did it
+# get here" - that is what --all is for. Saying which question a profile
+# answers is more useful than listing what it leaves out.
+#
+# NOTE the asymmetry with the Windows edition, which excludes `indicators`:
+# there that module walks temp and appdata for executables and costs 16.9s,
+# while here the same name costs 0.27s. The profiles are per-platform because
+# the measurements are.
+QUICK_MODULES="sysinfo network process sessions users services persistence indicators bashhistory sshkeys"
+
 # ---------------------------------------------------------------------------
 # Argument parsing  (-flag / --flag, case-insensitive-ish)
 # ---------------------------------------------------------------------------
-ALL=0; LIST=0; HELP=0; COMPRESS=0; SILENT=0; DUMP_DELETED=0; DRYRUN=0
+ALL=0; LIST=0; HELP=0; COMPRESS=0; SILENT=0; DUMP_DELETED=0; DRYRUN=0; QUICK=0
 OUTPUT_BASE="/tmp/forensic"; CASE_ID=""; EXAMINER=""
 MODULES=""; UNKNOWN=""; ALLOWLIST=""; IOCFILE=""
 
@@ -75,6 +92,7 @@ while [ $# -gt 0 ]; do
     key="$(printf '%s' "$raw" | sed 's/^--*//' | tr '[:upper:]' '[:lower:]')"
     case "$key" in
         all)         ALL=1 ;;
+        quick|fast)  QUICK=1 ;;
         list)        LIST=1 ;;
         help|h|\?)   HELP=1 ;;
         compress)    COMPRESS=1 ;;
@@ -414,6 +432,7 @@ cat <<EOF
 $TOOL_DISPLAY v$VERSION
 
 USAGE:
+  sudo ./tatar-linux.sh --quick                   Highest-signal subset, seconds (see --list)
   sudo ./tatar-linux.sh --all                     Run all modules (order of volatility)
   sudo ./tatar-linux.sh --modules network,process Run selected modules
   sudo ./tatar-linux.sh --all --dry-run           Preview the plan; write nothing
@@ -1234,15 +1253,32 @@ for u in $UNKNOWN; do c_out "[!] Unknown option: $u"; done
 if [ "$HELP" -eq 1 ]; then show_help; exit 0; fi
 if [ "$LIST" -eq 1 ]; then
     echo "Available modules (order of volatility):"; echo ""
-    for m in $MOD_NAMES; do echo "  $m"; done
-    echo ""; echo "Total: $(echo $MOD_NAMES | wc -w) modules"; exit 0
+    for m in $MOD_NAMES; do
+        case " $QUICK_MODULES " in *" $m "*) echo "  $m   [quick]" ;; *) echo "  $m" ;; esac
+    done
+    echo ""
+    echo "Total: $(echo $MOD_NAMES | wc -w) modules | --quick runs the $(echo $QUICK_MODULES | wc -w) marked [quick]"
+    exit 0
 fi
 
 TO_RUN=""
+# Two module selectors at once is a usage error, not a silent precedence rule.
+# Quietly picking one would be the same class of defect as a value-less flag
+# consuming the next token: the run looks fine and collected something other
+# than what was asked for.
+SEL=0
+[ "$ALL" -eq 1 ] && SEL=$((SEL+1))
+[ "$QUICK" -eq 1 ] && SEL=$((SEL+1))
+[ -n "$MODULES" ] && SEL=$((SEL+1))
+if [ "$SEL" -gt 1 ]; then
+    printf '[x] FATAL: use only one of --all, --quick or --modules\n' >&2
+    exit 1
+fi
 if [ "$ALL" -eq 1 ]; then TO_RUN="$MOD_NAMES"
+elif [ "$QUICK" -eq 1 ]; then TO_RUN="$QUICK_MODULES"
 elif [ -n "$MODULES" ]; then TO_RUN="$MODULES"
 else
-    [ "$SILENT" -eq 0 ] && { show_help; echo ""; echo "[i] Nothing selected. Use --all or --modules."; }
+    [ "$SILENT" -eq 0 ] && { show_help; echo ""; echo "[i] Nothing selected. Use --quick, --all or --modules."; }
     exit 1
 fi
 

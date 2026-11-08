@@ -181,6 +181,41 @@ def check_schema_mentions(name, text, expected):
              % (name, ", ".join(wrong), expected))
 
 
+def quick_profiles(ps1, sh):
+    """The --Quick / --quick module list each edition declares."""
+    w = re.search(r"\$script:QuickModules\s*=\s*@\(([^)]*)\)", ps1)
+    l = re.search(r'^QUICK_MODULES="([^"]*)"', sh, re.M)
+    if not w:
+        fail("Tatar.ps1: could not read $script:QuickModules")
+    if not l:
+        fail("linux/tatar-linux.sh: could not read QUICK_MODULES")
+    win = re.findall(r"'([^']+)'", w.group(1)) if w else []
+    lin = l.group(1).split() if l else []
+    return win, lin
+
+
+def check_quick_profile(name, quick, modules):
+    """Every name in a quick profile has to BE a module.
+
+    This repo has produced four stale-list defects already - the module list,
+    the version badge, the README changelog and the version literal - so a
+    fifth hand-maintained list of module names does not get to exist without a
+    check. A retired or renamed module would otherwise leave --quick selecting
+    a name that resolves to nothing, and the run would collect less than it
+    said with no error: the silent-skip shape this project keeps finding.
+    """
+    if not quick:
+        fail("%s: the quick profile is empty" % name)
+        return
+    unknown = [m for m in quick if m not in modules]
+    if unknown:
+        fail("%s: the quick profile names %s, which %s not module(s)"
+             % (name, ", ".join(unknown), "is" if len(unknown) == 1 else "are"))
+    dupes = sorted({m for m in quick if quick.count(m) > 1})
+    if dupes:
+        fail("%s: the quick profile repeats %s" % (name, ", ".join(dupes)))
+
+
 def check_version_badge(name, text, expected):
     # The README version badge sat at 1.2 for the whole 1.3 line. A badge is
     # the first thing a reader believes, so it is held to the code the way the
@@ -225,6 +260,11 @@ def main(argv):
     if sv:
         check_schema_mentions("README.md", readme, sv)
         check_schema_mentions("linux/README.md", lreadme, sv)
+
+    # 1b-iii. the --quick profiles name real modules
+    qwin, qlin = quick_profiles(ps1, sh)
+    check_quick_profile("Tatar.ps1", qwin, win)
+    check_quick_profile("linux/tatar-linux.sh", qlin, lin)
 
     # 1c. each collector states its version exactly once
     full = re.search(r"\$script:ToolVersion\s*=\s*'([^']+)'", ps1)

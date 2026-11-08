@@ -175,6 +175,7 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "TATAR finished with issues - check tat
 
 | Option | Description |
 |--------|-------------|
+| `-Quick` / `--quick` | The highest-signal subset, ~10s. Answers *"is something wrong on this host"*; `-All` answers *"how did it get here"*. The membership is measured, not chosen by taste, and `-List` marks it — so there is one copy of the list, in the code |
 | `-All` / `--all` | Run all modules |
 | `-Modules a,b,c` | Run only the named modules |
 | `-List` | List modules and exit |
@@ -594,6 +595,7 @@ sudo ./tatar-linux.sh --all --dry-run   # төлөвлөгөө харах (юу 
 
 | Флаг | Тайлбар |
 |--------|-------------|
+| `-Quick` / `--quick` | Хамгийн өндөр дохиотой дэд олонлог, ~10 сек. *"Энэ хост дээр ямар нэг зүйл буруу байна уу"* гэдэгт хариулна; `-All` нь *"яаж ийшээ орж ирсэн бэ"* гэдэгт. Бүрэлдэхүүнийг **хэмжилтээр** сонгосон, `-List` түүнийг тэмдэглэнэ — жагсаалт нэг л газар, кодонд байна |
 | `-All` / `--all` | Бүх модулийг ажиллуулна |
 | `-Modules a,b,c` | Зөвхөн нэрлэсэн модулиудыг ажиллуулна |
 | `-List` | Модулиудыг жагсаагаад гарна |

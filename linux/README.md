@@ -59,6 +59,7 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 
 | Option | Description |
 |--------|-------------|
+| `--quick` | The highest-signal subset, under a second. Answers *"is something wrong on this host"*; `--all` answers *"how did it get here"*. Membership is measured (`suid` is excluded: its filesystem walk costs 4s against 0.1–0.3s for everything else), and `--list` marks it |
 | `--all` | Run all modules |
 | `--modules a,b,c` | Run only the named modules |
 | `--list` | List modules and exit |
@@ -228,6 +229,7 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 
 | Флаг | Тайлбар |
 |--------|-------------|
+| `--quick` | Хамгийн өндөр дохиотой дэд олонлог, нэг секундээс бага. *"Энэ хост дээр ямар нэг зүйл буруу байна уу"* гэдэгт хариулна; `--all` нь *"яаж ийшээ орж ирсэн бэ"* гэдэгт. Бүрэлдэхүүн нь хэмжилтээр (`suid` хасагдсан: файлын системийн тойролт нь 4 сек, бусад нь 0.1–0.3 сек), `--list` түүнийг тэмдэглэнэ |
 | `--all` | Бүх модулийг ажиллуулна |
 | `--modules a,b,c` | Зөвхөн нэрлэсэн модулиудыг ажиллуулна |
 | `--list` | Модулиудыг жагсаагаад гарна |

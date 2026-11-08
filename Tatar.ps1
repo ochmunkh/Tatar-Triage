@@ -98,7 +98,7 @@ $ErrorActionPreference = 'Continue'
 $script:ToolVersion = '1.4.0'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
-$All=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
+$All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
 $CollectHives=$false; $ExportEvtx=$false; $MemoryDump=$false; $Silent=$false
 $Modules=@(); $OutputPath='C:\Forensic'; $CaseId=''; $Examiner=''; $Allowlist=''; $IOCFile=''; $UnknownOpts=@()
 
@@ -124,6 +124,8 @@ for ($k = 0; $k -lt $args.Count; $k++) {
     $next = if ($k+1 -lt $args.Count) { $args[$k+1] } else { $null }
     switch ($name) {
         'all'          { $All = $true }
+        'quick'        { $Quick = $true }
+        'fast'         { $Quick = $true }
         'list'         { $List = $true }
         'help'         { $Help = $true }
         'h'            { $Help = $true }
@@ -373,6 +375,7 @@ function Show-Help {
 TATAR Triage Toolkit v$($script:ToolVersion) - Windows quick triage collector
 
 USAGE:
+  .\Tatar.ps1 -Quick                        Highest-signal subset, ~10s (see -List)
   .\Tatar.ps1 -All                          Run all modules (order of volatility)
   .\Tatar.ps1 -Modules net,process,rdp      Run selected modules
   .\Tatar.ps1 -All -DryRun                  Preview the plan; write nothing
@@ -2126,6 +2129,28 @@ function Collect-MOTW {
     } catch { Add-Err "MOTW failed: $_" }
 }
 
+# --Quick: the highest-signal subset, for the case this tool exists for - a
+# responder on a host they want to be off again quickly. Chosen by MEASUREMENT
+# on this edition, not by taste. Measured on an ordinary workstation:
+#
+#   useractivity 3.4s   network 2.1s   persistence 1.5s   services 1.4s
+#   sysinfo      1.3s   process 0.8s   rmm        0.5s    sessions 0.4s
+#   users        0.3s                            = 10.1s measured end to end
+#
+#   indicators  16.9s   EXCLUDED - it walks temp and appdata for executables
+#                       and costs more than the other nine put together. Its
+#                       finding is also the noisiest the tool raises, by its
+#                       own admission.
+#   motw         3.0s   EXCLUDED - it answers "how did this get here", which
+#                       is the --All question. --Quick answers "is something
+#                       wrong on this host".
+#
+# Saying which QUESTION a profile answers is more useful than listing what it
+# leaves out. Note the asymmetry with the Linux edition, which keeps
+# `indicators` in its profile: the same module name costs 0.27s there. The
+# profiles differ per platform because the measurements do.
+$script:QuickModules = @('sysinfo','network','process','sessions','users','services','persistence','rmm','useractivity')
+
 # =====================================================================
 #  Module registry  (ORDER = order of volatility, then derived artifacts)
 # =====================================================================
@@ -2175,15 +2200,27 @@ foreach ($u in $UnknownOpts) { Write-Console "[!] Unknown option: $u" 'Yellow' }
 if ($Help) { Show-Help; exit 0 }
 if ($List) {
     Write-Host "Available modules (order of volatility):`n"
-    $script:Collectors.Keys | ForEach-Object { Write-Host "  $_" }
-    Write-Host "`nTotal: $($script:Collectors.Count) modules"
+    $script:Collectors.Keys | ForEach-Object {
+        if ($script:QuickModules -contains $_) { Write-Host ("  {0}   [quick]" -f $_) } else { Write-Host "  $_" }
+    }
+    Write-Host ("`nTotal: {0} modules | -Quick runs the {1} marked [quick]" -f $script:Collectors.Count, @($script:QuickModules).Count)
     exit 0
 }
 
+# Two module selectors at once is a usage error, not a silent precedence rule.
+# Quietly preferring one would be the same class of defect as a value-less flag
+# consuming the next token: the run looks fine and collected something other
+# than what was asked for.
+$selectors = @($All, $Quick, [bool]$Modules) | Where-Object { $_ }
+if ($selectors.Count -gt 1) {
+    [Console]::Error.WriteLine('[x] FATAL: use only one of -All, -Quick or -Modules')
+    exit 1
+}
 $toRun = if ($All) { @($script:Collectors.Keys) }
+         elseif ($Quick) { @($script:QuickModules) }
          elseif ($Modules) { $Modules }
          else {
-             if (-not $Silent) { Show-Help; Write-Host "`n[i] Nothing selected. Use -All or -Modules." -ForegroundColor Yellow }
+             if (-not $Silent) { Show-Help; Write-Host "`n[i] Nothing selected. Use -Quick, -All or -Modules." -ForegroundColor Yellow }
              exit 1
          }
 
