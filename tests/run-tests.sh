@@ -374,11 +374,33 @@ printf '%s' "$OUT8" | grep -q 'NOT READABLE' && check "T8 : the preview reports 
 #      hide it, with a reason.
 printf '\nT9  a valid allowlist actually suppresses a finding\n'
 BAIT="/tmp/tatar-allowlist-probe"
-BAIT_SRC="$(command -v sleep 2>/dev/null)"
+# bash, NOT sleep. On a distribution that builds coreutils as a single
+# multi-call binary, `sleep` dispatches on argv[0]: copied to another name it
+# prints "coreutils: unknown program 'tatar-allowlist-probe'" and exits at
+# once. The probe process then never exists, m_process has nothing to flag,
+# and this test reported NOFINDING - which reads as "the collector missed it"
+# and blames the wrong component entirely. It is exactly the misattributed
+# failure this suite exists to prevent, and it took a runner image change to
+# expose. bash does not dispatch on its own name.
+#
+# `sleep 300; :` and not `sleep 300`: bash exec()s a lone external command,
+# replacing itself, which would make /proc/PID/exe point at /bin/sleep instead
+# of the copy. The trailing no-op keeps bash in the process.
+BAIT_SRC="$(command -v bash 2>/dev/null)"
 BAIT_PID=""
 if [ -n "$BAIT_SRC" ] && cp "$BAIT_SRC" "$BAIT" 2>/dev/null && chmod +x "$BAIT" 2>/dev/null; then
-    "$BAIT" 300 & BAIT_PID=$!
+    "$BAIT" -c 'sleep 300; :' & BAIT_PID=$!
     sleep 1
+    # The probe has to be RUNNING for this test to mean anything. Asserting it
+    # separately is the difference between "the allowlist engine is broken" and
+    # "this host would not run the probe" - two findings that need two
+    # different people to look at them.
+    if kill -0 "$BAIT_PID" 2>/dev/null && [ "$(readlink -f "/proc/$BAIT_PID/exe" 2>/dev/null)" = "$BAIT" ]; then
+        check "T9 : the probe process is running from $BAIT" 1
+    else
+        check "T9 : the probe process is running from $BAIT" 0 \
+              "could not stage a running probe on this host - the allowlist engine was NOT exercised"
+    fi
     D9="$(run_collector t9 --modules process --allowlist "$FIXTURES/allowlist-positive.json")"; E9="$(cat "$EXITFILE" 2>/dev/null)"
     check_exit T9 "$E9"
     assert_contract "$D9/summary.json" "T9"
