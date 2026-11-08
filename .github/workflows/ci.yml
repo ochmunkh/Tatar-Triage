@@ -173,6 +173,81 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Invoke-Tests.ps1
 
+  # Windows PowerShell 5.1 is what `#Requires -Version 5.1` declares and what
+  # ships preinstalled on every Windows 10/11 host, which makes it the edition
+  # most responders actually run this with. Every step in the job above uses
+  # pwsh 7. That gap is not theoretical: it is how summary.json and
+  # findings.json shipped with a UTF-8 BOM for three releases (Out-File
+  # -Encoding UTF8 writes one on 5.1 and not on 7, and a BOM is not valid JSON
+  # text to a strict parser), and how an array subexpression over a
+  # List[object] came to evaluate to empty on 5.1 alone. Both were found by
+  # hand. This job is so the next one is not.
+  #
+  # Deliberately NOT a copy of the pwsh job: PSScriptAnalyzer and the pure
+  # pattern unit tests exercise logic that does not vary by edition, and the
+  # pwsh job already runs them. What belongs here is everything whose behaviour
+  # CAN differ - the collector itself, the documents it writes, and the
+  # contract suite that reads them back.
+  windows-ps51:
+    name: Windows PowerShell 5.1 (run / schema / contract)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm this really is Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $v = $PSVersionTable.PSVersion
+          $ed = $PSVersionTable.PSEdition
+          "PSVersion: $v  Edition: $ed"
+          if ($v.Major -ne 5) { throw "expected PowerShell 5.x, got $v - this job would silently duplicate the pwsh job" }
+          if ($ed -ne 'Desktop') { throw "expected the Desktop edition, got $ed" }
+
+      - name: Parse check (0 syntax errors)
+        shell: powershell
+        run: |
+          $e = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ./Tatar.ps1).Path, [ref]$null, [ref]$e) | Out-Null
+          if ($e.Count -gt 0) { $e | ForEach-Object { Write-Host "$($_.Extent.StartLineNumber): $($_.Message)" }; throw "$($e.Count) parse error(s)" }
+          "Parse OK: 0 syntax errors"
+
+      - name: Smoke run + JSON validation
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File ./Tatar.ps1 -Modules sysinfo,users,process,persistence -Silent -OutputPath "$env:TEMP\tt51"
+          "Collector exit code: $LASTEXITCODE"
+          $d = (Get-ChildItem "$env:TEMP\tt51" -Directory | Select-Object -First 1).FullName
+          foreach ($f in 'summary.json','findings.json') {
+            $fp = Join-Path $d $f
+            if (-not (Test-Path $fp)) { throw "$f missing" }
+            # Read the BYTES. The defect this job exists for is a byte-order
+            # mark, and ConvertFrom-Json on 5.1 accepts one happily - so
+            # checking only that the document parses here would have passed on
+            # the exact bug that shipped.
+            $b = [System.IO.File]::ReadAllBytes($fp)
+            if ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) { throw "$f starts with a UTF-8 BOM" }
+            Get-Content $fp -Raw | ConvertFrom-Json | Out-Null
+            "OK: $f is valid JSON and has no BOM"
+          }
+          # python, not ConvertFrom-Json: a strict parser is the point. .NET is
+          # forgiving about things a SIEM is not.
+          python -m pip install --quiet jsonschema
+          python .github/scripts/validate_summary.py (Join-Path $d 'summary.json')  schema/summary.schema.json
+          python .github/scripts/validate_summary.py (Join-Path $d 'findings.json') schema/findings.schema.json
+
+      - name: Allowlist + IOC run (allowlist / IOC engines)
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File ./Tatar.ps1 -Modules sysinfo,users,process,persistence,hashes -Silent -Allowlist ./allowlist.sample.json -IOCFile ./ioc.sample.json -OutputPath "$env:TEMP\tt51b"
+          "Collector exit code: $LASTEXITCODE"
+          $d = (Get-ChildItem "$env:TEMP\tt51b" -Directory | Select-Object -First 1).FullName
+          python .github/scripts/validate_summary.py (Join-Path $d 'summary.json')  schema/summary.schema.json
+          python .github/scripts/validate_summary.py (Join-Path $d 'findings.json') schema/findings.schema.json
+
+      - name: Contract tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-Tests.ps1
+
   docs-parity:
     name: Docs parity (badges / bilingual module lists / ATT&CK coverage)
     runs-on: ubuntu-latest
