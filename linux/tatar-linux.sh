@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.4.0"
+VERSION="1.5.0"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -47,6 +47,15 @@ FSEP="$(printf '\037')"   # ASCII Unit Separator (0x1F)
 # them. Both separators are stripped from every collected string in
 # add_finding, so host data cannot inject a column or an array element.
 GSEP="$(printf '\035')"   # ASCII Group Separator (0x1D)
+
+# Evidence correlation rules: ruleId|name|modulesA|modulesB|what the agreement
+# means. Deliberately FEW and NAMED -- a generic "anything that co-occurs" pass
+# would relabel coincidence as evidence. A rule fires only when two findings
+# from DIFFERENT modules name the SAME path. The Windows edition also carries
+# COR-01 (download-then-execute); Mark-of-the-Web has no Linux equivalent, so
+# there is nothing here to mirror, and that asymmetry is declared in
+# .github/scripts/check_docs_parity.py rather than left to be discovered.
+CORRELATION_RULES="COR-02|autorun-on-suspect-file|persistence|indicators|an autorun entry points at a file that is itself suspect"
 
 # The module currently running, recorded on every finding it raises so an
 # analyst can tell which collector made the claim. Set by the dispatch loop.
@@ -210,6 +219,7 @@ add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
 conf_reason() {  # $1 = confidence
     case "$1" in
         0.95) printf '%s' "an indicator from the supplied IOC feed matched this finding (see iocIndicator)" ;;
+        0.85) printf '%s' "two independent artifacts named the same path (the correlation pass overwrites this with the rule that fired)" ;;
         0.7)  printf '%s' "severity High: a strong lead on its own, but the tool did not confirm it" ;;
         0.4)  printf '%s' "severity Review: the pattern also occurs in benign configurations" ;;
         *)    printf '%s' "" ;;
@@ -280,6 +290,100 @@ except Exception:
         sed -n "/\"$2\"[[:space:]]*:[[:space:]]*\[/,/]/p" "$1" 2>/dev/null \
           | grep -oE '"[^"]*"' | sed 's/^"//; s/"$//' | grep -vx "$2"
     fi
+}
+
+# Evidence correlation. One artifact is a lead; two independent artifacts
+# naming the SAME path is a different statement, and the tool used to throw it
+# away. A top-level function rather than inline code so tests/test-correlation.sh
+# can lift and exercise it against synthetic findings without running a
+# collection -- the same technique tests/test-json-escape.sh uses.
+#
+# Input : $1 = the augmented findings file (F2), 15 FSEP-separated columns.
+# Output: the number of findings raised, on stdout. The file is rewritten in
+#         place; only columns 7 (confidence) and 14 (confidenceReason) change.
+#
+# Runs LAST, after the allowlist (column 8) and after IOC matching (column 10),
+# skipping both: a suppressed path was already judged known-good, so correlating
+# on it would re-raise exactly the noise the allowlist removed, and an IOC hit
+# already carries 0.95. Severity is the analyst's scale and is never touched,
+# nothing is merged away, and nothing is invented -- correlation makes an
+# existing lead more credible, it does not make a new claim.
+correlate_findings() {
+    local f2="$1" count=0
+    if [ -s "$f2" ]; then
+        local CORR_HIT; CORR_HIT="$(mktemp)"
+        awk -F"$FSEP" -v GS="$GSEP" -v RULES="$CORRELATION_RULES" -v OFS="$FSEP" '
+            {
+                if ($8 == "true" || $10 == "true") next
+                n = split($13, P, GS)
+                for (i = 1; i <= n; i++) {
+                    if (P[i] == "") continue
+                    # NOT lowercased: Linux paths are case-sensitive, so
+                    # /tmp/x and /Tmp/X are different files and folding them
+                    # would correlate two unrelated findings. The Windows
+                    # edition lowercases for the opposite reason.
+                    k = P[i]; cnt[k]++
+                    pid[k, cnt[k]] = $1; pmod[k, cnt[k]] = $11; pn[k] = cnt[k]
+                }
+            }
+            END {
+                nrules = split(RULES, RL, "\n")
+                for (r = 1; r <= nrules; r++) {
+                    if (RL[r] == "") continue
+                    split(RL[r], Fld, "|")
+                    na = split(Fld[3], A, " "); nb = split(Fld[4], B, " ")
+                    for (k in pn) {
+                        for (a = 1; a <= pn[k]; a++) {
+                            oka = 0; for (x = 1; x <= na; x++) if (pmod[k, a] == A[x]) oka = 1
+                            if (!oka) continue
+                            for (b = 1; b <= pn[k]; b++) {
+                                okb = 0; for (y = 1; y <= nb; y++) if (pmod[k, b] == B[y]) okb = 1
+                                if (!okb) continue
+                                # different findings from different modules: a
+                                # module agreeing with itself is one artifact
+                                # seen twice, not two artifacts agreeing.
+                                if (pid[k, a] == pid[k, b]) continue
+                                if (pmod[k, a] == pmod[k, b]) continue
+                                print pid[k,a], Fld[1], Fld[2], pmod[k,a], pmod[k,b], pid[k,b], k, Fld[5]
+                                print pid[k,b], Fld[1], Fld[2], pmod[k,b], pmod[k,a], pid[k,a], k, Fld[5]
+                            }
+                        }
+                    }
+                }
+            }
+        ' "$f2" > "$CORR_HIT"
+        if [ -s "$CORR_HIT" ]; then
+            local F2d CORR_DONE; F2d="$(mktemp)"; CORR_DONE="$(mktemp)"
+            awk -F"$FSEP" -v OFS="$FSEP" -v DONE="$CORR_DONE" '
+                NR == FNR {
+                    if (!($1 in seen)) {
+                        seen[$1] = 1; rid[$1] = $2; rnm[$1] = $3
+                        ma[$1] = $4; mb[$1] = $5; oid[$1] = $6; pk[$1] = $7; rsn[$1] = $8
+                    }
+                    next
+                }
+                {
+                    if (($1 in seen) && ($7 + 0 < 0.85)) {
+                        # counted HERE, not from the candidate list: a second
+                        # run still produces candidates but changes nothing, and
+                        # reporting those as raised would make the execution log
+                        # lie about what the pass did.
+                        print $1 > DONE
+                        $7 = "0.85"
+                        $14 = rnm[$1] " (" rid[$1] "): " rsn[$1] " - " ma[$1] " and " mb[$1] \
+                              " name the same path " pk[$1] " (see " oid[$1] ")"
+                    }
+                    print
+                }
+            ' "$CORR_HIT" "$f2" > "$F2d"
+            mv "$F2d" "$f2"
+            count=$( [ -s "$CORR_DONE" ] && sort -u "$CORR_DONE" | wc -l | tr -d ' ' || echo 0 )
+            rm -f "$CORR_DONE" 2>/dev/null
+        fi
+        rm -f "$CORR_HIT" 2>/dev/null
+    fi
+
+    printf '%s' "$count"
 }
 
 # Boundary-aware IOC match. Plain substring matching used to let "127.0.0" match
@@ -1036,6 +1140,13 @@ EOF
             add_err "IOC evidence scan could not run, so its result is NOT trustworthy: $(head -n1 "$SCAN_ERR" | cut -c1-160)"
         fi
         rm -f "$IOC_HIT" "$SCAN_ERR" "$SCAN_BAD" 2>/dev/null
+    fi
+
+    # ---- evidence correlation (links findings; never merges or creates them) --
+    local corr_count=0
+    corr_count="$(correlate_findings "$F2")"
+    if [ "${corr_count:-0}" -gt 0 ] 2>/dev/null; then
+        execlog "INFO" "Evidence correlation: $corr_count finding(s) raised to confidence 0.85"
     fi
 
     fcount=$( [ -s "$F2" ] && wc -l < "$F2" || echo 0 )

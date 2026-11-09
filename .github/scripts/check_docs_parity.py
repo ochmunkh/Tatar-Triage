@@ -216,6 +216,80 @@ def check_quick_profile(name, quick, modules):
         fail("%s: the quick profile repeats %s" % (name, ", ".join(dupes)))
 
 
+# COR-01 has no Linux counterpart: Mark-of-the-Web is an NTFS alternate data
+# stream and nothing on Linux records "this file came from the internet". The
+# asymmetry is declared here rather than left to be discovered, exactly the way
+# check_contract_parity.py declares its one platform-specific rule.
+WINDOWS_ONLY_CORRELATIONS = {"COR-01"}
+
+
+def correlation_rules(ps1, sh):
+    """The evidence-correlation rules each edition declares: id -> (name, A, B)."""
+    win = {}
+    block = re.search(r"\$script:CorrelationRules\s*=\s*@\((.*?)\n\)", ps1, re.S)
+    if not block:
+        fail("Tatar.ps1: could not read $script:CorrelationRules")
+    else:
+        for obj in re.finditer(
+                r"Id\s*=\s*'([^']+)';\s*Name\s*=\s*'([^']+)'\s*\n\s*"
+                r"A\s*=\s*@\(([^)]*)\);\s*B\s*=\s*@\(([^)]*)\)", block.group(1)):
+            win[obj.group(1)] = (obj.group(2),
+                                 re.findall(r"'([^']+)'", obj.group(3)),
+                                 re.findall(r"'([^']+)'", obj.group(4)))
+    lin = {}
+    m = re.search(r'^CORRELATION_RULES="([^"]*)"', sh, re.M)
+    if not m:
+        fail("linux/tatar-linux.sh: could not read CORRELATION_RULES")
+    else:
+        for line in m.group(1).split("\n"):
+            parts = line.split("|")
+            if len(parts) >= 5:
+                lin[parts[0]] = (parts[1], parts[2].split(), parts[3].split())
+    return win, lin
+
+
+def check_correlation_rules(win, lin, win_modules, lin_modules):
+    """Correlation rules must name real modules, and must not drift apart.
+
+    This is the one pass that raises a finding's confidence on the strength of
+    ANOTHER finding, so a rule naming a module that no longer exists would make
+    it quietly stop firing -- the silent no-op shape this project keeps finding,
+    and the worst possible place for it: the analyst would read the unraised
+    confidence as "the artifacts did not agree".
+    """
+    for name, rules, modules in (("Tatar.ps1", win, win_modules),
+                                 ("linux/tatar-linux.sh", lin, lin_modules)):
+        if not rules:
+            fail("%s: no correlation rules found" % name)
+            continue
+        for rid, (rname, a, b) in sorted(rules.items()):
+            if not a or not b:
+                fail("%s: %s has an empty side" % (name, rid))
+            unknown = [m for m in a + b if m not in modules]
+            if unknown:
+                fail("%s: %s names %s, which %s not module(s)"
+                     % (name, rid, ", ".join(sorted(set(unknown))),
+                        "is" if len(set(unknown)) == 1 else "are"))
+            if set(a) & set(b):
+                fail("%s: %s has %s on both sides - a module cannot corroborate itself"
+                     % (name, rid, ", ".join(sorted(set(a) & set(b)))))
+
+    shared = (set(win) | set(lin)) - WINDOWS_ONLY_CORRELATIONS
+    for rid in sorted(shared - set(win)):
+        fail("correlation %s is declared on Linux but missing from Tatar.ps1 "
+             "(add it, or declare it platform-specific)" % rid)
+    for rid in sorted(shared - set(lin)):
+        fail("correlation %s is declared on Windows but missing from "
+             "linux/tatar-linux.sh (add it, or declare it platform-specific)" % rid)
+    for rid in sorted(shared & set(win) & set(lin)):
+        if win[rid][0] != lin[rid][0]:
+            fail("correlation %s is named '%s' on Windows and '%s' on Linux"
+                 % (rid, win[rid][0], lin[rid][0]))
+    for rid in sorted(WINDOWS_ONLY_CORRELATIONS & set(lin)):
+        fail("correlation %s is declared Windows-only but linux/tatar-linux.sh "
+             "now carries it - remove it from WINDOWS_ONLY_CORRELATIONS" % rid)
+
+
 def check_version_badge(name, text, expected):
     # The README version badge sat at 1.2 for the whole 1.3 line. A badge is
     # the first thing a reader believes, so it is held to the code the way the
@@ -265,6 +339,10 @@ def main(argv):
     qwin, qlin = quick_profiles(ps1, sh)
     check_quick_profile("Tatar.ps1", qwin, win)
     check_quick_profile("linux/tatar-linux.sh", qlin, lin)
+
+    # 1b-iv. the correlation rules name real modules and do not drift apart
+    cwin, clin = correlation_rules(ps1, sh)
+    check_correlation_rules(cwin, clin, win, lin)
 
     # 1c. each collector states its version exactly once
     full = re.search(r"\$script:ToolVersion\s*=\s*'([^']+)'", ps1)

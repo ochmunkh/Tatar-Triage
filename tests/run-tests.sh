@@ -129,9 +129,26 @@ if f:
     check("%s : v2 fields on every finding" % label, not missing, ",".join(missing))
     bad_sev = [x.get("severity") for x in f if x.get("severity") not in ("High", "Review")]
     check("%s : severity is High or Review" % label, not bad_sev, ",".join(map(str, bad_sev)))
+    # 0.85 is the evidence-correlation rung: two findings from different
+    # modules named the same path. The ladder is 0.4 Review, 0.7 High,
+    # 0.85 correlated, 0.95 IOC-confirmed.
     bad_conf = ["%s=%s" % (x.get("id"), x.get("confidence")) for x in f
-                if float(x.get("confidence", -1)) not in (0.4, 0.7, 0.95)]
+                if float(x.get("confidence", -1)) not in (0.4, 0.7, 0.85, 0.95)]
     check("%s : confidence from the fixed set" % label, not bad_conf, ",".join(bad_conf))
+    # A correlated finding must SAY which rule correlated it, otherwise 0.85 is
+    # an unexplained number an analyst cannot audit.
+    bad_corr = [x.get("id") for x in f
+                if float(x.get("confidence", -1)) == 0.85
+                and "COR-" not in str(x.get("confidenceReason", ""))]
+    check("%s : a correlated finding names its correlation rule" % label,
+          not bad_corr, ",".join(map(str, bad_corr)))
+    # Correlation links findings; it must never merge or invent one, so a
+    # correlated finding still carries the severity its module gave it.
+    bad_csev = [x.get("id") for x in f
+                if float(x.get("confidence", -1)) == 0.85
+                and x.get("severity") not in ("High", "Review")]
+    check("%s : a correlated finding keeps a collector severity" % label,
+          not bad_csev, ",".join(map(str, bad_csev)))
     bad_ioc = [x.get("id") for x in f if x.get("iocMatch") not in (False, "false", None)
                and (x.get("severity") != "High" or float(x.get("confidence", 0)) != 0.95
                     or x.get("suppressed") in (True, "true"))]

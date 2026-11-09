@@ -57,6 +57,15 @@ jobs:
       - name: Flat-record array / separator-injection unit tests
         run: bash tests/test-gs-array.sh
 
+
+      # Evidence correlation is the only pass that raises a finding's confidence
+      # on the strength of ANOTHER finding, so the ways it must NOT fire are
+      # what these assert: a module corroborating itself, a suppressed finding,
+      # an IOC hit being demoted, and the case-sensitivity rule, which is the
+      # OPPOSITE on each platform and is therefore asserted on both.
+      - name: Evidence correlation unit tests
+        run: bash tests/test-correlation.sh
+
       - name: Allowlist path-extraction unit tests
         run: bash tests/test-allowlist-path.sh
 
@@ -161,6 +170,17 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Test-ServicePath.ps1
 
+      - name: Evidence correlation unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-Correlation.ps1
+
+      # '-Modules a,b' arrives as an ARRAY from a PowerShell prompt and as a
+      # literal string from cmd.exe. Both shapes have to reach the same module
+      # list; only the cmd.exe one ever did before 1.5.0.
+      - name: Argument-value parsing unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-ArgValue.ps1
+
       # The Windows-only modules never execute in CI's Linux job and only
       # partly in this one, so the parts of the WINDOWS_STATIC_REVIEW fixes
       # that are pure - the Get-WinEvent failure classifier, the Run-key list -
@@ -243,6 +263,19 @@ jobs:
           $d = (Get-ChildItem "$env:TEMP\tt51b" -Directory | Select-Object -First 1).FullName
           python .github/scripts/validate_summary.py (Join-Path $d 'summary.json')  schema/summary.schema.json
           python .github/scripts/validate_summary.py (Join-Path $d 'findings.json') schema/findings.schema.json
+
+      # Run here as well as in the pwsh 7 job, and for a specific reason: the
+      # first draft of Invoke-EvidenceCorrelation used @(...) over a
+      # List[object], which throws "Argument types do not match" on 5.1 and
+      # works on pwsh 7. That is the exact class of defect this job exists for,
+      # and it was caught by running these cases on 5.1.
+      - name: Evidence correlation unit tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-Correlation.ps1
+
+      - name: Argument-value parsing unit tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-ArgValue.ps1
 
       - name: Contract tests
         shell: powershell

@@ -4,9 +4,58 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.5.0] — 2026-11-09
 
 ### Added
+- **Evidence correlation** — the tool now says when two artifacts agree.
+
+  One artifact is a lead. Two independent artifacts naming the *same path* is a
+  different kind of statement, and the tool used to throw it away: an analyst
+  had to notice by eye that the file Mark-of-the-Web says was downloaded is the
+  file UserAssist says was run.
+
+  Two named rules, and the count is the point — a generic "anything that
+  co-occurs" pass would relabel coincidence as evidence, which is the failure
+  this project keeps correcting for:
+
+  | Rule | Fires when | Editions |
+  |---|---|---|
+  | `COR-01` download-then-execute | `motw` + (`useractivity` ∣ `prefetch`) on one path | Windows |
+  | `COR-02` autorun-on-suspect-file | (`persistence` ∣ `autoruns`) + (`motw` ∣ `indicators`) on one path | both |
+
+  It raises `confidence` to **0.85** and rewrites `confidenceReason` to name the
+  rule, both modules, the shared path and the other finding's id. It does **not**
+  touch severity, merge findings or invent one. The ladder is now `0.4` Review →
+  `0.7` High → `0.85` correlated → `0.95` IOC. It runs last and skips suppressed
+  findings — the allowlist already judged that path known-good, so correlating
+  on it would re-raise the noise it removed — and IOC hits, which already
+  outrank it.
+
+  Three decisions worth recording:
+
+  - **The two editions disagree about case on purpose.** `C:\Temp\X.EXE` and
+    `c:\temp\x.exe` are the same file and must correlate; `/tmp/x` and `/Tmp/X`
+    are different files and must not. The first Linux draft folded case, which
+    would have correlated two unrelated files. Both cases are now asserted, on
+    both platforms, as each other's mirror image.
+  - **Measured before it was written.** A probe run of `motw`, `useractivity`,
+    `persistence` and `indicators` on a clean host produced 11 findings, 0
+    overlaps, and — the part that mattered — paths spelled identically by every
+    module, because they all come from the same extractor the allowlist judges
+    with. Zero correlations on a clean host is the correct result, which is why
+    the rules are proven by unit tests rather than by a live run.
+  - **No schema bump.** `confidence` was already `number, 0..1`, so no document
+    shape changed and `schemaVersion` stays at 1.4. Only the field descriptions
+    gained the 0.85 rung.
+
+  50 new assertions: 26 in `tests/Test-Correlation.ps1`, 24 in
+  `tests/test-correlation.sh`. Most of them assert the ways it must **not**
+  fire. Two new contract rules in both harnesses, so
+  `check_contract_parity.py` holds the editions to the same claims (36 shared
+  rules now), and `check_docs_parity.py` fails the build if a rule names a
+  module that no longer exists or if the editions' rule sets drift apart —
+  mutation-tested against 6 planted violations.
+
 - **`docs/AV-SAFETY.md` + `check_av_safety.py`** — the eight claims this tool
   is run on a live production endpoint on the strength of, each one gated.
 
@@ -84,6 +133,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   check would have passed on the exact bug the job exists for.
 
 ### Fixed
+- **`-Modules a,b` was broken when run from a PowerShell prompt.** Called that
+  way PowerShell parses `a,b` in argument mode as an *array*, and
+  `Read-ArgValue`'s `[string]` cast flattened it to `"a b"` — which then split
+  on `,` into one bogus module name. The run failed loudly (`No valid modules
+  were run`, exit 1) rather than collecting the wrong thing, but the invocation
+  the README documents did not work from the shell a responder is most likely
+  to be sitting in. Found while measuring for the correlation work.
+- **`@(...)` over a `List[object]` in the correlation pass** threw *Argument
+  types do not match* on Windows PowerShell 5.1 while working on pwsh 7 — the
+  same 5.1 trap that silently emptied `moduleLimitations` in 1.4. Caught by the
+  `windows-ps51` CI job added earlier in this cycle, which is exactly what it
+  was built for.
+
 - **A contract test blamed the collector for a host that would not run its own
   probe.** T9 raises a finding on purpose by copying the system `sleep` to
   `/tmp` and running it. On a distribution that builds coreutils as a single

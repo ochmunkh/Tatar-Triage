@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.4.0'
+$script:ToolVersion = '1.5.0'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -110,7 +110,17 @@ function Read-ArgValue {
     # stderr and exits 1 even under -Silent - a WinRM / scheduled run must not
     # fail mutely - which is the '1 = fatal / usage error' code the README documents.
     param([string]$Flag, [object]$Value)
-    $v = if ($null -eq $Value) { '' } else { [string]$Value }
+    # An ARRAY must be rejoined, not cast. Called from a PowerShell prompt,
+    # '.\Tatar.ps1 -Modules network,process' hands this an array of two strings,
+    # because PowerShell parses a,b in argument mode as an array -- and
+    # [string] on an array joins with a SPACE, so '-Modules network,process'
+    # became the single module name 'network process' and the run died with
+    # "No valid modules were run". From cmd.exe the same flag arrives as a
+    # literal string and worked, which is why the README's own example was
+    # broken in the shell a responder is most likely to be sitting in.
+    $v = if ($null -eq $Value) { '' }
+         elseif ($Value -is [array]) { (@($Value) | ForEach-Object { [string]$_ }) -join ',' }
+         else { [string]$Value }
     if ($v -eq '' -or $v.StartsWith('-')) {
         [Console]::Error.WriteLine("[x] FATAL: $Flag requires a value")
         exit 1
@@ -167,6 +177,27 @@ $script:Stats      = [ordered]@{}
 # boilerplate. This is that field at the level it belongs to.
 $script:ModuleLimitations = New-Object System.Collections.Generic.List[object]
 $script:ModulesSkipped = New-Object System.Collections.Generic.List[string]
+
+# Evidence correlation rules. Deliberately FEW and NAMED: a generic
+# "anything that co-occurs" pass would relabel coincidence as evidence, which
+# is the failure mode this project keeps having to correct for (the first
+# useractivity draft raised 144 findings, 142 of them noise). A rule fires only
+# when two findings from DIFFERENT modules name the SAME path, and it says in
+# words what the agreement means. COR-01 is Windows-only and declared as such
+# in .github/scripts/check_docs_parity.py: Mark-of-the-Web has no Linux
+# equivalent, so there is nothing for the shell edition to mirror.
+$script:CorrelationRules = @(
+    [pscustomobject]@{
+        Id = 'COR-01'; Name = 'download-then-execute'
+        A  = @('motw'); B = @('useractivity','prefetch')
+        Reason = 'a file that arrived from the internet was also executed'
+    }
+    [pscustomobject]@{
+        Id = 'COR-02'; Name = 'autorun-on-suspect-file'
+        A  = @('persistence','autoruns'); B = @('motw','indicators')
+        Reason = 'an autorun entry points at a file that is itself suspect'
+    }
+)
 
 # Windows is not always on C:. The collector hardcoded 'C:\Windows' / 'C:' in
 # nine places, and two of them are FINDING predicates: on a host installed to
@@ -300,10 +331,79 @@ $script:CurrentModule = ''
 # auditable instead of a magic constant the consumer has to look up. Kept
 # word-for-word identical to conf_reason() in the Linux edition: one output
 # contract means the same finding reads the same on both platforms.
+function Invoke-EvidenceCorrelation {
+    <#
+        One artifact is a lead. Two independent artifacts naming the SAME path
+        is a different kind of statement, and the tool used to throw it away: an
+        analyst had to notice by eye that the file MOTW says was downloaded is
+        the file UserAssist says was run.
+
+        A function rather than inline code so tests\Test-Correlation.ps1 can
+        lift and exercise it against synthetic findings without running a
+        collection -- the technique tests\Test-IocBoundary.ps1 established.
+
+        Input : -Findings, the finding list AFTER the allowlist and IOC passes.
+        Output: the number of findings raised, as an int. The findings are
+                mutated in place; only confidence and confidenceReason change.
+
+        Runs LAST and skips both suppressed findings -- the allowlist already
+        judged that path known-good, so correlating on it would re-raise exactly
+        the noise it was there to remove -- and IOC hits, whose 0.95 already
+        outranks 0.85. Severity is the analyst's scale and is never touched,
+        nothing is merged away, and nothing is invented: correlation makes an
+        existing lead more credible, it does not make a new claim.
+    #>
+    param(
+        [object[]]$Findings,
+        [object[]]$Rules = $script:CorrelationRules
+    )
+    $corrCount = 0
+    $byPath = @{}
+    foreach ($f in $Findings) {
+        if ($f.suppressed -or $f.iocMatch) { continue }
+        foreach ($p in @($f.paths)) {
+            if (-not $p) { continue }
+            # Lowercased because the Windows filesystem is case-insensitive:
+            # C:\Temp\x.exe and c:\temp\X.EXE are the same file and must
+            # correlate. The Linux edition deliberately does NOT fold case, for
+            # the opposite reason -- see correlate_findings in tatar-linux.sh.
+            $k = $p.ToLower()
+            if (-not $byPath.ContainsKey($k)) { $byPath[$k] = New-Object System.Collections.Generic.List[object] }
+            $byPath[$k].Add($f)
+        }
+    }
+    foreach ($rule in $Rules) {
+        foreach ($k in @($byPath.Keys)) {
+            # .ToArray(), NOT @(...): on PowerShell 5.1 the array subexpression
+            # operator over a List[object] throws "Argument types do not match".
+            # This is the same 5.1 trap that silently emptied moduleLimitations
+            # in 1.4, which is why the collector keeps using .ToArray() for it.
+            $group = $byPath[$k].ToArray()
+            foreach ($l in @($group | Where-Object { $rule.A -contains $_.module })) {
+                foreach ($r in @($group | Where-Object { $rule.B -contains $_.module })) {
+                    # the two sides must be different findings raised by
+                    # different modules: a module agreeing with itself is one
+                    # artifact seen twice, not two artifacts agreeing.
+                    if ($l.id -eq $r.id -or $l.module -eq $r.module) { continue }
+                    foreach ($pair in @(@($l,$r), @($r,$l))) {
+                        $f = $pair[0]; $other = $pair[1]
+                        if ($f.confidence -ge 0.85) { continue }
+                        $f.confidence       = 0.85
+                        $f.confidenceReason = ('{0} ({1}): {2} - {3} and {4} name the same path {5} (see {6})' -f $rule.Name, $rule.Id, $rule.Reason, $f.module, $other.module, $k, $other.id)
+                        $corrCount++
+                    }
+                }
+            }
+        }
+    }
+    return $corrCount
+}
+
 function Get-ConfidenceReason {
     param([double]$Confidence)
     switch ($Confidence) {
         0.95    { 'an indicator from the supplied IOC feed matched this finding (see iocIndicator)' }
+        0.85    { 'two independent artifacts named the same path (the correlation pass overwrites this with the rule that fired)' }
         0.7     { 'severity High: a strong lead on its own, but the tool did not confirm it' }
         0.4     { 'severity Review: the pattern also occurs in benign configurations' }
         default { '' }
@@ -1530,6 +1630,15 @@ function Write-Summary {
         $sorted = @($script:Findings | Sort-Object { if ($sevOrder.ContainsKey($_.Severity)) { $sevOrder[$_.Severity] } else { 2 } }, Category)
         Write-ExecLog 'INFO' ("IOC matching: {0} findings total after Pass B" -f $sorted.Count)
     }
+    # ---- evidence correlation (links findings; never merges or creates them) ----
+    $corrCount = 0
+    try {
+        $corrCount = Invoke-EvidenceCorrelation -Findings $sorted
+        if ($corrCount -gt 0) {
+            Write-ExecLog 'INFO' ("Evidence correlation: {0} finding(s) raised to confidence 0.85" -f $corrCount)
+        }
+    } catch { Add-Err "Evidence correlation failed: $_" }
+
     $active     = @($sorted | Where-Object { -not $_.suppressed })
     $suppressed = @($sorted | Where-Object { $_.suppressed })
     $L.Add(("---------- SUSPICIOUS FINDINGS: {0} active{1} (review leads, NOT verdicts) ----------" -f $active.Count, $(if ($suppressed.Count) { ", $($suppressed.Count) allowlisted" } else { '' })))

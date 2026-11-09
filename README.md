@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.4-blue" alt="v1.4">
+  <img src="https://img.shields.io/badge/version-1.5-blue" alt="v1.5">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows 10/11">
   <img src="https://img.shields.io/badge/modules-33-5eead4" alt="33 modules">
@@ -298,6 +298,51 @@ them.
 
 ---
 
+## Evidence correlation
+
+One artifact is a lead. Two independent artifacts naming the **same path** is a
+different kind of statement, and until 1.5.0 the tool threw it away: an analyst
+had to notice by eye that the file Mark-of-the-Web says was downloaded is the
+file UserAssist says was run.
+
+The rules are deliberately **few and named**. A generic "anything that
+co-occurs" pass would relabel coincidence as evidence, which is the failure this
+project keeps correcting for — the first `useractivity` draft raised 144
+findings, 142 of them noise. A rule fires only when two findings from
+**different modules** name the same path, and it says in words what the
+agreement means.
+
+| Rule | Fires when | What it means |
+|------|-----------|---------------|
+| **COR-01** `download-then-execute` | `motw` and (`useractivity` or `prefetch`) name the same path | a file that arrived from the internet was also executed |
+| **COR-02** `autorun-on-suspect-file` | (`persistence` or `autoruns`) and (`motw` or `indicators`) name the same path | an autorun entry points at a file that is itself suspect |
+
+COR-01 is Windows-only: Mark-of-the-Web is an NTFS alternate data stream and
+nothing on Linux records that a file came from the internet. That asymmetry is
+declared in `check_docs_parity.py`, which also fails the build if a rule names a
+module that no longer exists — a rule pointing at a retired module would quietly
+stop firing, and an analyst would read the unraised confidence as *the artifacts
+did not agree*.
+
+**What correlation changes, and what it does not.** It raises `confidence` to
+**0.85** and rewrites `confidenceReason` to name the rule, both modules, the
+shared path and the other finding's id. It does **not** touch severity, does not
+merge findings, and does not invent one: correlation makes an existing lead more
+credible, it does not make a new claim. The ladder is `0.4` Review → `0.7` High
+→ `0.85` correlated → `0.95` IOC-confirmed.
+
+It runs **last**, after the allowlist and after IOC matching, and skips both a
+suppressed finding — the allowlist already judged that path known-good, so
+correlating on it would re-raise exactly the noise it was there to remove — and
+an IOC hit, whose `0.95` already outranks `0.85`.
+
+The two editions disagree about case **on purpose**: `C:\Temp\X.EXE` and
+`c:\temp\x.exe` are the same file and must correlate, while `/tmp/x` and
+`/Tmp/X` are different files and must not. Both cases are asserted, on both
+platforms.
+
+---
+
 ## Output
 
 ```
@@ -372,7 +417,16 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.4.0 — where it came from, and what we could not see (current)
+### v1.5.0 — when two artifacts agree (current)
+
+- **Evidence correlation.** Two named rules — `COR-01` download-then-execute, `COR-02` autorun-on-suspect-file — raise a finding's confidence to `0.85` when two findings from *different* modules name the same path, and say in `confidenceReason` which artifacts agreed. Severity is untouched, nothing is merged, nothing is invented. 50 new assertions, most of them about the ways it must **not** fire.
+- **AV / EDR safety is now gated, not promised.** Eight numbered claims in [docs/AV-SAFETY.md](docs/AV-SAFETY.md), each enforced by a CI check, cross-referenced both ways so neither the document nor the checks can drift ahead of the other.
+- **`-Quick` / `--quick`** — a high-signal profile chosen by measurement (Windows 9 modules / 10.1 s, Linux 10 modules / under 1 s).
+- **CI runs the suite on Windows PowerShell 5.1**, not only pwsh 7. It immediately earned its keep twice.
+- **Fixed: `-Modules a,b` did not work from a PowerShell prompt** — the README's own example. PowerShell hands `a,b` over as an array and the `[string]` cast joined it with a space.
+- **Sigma handoff documented**, and a misreading corrected: Hayabusa and Chainsaw take **EVTX** (`-ExportEvtx`), not the per-event-ID CSVs, which are a 50-event triage preview.
+
+### v1.4.0 — where it came from, and what we could not see
 - **Three new Windows modules** (30 → 33): `rmm` (22 remote-access products plus the connection histories that are plain text and need no admin), `useractivity` (UserAssist, MUICache, RunMRU, Jump Lists, CryptnetUrlCache — current user only, and it says so), and `motw` (Mark-of-the-Web: which files came from the internet, and the URL).
 - **`summary.moduleLimitations`** — what each module could *not* do, machine-readable. Absence of a finding means nothing until you have read it: a module that collected less than its section header claims is the difference between "clean" and "not looked at".
 - **Schema 1.4**: one timestamp format everywhere (ISO 8601 UTC), pinned by a pattern and asserted by both harnesses. Windows used to write local time with an offset while Linux wrote `Z`.
@@ -745,6 +799,50 @@ chainsaw hunt EventLogs/ -s sigma/ --mapping mappings/sigma-event-logs-all.yml
 вэ* гэдэгт хариулдаг; Sigma хөдөлгүүр нь *бүх логийн түүхэнд юу таарсан бэ*
 гэдэгт хариулдаг. Эдгээр нь өөр асуултууд бөгөөд энэ хавтас бол тэдгээрийн
 хоорондох зангилаа юм.
+
+---
+
+## Нотлох баримтын хамаарал
+
+Нэг ул мөр бол сэжүүр. Хоёр бие даасан ул мөр **нэг ижил зам** нэрлэж байгаа нь
+өөр төрлийн мэдэгдэл бөгөөд 1.5.0 хүртэл хэрэгсэл үүнийг хаяж байсан: MOTW
+«татагдсан» гэж хэлж буй файл, UserAssist «ажиллуулсан» гэж хэлж буй файлтай нэг
+гэдгийг шинжээч нүдээрээ анзаарах ёстой байв.
+
+Дүрмүүд нь зориудаар **цөөн бөгөөд нэртэй**. «Давхцсан бүхнийг» үзэх ерөнхий
+дүрэм бол тохиолдлыг нотолгоо гэж нэрлэх явдал — энэ төслийн байнга залруулдаг
+алдаа (эхний `useractivity` хувилбар 144 finding гаргасны 142 нь дуу чимээ
+байсан). Дүрэм зөвхөн **өөр өөр модулийн** хоёр finding нэг зам нэрлэсэн үед л
+ажиллаж, тэр зөвшилцөл юу гэсэн утгатайг үгээр хэлнэ.
+
+| Дүрэм | Хэзээ ажиллах | Ямар утгатай |
+|-------|---------------|--------------|
+| **COR-01** `download-then-execute` | `motw` ба (`useractivity` эсвэл `prefetch`) нэг зам нэрлэвэл | интернэтээс ирсэн файл бас ажиллуулагдсан |
+| **COR-02** `autorun-on-suspect-file` | (`persistence` эсвэл `autoruns`) ба (`motw` эсвэл `indicators`) нэг зам нэрлэвэл | autorun бичлэг нь өөрөө сэжигтэй файл заасан |
+
+COR-01 нь зөвхөн Windows: Mark-of-the-Web бол NTFS-ийн alternate data stream
+бөгөөд Linux дээр файл интернэтээс ирснийг бүртгэдэг зүйл байхгүй. Энэ ялгааг
+`check_docs_parity.py` дотор зарласан ба тэр нь мөн дүрэм байхгүй болсон модуль
+нэрлэвэл build-ийг унагаана — тэтгэвэрт гарсан модуль заасан дүрэм чимээгүй
+ажиллахаа болих ба шинжээч өсөөгүй итгэлийг *ул мөрүүд санал нийлсэнгүй* гэж
+уншина.
+
+**Юуг өөрчилдөг, юуг өөрчилдөггүй.** `confidence`-ийг **0.85** болгож,
+`confidenceReason`-д дүрэм, хоёр модуль, нийтлэг зам, нөгөө finding-ийн id-г
+бичнэ. Severity-д **хүрэхгүй**, finding-үүдийг нэгтгэхгүй, шинээр үүсгэхгүй:
+хамаарал нь байгаа сэжүүрийг илүү итгэлтэй болгоно, шинэ мэдэгдэл хийхгүй.
+Шатлал нь `0.4` Review → `0.7` High → `0.85` хамаарсан → `0.95` IOC-оор
+батлагдсан.
+
+Энэ нь **хамгийн сүүлд**, allowlist болон IOC-ийн дараа ажиллаж, дарагдсан
+finding-ийг — allowlist тэр замыг аль хэдийн «мэдэгдэж байгаа цэвэр» гэж
+шийдсэн тул түүн дээр хамаарал үзэх нь яг л устгасан дуу чимээг буцааж өсгөнө —
+мөн IOC таарсныг (түүний `0.95` нь `0.85`-аас дээгүүр) алгасна.
+
+Хоёр хувилбар жижиг/том үсгийн асуудал дээр **зориудаар зөрдөг**:
+`C:\Temp\X.EXE` ба `c:\temp\x.exe` бол нэг файл тул заавал хамаарах ёстой;
+`/tmp/x` ба `/Tmp/X` бол өөр файл тул хамаарч болохгүй. Хоёулангийнх нь тохиолдол
+хоёр платформ дээр шалгагдсан.
 
 ---
 

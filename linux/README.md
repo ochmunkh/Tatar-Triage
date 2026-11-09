@@ -1,7 +1,7 @@
 # TATAR Triage Toolkit — Linux edition
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4-blue" alt="v1.4">
+  <img src="https://img.shields.io/badge/version-1.5-blue" alt="v1.5">
   <img src="https://img.shields.io/badge/shell-bash%205.1%2B-4EAA25?logo=gnubash&logoColor=white" alt="Bash 5+">
   <img src="https://img.shields.io/badge/targets-Debian%2FUbuntu%20%C2%B7%20RHEL%2FCentOS-orange" alt="targets">
   <img src="https://img.shields.io/badge/modules-18-5eead4" alt="18 modules">
@@ -107,6 +107,25 @@ A finding is only suppressed when **every** path it names is known-good. Judging
 Findings carry `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`, and since schema 1.3 the evidence fields `confidenceReason`, `iocIndicator`, `module`, `collected_at` and `paths[]`; summaries gain `activeFindingsCount` / `suppressedCount` (`schemaVersion 1.4`, backward compatible — the 1.3 and 1.4 additions are all optional properties).
 
 ---
+## Evidence correlation
+
+One artifact is a lead; two independent artifacts naming the **same path** is a
+different statement. The shell edition carries one named rule:
+
+| Rule | Fires when | What it means |
+|------|-----------|---------------|
+| **COR-02** `autorun-on-suspect-file` | `persistence` and `indicators` name the same path | an autorun entry points at a file that is itself suspect |
+
+It raises `confidence` to `0.85` and rewrites `confidenceReason` to name the
+rule, both modules, the shared path and the other finding's id. Severity is
+untouched, nothing is merged and nothing is invented. It runs last — after the
+allowlist and after IOC matching — and skips a suppressed finding (already
+judged known-good) and an IOC hit (`0.95` outranks `0.85`). Paths are compared
+**case-sensitively**, because on Linux `/tmp/x` and `/Tmp/X` are different
+files; the Windows edition folds case, for the opposite reason. The Windows
+edition also carries `COR-01` (download-then-execute), which has no Linux
+counterpart: nothing here records that a file came from the internet.
+
 ## Output
 
 ```
@@ -277,6 +296,24 @@ Finding нь өөрийн нэрлэсэн **бүх** зам цэвэр гэж �
 Finding-ууд `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`, мөн schema 1.3-аас хойш нотолгооны талбарууд `confidenceReason`, `iocIndicator`, `module`, `collected_at`, `paths[]`-ийг авч явах ба summary-д `activeFindingsCount` / `suppressedCount` нэмэгдэнэ (`schemaVersion 1.4`, хуучинтайгаа нийцтэй — 1.3 ба 1.4-ийн нэмэлтүүд бүгд заавал биш талбар).
 
 ---
+## Нотлох баримтын хамаарал
+
+Нэг ул мөр бол сэжүүр; хоёр бие даасан ул мөр **нэг ижил зам** нэрлэж байгаа нь
+өөр мэдэгдэл. Shell хувилбар нэг нэртэй дүрэм авч явна:
+
+| Дүрэм | Хэзээ ажиллах | Ямар утгатай |
+|-------|---------------|--------------|
+| **COR-02** `autorun-on-suspect-file` | `persistence` ба `indicators` нэг зам нэрлэвэл | autorun бичлэг нь өөрөө сэжигтэй файл заасан |
+
+`confidence`-ийг `0.85` болгож, `confidenceReason`-д дүрэм, хоёр модуль, нийтлэг
+зам, нөгөө finding-ийн id-г бичнэ. Severity-д хүрэхгүй, юуг ч нэгтгэхгүй, шинээр
+үүсгэхгүй. Хамгийн сүүлд — allowlist болон IOC-ийн дараа — ажиллаж, дарагдсан
+finding (цэвэр гэж шийдэгдсэн) болон IOC таарсныг (`0.95` нь `0.85`-аас дээгүүр)
+алгасна. Замыг **жижиг/том үсэг ялгаж** харьцуулна, учир нь Linux дээр `/tmp/x`
+ба `/Tmp/X` бол өөр файл; Windows хувилбар эсрэг шалтгаанаар үсгийг нэгтгэдэг.
+Windows хувилбар мөн `COR-01` (download-then-execute) авч явах ба Linux дээр
+түүний хос байхгүй: энд файл интернэтээс ирснийг бүртгэх зүйл байхгүй.
+
 ## Гаралт
 
 ```

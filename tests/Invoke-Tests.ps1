@@ -147,8 +147,19 @@ function Assert-Contract {
     $badSev = @($f | Where-Object { $_.severity -notin 'High','Review' })
     Check "$Label : severity is High or Review"     ($badSev.Count -eq 0) (($badSev | ForEach-Object { $_.severity }) -join ',')
 
-    $badConf = @($f | Where-Object { [double]$_.confidence -notin 0.4,0.7,0.95 })
+    # 0.85 is the evidence-correlation rung: two findings from different
+    # modules named the same path. The ladder is 0.4 Review, 0.7 High,
+    # 0.85 correlated, 0.95 IOC-confirmed.
+    $badConf = @($f | Where-Object { [double]$_.confidence -notin 0.4,0.7,0.85,0.95 })
     Check "$Label : confidence from the fixed set"  ($badConf.Count -eq 0) (($badConf | ForEach-Object { "$($_.id)=$($_.confidence)" }) -join ',')
+    # A correlated finding must SAY which rule correlated it, otherwise 0.85 is
+    # an unexplained number an analyst cannot audit.
+    $badCorr = @($f | Where-Object { [double]$_.confidence -eq 0.85 -and $_.confidenceReason -notlike '*COR-*' })
+    Check "$Label : a correlated finding names its correlation rule" ($badCorr.Count -eq 0) (($badCorr | ForEach-Object { $_.id }) -join ',')
+    # Correlation links findings; it must never merge or invent one, so a
+    # correlated finding still carries the severity its module gave it.
+    $badCsev = @($f | Where-Object { [double]$_.confidence -eq 0.85 -and $_.severity -notin 'High','Review' })
+    Check "$Label : a correlated finding keeps a collector severity" ($badCsev.Count -eq 0) (($badCsev | ForEach-Object { $_.id }) -join ',')
 
     # an IOC hit must always win: High, 0.95, not suppressed
     $badIoc = @($f | Where-Object { $_.iocMatch -and (($_.severity -ne 'High') -or ([double]$_.confidence -ne 0.95) -or $_.suppressed) })

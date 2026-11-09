@@ -112,7 +112,7 @@
             "type": "number",
             "minimum": 0,
             "maximum": 1,
-            "description": "How sure the tool is (independent of severity)."
+            "description": "How sure the tool is (independent of severity). The ladder is fixed and auditable: 0.4 a Review-severity pattern that also occurs benignly, 0.7 a High-severity lead the tool could not confirm, 0.85 two findings from DIFFERENT modules named the same path and a declared correlation rule fired (tool 1.5.0), 0.95 an indicator from the supplied IOC feed matched. The correlation and IOC passes change this number and never the severity."
           },
           "suppressed": {
             "type": "boolean",
@@ -128,7 +128,7 @@
           },
           "confidenceReason": {
             "type": "string",
-            "description": "Why the tool assigned this confidence, in plain words. Derived from the same rule that derives confidence, so the number is auditable without having to read the collector. Added in 1.3; empty when unknown."
+            "description": "Why the tool assigned this confidence, in plain words. Derived from the same rule that derives confidence, so the number is auditable without having to read the collector. Added in 1.3; empty when unknown. At 0.85 it names the correlation rule that fired, the two modules that agreed, the shared path and the other finding's id, so the raise can be audited without re-running the collector."
           },
           "iocIndicator": {
             "type": "string",
