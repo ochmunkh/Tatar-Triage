@@ -327,6 +327,42 @@ def check_correlation_rules(win, lin, win_modules, lin_modules, win_emit, lin_em
              "now carries it - remove it from WINDOWS_ONLY_CORRELATIONS" % rid)
 
 
+def artifact_classes(ps1, sh):
+    """The closed artifact-class vocabulary each edition declares."""
+    w = re.search(r"\$script:ArtifactClasses\s*=\s*@\((.*?)\n\)", ps1, re.S)
+    l = re.search(r'^ARTIFACT_CLASSES="([^"]*)"', sh, re.M)
+    if not w:
+        fail("Tatar.ps1: could not read $script:ArtifactClasses")
+    if not l:
+        fail("linux/tatar-linux.sh: could not read ARTIFACT_CLASSES")
+    return (set(re.findall(r"'([^']+)'", w.group(1))) if w else set(),
+            set(l.group(1).split()) if l else set())
+
+
+def check_artifact_classes(win, lin):
+    """Linux's vocabulary must be a subset of the Windows one.
+
+    They are not equal and should not be - there are no Run keys on Linux and no
+    SUID bits on Windows - but a class the shell edition emits and the Windows
+    edition has never heard of means a consumer written against one platform
+    silently fails to match the other. Subset is the relationship that holds,
+    so it is the one checked, rather than a parity nobody intends.
+    """
+    if not win or not lin:
+        return
+    extra = sorted(lin - win)
+    if extra:
+        fail("linux/tatar-linux.sh declares artifact class(es) Tatar.ps1 does not: %s "
+             "- add them to $script:ArtifactClasses or rename them" % ", ".join(extra))
+    for name, vocab in (("Tatar.ps1", win), ("linux/tatar-linux.sh", lin)):
+        if "unknown" not in vocab:
+            fail("%s: the artifact-class vocabulary must contain 'unknown' - it is "
+                 "what a collector emits instead of guessing" % name)
+        bad = sorted(c for c in vocab if not re.match(r"^[a-z][a-z0-9-]*$", c))
+        if bad:
+            fail("%s: artifact class(es) are not lower-case kebab: %s" % (name, ", ".join(bad)))
+
+
 def check_version_badge(name, text, expected):
     # The README version badge sat at 1.2 for the whole 1.3 line. A badge is
     # the first thing a reader believes, so it is held to the code the way the
@@ -381,6 +417,10 @@ def main(argv):
     cwin, clin = correlation_rules(ps1, sh)
     ewin, elin = finding_emitters(ps1, sh)
     check_correlation_rules(cwin, clin, win, lin, ewin, elin)
+
+    # 1b-v. the artifact-class vocabularies do not drift apart
+    awin, alin = artifact_classes(ps1, sh)
+    check_artifact_classes(awin, alin)
 
     # 1c. each collector states its version exactly once
     full = re.search(r"\$script:ToolVersion\s*=\s*'([^']+)'", ps1)

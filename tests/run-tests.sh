@@ -52,9 +52,10 @@ assert_contract() {  # assert_contract SUMMARY_JSON LABEL
     if [ ! -s "$j" ]; then check "$label : summary.json exists" 0 "missing"; return; fi
     check "$label : summary.json exists" 1
 
-    python3 - "$j" "$label" "$HERE/../schema/summary.schema.json" <<'PY'
+    python3 - "$j" "$label" "$HERE/../schema/summary.schema.json" "$COLLECTOR" <<'PY'
 import json, sys
 path, label, schema_path = sys.argv[1], sys.argv[2], sys.argv[3]
+collector_path = sys.argv[4] if len(sys.argv) > 4 else ""
 ok = fail = 0
 def check(name, cond, detail=""):
     global ok, fail
@@ -68,7 +69,7 @@ except Exception as e:
     sys.exit(1)
 
 check("%s : summary.json parses" % label, True)
-check("%s : schemaVersion is 1.4" % label, s.get("schemaVersion") == "1.4", s.get("schemaVersion"))
+check("%s : schemaVersion is 1.5" % label, s.get("schemaVersion") == "1.5", s.get("schemaVersion"))
 import re
 check("%s : version is SemVer" % label, bool(re.match(r"^\d+\.\d+\.\d+$", str(s.get("version")))), s.get("version"))
 check("%s : platform is linux" % label, s.get("platform") == "linux", s.get("platform"))
@@ -163,6 +164,18 @@ if f:
     # consumer, not a licence for the producer to skip them. A field that is
     # there nine times out of ten is worse than no field, because a
     # downstream rule written against it fails on the tenth.
+    # artifactClass is what a suppression or IOC rule aims at, so a finding
+    # without one is a finding no rule can target precisely.
+    bad_ac = [x.get("id") for x in f if not str(x.get("artifactClass", "")).strip()]
+    check("%s : every finding carries an artifactClass" % label, not bad_ac, ",".join(map(str, bad_ac)))
+    # The vocabulary is LIFTED from the collector, deliberately: a harness
+    # carrying its own copy would pass while the shipped list was broken.
+    src = open(collector_path, encoding="utf-8").read() if collector_path else ""
+    mv = re.search(r'^ARTIFACT_CLASSES="([^"]*)"', src, re.M)
+    vocab = set(mv.group(1).split()) if mv else set()
+    bad_v = ["%s=%s" % (x.get("id"), x.get("artifactClass")) for x in f
+             if x.get("artifactClass") and x.get("artifactClass") not in vocab]
+    check("%s : artifactClass comes from the declared vocabulary" % label, not bad_v, ",".join(bad_v))
     v13 = ("confidenceReason", "iocIndicator", "module", "collected_at", "paths")
     missing13 = ["%s:%s" % (x.get("id"), k) for x in f for k in v13 if k not in x]
     check("%s : schema 1.3 fields on every finding" % label, not missing13, ",".join(missing13))

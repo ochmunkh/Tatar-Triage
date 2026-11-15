@@ -40,14 +40,19 @@ lift() {  # lift FUNCNAME
         grab { print }
         grab && /^\}/ { exit }' "$COLLECTOR"
 }
-for fn in json_escape iso map_technique add_finding conf_reason _emit_findings_json al_paths_of; do
+for fn in json_escape iso map_technique map_artifact_class add_finding conf_reason _emit_findings_json al_paths_of; do
     code="$(lift "$fn")"
     case "$code" in
         *"$fn()"*) eval "$code" ;;
         *) echo "FAIL  $fn not found in $COLLECTOR"; exit 1 ;;
     esac
 done
-echo "Lifted 7 functions from $(basename "$COLLECTOR")"
+# add_finding validates against this list, so it is lifted too rather than
+# redeclared here: a harness carrying its own copy would pass while the shipped
+# vocabulary was broken.
+ARTIFACT_CLASSES="$(grep -m1 '^ARTIFACT_CLASSES=' "$COLLECTOR" | sed 's/^ARTIFACT_CLASSES="//; s/"$//')"
+[ -n "$ARTIFACT_CLASSES" ] || { echo "FAIL  ARTIFACT_CLASSES not found in $COLLECTOR"; exit 1; }
+echo "Lifted 8 functions from $(basename "$COLLECTOR")"
 echo
 
 FSEP="$(printf '\037')"
@@ -73,7 +78,10 @@ EVIL_DET="$(printf 'detail\035/injected/path\035/second')"
 add_finding Review process "$EVIL_MSG" "$EVIL_DET" >/dev/null 2>&1
 
 COLS="$(awk -F"$FSEP" '{print NF}' "$FINDINGS_FILE")"
-check "the record still has exactly 9 columns" "$([ "$COLS" = "9" ] && echo 1 || echo 0)" "got $COLS"
+# 10 since artifactClass was added: id sev cat msg det tech conf module
+# collected_at class. The count is asserted rather than described because the
+# whole point of the flat record is that host-controlled text cannot add one.
+check "the record still has exactly 10 columns" "$([ "$COLS" = "10" ] && echo 1 || echo 0)" "got $COLS"
 if grep -q "$(printf '\037forged-sev')" "$FINDINGS_FILE"; then
     check "the injected FSEP is gone from the message" 0 "forged column survived"
 else

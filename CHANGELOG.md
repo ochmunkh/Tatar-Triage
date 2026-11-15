@@ -7,6 +7,66 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 ## [Unreleased]
 
 ### Added
+- **`artifactClass` on every finding (schema 1.5).** `category` says which
+  module raised a finding; this says what the evidence *is*. The difference is
+  operational: `persistence` covers Run keys, IFEO, Winlogon, the Startup
+  folder, scheduled tasks and COM hijacks at once, so a suppression or IOC rule
+  written against the category cannot aim at one of them. HijackThis made the
+  same distinction with its `O4` / `O20` codes, and it is why knowledge like
+  "O20 is almost always bad" could be written down and reused.
+
+  The vocabulary is closed - 46 classes on Windows, 18 on Linux - and a
+  collector refuses to emit one nobody declared, the same way it refuses an
+  unknown severity. `unknown` is emitted rather than a guess. Derived centrally
+  (`Get-ArtifactClass` / `map_artifact_class`) the way ATT&CK ids already were,
+  so it did not have to be threaded through thirty call sites.
+  `check_docs_parity.py` fails the build if the shell edition declares a class
+  the Windows edition has never heard of; the relationship is subset, not
+  equality, because there are no Run keys on Linux. 62 new unit cases over a
+  table shared by both editions, and 10 new contract assertions.
+
+- **Three more persistence techniques**, inside the existing module so the
+  module count and every list that mentions it stay put. All plain registry
+  reads: no new permission, nothing an EDR has reason to flag, **+1.0 s**
+  measured.
+
+  | Technique | ATT&CK | What is flagged |
+  |---|---|---|
+  | COM hijack | T1546.015 | a CLSID registered under **both** HKCU and HKLM - the per-user copy shadows the machine one and needs no Administrator |
+  | netsh helper DLL | T1546.007 | a helper whose DLL sits in a user-writable location |
+  | Protocol handler / filter | HijackThis `O18` | a scheme served by a DLL in a user-writable location |
+
+  Two things had to be corrected before these could ship, and both are the
+  reason the rules look the way they do:
+
+  - The obvious rules were noise. "Not on my list of default netsh helpers"
+    raised `dnsclient` and `netprofm`, both shipped by Windows and both missing
+    from the list; "DLL outside `%SystemRoot%`" raised five Microsoft Office
+    protocol handlers. Seven findings on a clean workstation, all of them
+    wrong. Judging by **where the DLL is** - user-writable or not - raises none
+    there, and a name list that cannot be kept correct is not maintained at all.
+  - `Test-Path` against a key that does not exist under
+    `HKLM\Software\Classes\CLSID` costs about **two seconds**, and twenty-two
+    of them turned a 0.8 s module into a 22 s one. `persistence` is in
+    `-Quick`, so that is not a trade this tool can make; the lookups go through
+    the .NET registry API, which returns immediately on a miss. 22.1 s -> 1.9 s.
+
+- **Known-answer verification** (`tests/Test-KnownAnswer.ps1`,
+  `tests/test-known-answer.sh`). `SHA256SUMS.txt` proves the file you hold is
+  the file that was released; it says nothing about whether *this build, on
+  this machine, behaves correctly*. This replays a recorded finding set through
+  the real analysis code lifted out of the collector and compares the result
+  with an answer worked out from the **rules**, not from what the code happens
+  to do. Nothing is collected and nothing on the host is touched, so a mismatch
+  is the build and not the environment. 13 checks on Windows, 7 on Linux.
+
+  Deliberately not a `--self-test` that plants suspicious-looking files and
+  checks they are found: the Linux contract suite does a version of that and
+  has already broken once on a host that refused to run its own probe, and on
+  Windows the same idea is a Defender detection waiting to happen.
+
+
+### Added
 - **`ARTIFACTS.md`, `paste.txt`, `allowlist.suggested.json`** — one idea with
   three outputs, and the first new capability in a while that costs nothing at
   collection time: all three are written from the finished finding set, so the

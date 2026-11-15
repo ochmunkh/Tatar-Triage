@@ -474,10 +474,104 @@ function Get-ConfidenceReason {
 }
 
 $script:FindingSeq = 0
+
+# ---------------------------------------------------------------------------
+#  Artifact classes
+# ---------------------------------------------------------------------------
+# `category` says which module raised a finding; `artifactClass` says what the
+# evidence IS. They are different axes and the difference is operational:
+# `persistence` covers Run keys, IFEO, Winlogon, the Startup folder, scheduled
+# tasks and COM hijacks all at once, so an allowlist or an IOC rule written
+# against the category cannot aim at one of them. HijackThis made exactly this
+# distinction with its O4 / O20 section codes, and it is the reason knowledge
+# like "O20 is almost always bad" could be written down and reused.
+#
+# This is the same vocabulary the artifact dictionary uses for FILES, applied
+# to findings. Deriving it centrally - the way Get-Technique already derives
+# ATT&CK ids - keeps it out of thirty call sites.
+#
+# The list is closed on purpose: Add-Finding rejects a class that is not in it,
+# so a typo cannot invent a class that no rule will ever match, and the two
+# editions are held to the same vocabulary by check_docs_parity.py.
+$script:ArtifactClasses = @(
+    'account','admin-group','alwaysinstallelevated','bash-history','browser',
+    'com-hijack','cron','deleted-binary','dns-cache','event-log','firewall',
+    'hosts-file','ifeo','ioc-match','jumplist','logon-failure','lsa-package',
+    'mark-of-the-web','muicache','netsh-helper','network-connection',
+    'obfuscated-script','package','print-monitor','process-commandline',
+    'protocol-handler','rdp','rmm-connection-log','rmm-product','run-key',
+    'runmru','scheduled-task','service','service-path','share','shadow-copy',
+    'ssh-key','startup-folder','suid','temp-executable','unknown','usb',
+    'userassist','winlogon','wmi-subscription','writable-path'
+)
+
+function Get-ArtifactClass {
+    # Centralized artifact-class mapping - all of it lives here, like
+    # Get-Technique. Returns 'unknown' rather than guessing: a wrong class is
+    # worse than an honest absence, because a rule written against it would
+    # silently aim at the wrong evidence.
+    param([string]$Category, [string]$Message, [string]$Detail = '')
+    $t = "$Message $Detail"
+    switch ($Category) {
+        'persistence' {
+            if     ($t -match 'AppInit|Winlogon|Userinit|Shell is non-default') { return 'winlogon' }
+            elseif ($t -match 'Image File Execution|IFEO')                      { return 'ifeo' }
+            elseif ($t -match 'COM|InProcServer32|TreatAs')                     { return 'com-hijack' }
+            elseif ($t -match 'scheduled task|Task(Path|Name)')                 { return 'scheduled-task' }
+            elseif ($t -match 'Startup folder|Start Menu')                      { return 'startup-folder' }
+            elseif ($t -match 'netsh|NetSh\\Helper')                            { return 'netsh-helper' }
+            elseif ($t -match 'protocol handler|PROTOCOLS')                     { return 'protocol-handler' }
+            elseif ($t -match 'Security Packages|Notification Packages|LSA')    { return 'lsa-package' }
+            elseif ($t -match 'Print Monitor|Print Processor')                  { return 'print-monitor' }
+            else                                                                { return 'run-key' }
+        }
+        'lateral'  { if ($t -match 'WMI event subscription|FilterToConsumer') { return 'wmi-subscription' } else { return 'service' } }
+        'privesc'  {
+            if     ($t -match 'AlwaysInstallElevated') { return 'alwaysinstallelevated' }
+            elseif ($t -match 'Unquoted|ImagePath')    { return 'service-path' }
+            else                                       { return 'service' }
+        }
+        'useractivity' {
+            if     ($t -match 'MUICache')     { return 'muicache' }
+            elseif ($t -match 'Run dialog|RunMRU') { return 'runmru' }
+            elseif ($t -match 'jump list|JumpList') { return 'jumplist' }
+            else { return 'userassist' }
+        }
+        'motw'       { return 'mark-of-the-web' }
+        # Message only, not message+detail: the "tool present" finding's detail
+        # says "check it against the connection history below", which matched
+        # the connection-log rule and mislabelled the product finding.
+        'rmm'        { if ($Message -match 'connection history|connection_trace|Connections') { return 'rmm-connection-log' } else { return 'rmm-product' } }
+        'obfscan'    { return 'obfuscated-script' }
+        'indicators' { if ($t -match 'writable') { return 'writable-path' } else { return 'temp-executable' } }
+        'network'    { if ($t -match 'hosts file') { return 'hosts-file' } elseif ($t -match 'DNS') { return 'dns-cache' } else { return 'network-connection' } }
+        'users'      { if ($t -match 'Administrators') { return 'admin-group' } else { return 'account' } }
+        'process'    { if ($t -match 'DELETED|deleted') { return 'deleted-binary' } else { return 'process-commandline' } }
+        'eventlogs'  { return 'event-log' }
+        'sessions'   { return 'logon-failure' }
+        'shadow'     { return 'shadow-copy' }
+        'usb'        { return 'usb' }
+        'rdp'        { return 'rdp' }
+        'browser'    { return 'browser' }
+        'firewall'   { return 'firewall' }
+        'shares'     { return 'share' }
+        'ioc'        { return 'ioc-match' }
+        default      { return 'unknown' }
+    }
+}
+
 function Add-Finding {
     # P3: aggregated suspicious findings. LEADS for analyst review, NOT verdicts.
-    param([string]$Severity = 'Review', [string]$Category, [string]$Message, [string]$Detail = '', [string[]]$Technique)
+    param([string]$Severity = 'Review', [string]$Category, [string]$Message, [string]$Detail = '', [string[]]$Technique, [string]$ArtifactClass)
     if (-not $Technique -or $Technique.Count -eq 0) { $Technique = Get-Technique -Category $Category -Message $Message }
+    if (-not $ArtifactClass) { $ArtifactClass = Get-ArtifactClass -Category $Category -Message $Message -Detail $Detail }
+    # Closed vocabulary, checked at the call site for the same reason an unknown
+    # severity is: a class nobody declared is a class no allowlist or IOC rule
+    # will ever match, and it would travel all the way to a SIEM before anyone
+    # noticed. Fail here rather than emit a finding the contract does not allow.
+    if ($script:ArtifactClasses -notcontains $ArtifactClass) {
+        throw "Add-Finding: unknown artifactClass '$ArtifactClass' (add it to `$script:ArtifactClasses)"
+    }
     # An unknown severity used to become confidence 0.3 in silence - a value no
     # collector emits and both test suites reject. Fail at the call site instead
     # of shipping a finding the contract does not allow. (Checked before the id
@@ -507,6 +601,7 @@ function Add-Finding {
         iocMatch         = $false
         iocIndicator     = ''
         module           = $script:CurrentModule
+        artifactClass    = $ArtifactClass
         collected_at     = Get-IsoUtc
         paths            = $fpaths
     })
@@ -1237,6 +1332,121 @@ function Collect-Persistence {
         $pmon = 'HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors'
         if (Test-PathSafe $pmon) { Get-ChildItem $pmon -ErrorAction SilentlyContinue | ForEach-Object { $drv=(Get-ItemProperty $_.PSPath -Name Driver -ErrorAction SilentlyContinue).Driver; if ($drv) { Add-Report ("[PrintMonitor] {0} Driver={1}" -f $_.PSChildName,$drv) } } }
     } catch { Add-Err "Persistence failed: $_" }
+    # Three more techniques, same module: see Collect-PersistenceExtra.
+    Collect-PersistenceExtra
+
+}
+
+function Collect-PersistenceExtra {
+    <#
+        Three persistence techniques the module did not look at, all of them
+        still in active use and all of them plain registry reads - no new
+        module, no new permission, nothing an EDR has a reason to flag.
+
+        Deliberately narrow. The naive version of each of these produces more
+        noise than signal on an ordinary workstation, and this project has
+        already shipped one module that raised 144 findings of which 142 were
+        noise. So each rule looks for the SHADOWING or the DEVIATION, not for
+        the mere existence of the key.
+    #>
+    try {
+        # ---- COM hijack (T1546.015) ------------------------------------
+        # HKCU\Software\Classes\CLSID shadows HKLM for the current user, so a
+        # CLSID registered in BOTH is the hijack: the user-level copy wins and
+        # the process loads the attacker's DLL instead of the real one. No
+        # Administrator needed to plant it, which is the point of the technique.
+        #
+        # Only the HKCU side is enumerated. Walking all of HKLM\CLSID is tens of
+        # thousands of keys and would wreck -Quick for no extra signal - the
+        # attack lives in HKCU by definition.
+        $comRoot = 'HKCU:\Software\Classes\CLSID'
+        $comHits = 0
+        $hklmClsid = $null
+        try { $hklmClsid = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('Software\Classes\CLSID') } catch {}
+        if ((Test-PathSafe $comRoot) -and $hklmClsid) {
+            foreach ($k in @(Get-ChildItem $comRoot -ErrorAction SilentlyContinue)) {
+                foreach ($srv in 'InProcServer32','LocalServer32') {
+                    $up = Join-Path $k.PSPath $srv
+                    if (-not (Test-PathSafe $up)) { continue }
+                    $dll = $null
+                    try { $dll = (Get-ItemProperty -LiteralPath $up -ErrorAction SilentlyContinue).'(default)' } catch {}
+                    if (-not $dll) { continue }
+                    $comHits++
+                    # OpenSubKey, NOT Test-Path. Test-Path on a key that does
+                    # not exist under HKLM\Software\Classes\CLSID costs about
+                    # TWO SECONDS each - the measured cost of a miss against the
+                    # merged HKCR view - and twenty-two of them turned a 0.8s
+                    # module into a 22s one. persistence is in -Quick, so that
+                    # is not a trade this tool can make. The .NET call returns
+                    # null immediately on a miss.
+                    $machineKey = $null
+                    try { $machineKey = $hklmClsid.OpenSubKey("$($k.PSChildName)\$srv") } catch {}
+                    if ($machineKey) {
+                        $machineKey.Close()
+                        Add-Finding -Severity 'High' -Category 'persistence' -ArtifactClass 'com-hijack' `
+                            -Message ("COM CLSID registered per-user AND machine-wide: {0}" -f $k.PSChildName) `
+                            -Detail ("HKCU {0} -> {1} . A per-user registration shadows the machine one, so this DLL loads instead of the system's. It needs no Administrator to plant, which is why it is used. Compare against the HKLM value before judging." -f $srv, $dll)
+                    }
+                }
+            }
+            Add-Report ("COM: {0} per-user CLSID server registration(s) examined." -f $comHits)
+        }
+        if ($hklmClsid) { $hklmClsid.Close() }
+
+        # ---- netsh helper DLLs (T1546.007) -----------------------------
+        # netsh.exe loads every DLL listed here on each invocation. The default
+        # set ships with Windows; anything else is a persistence mechanism.
+        # Judged by WHERE the DLL is, not by whether its name is on a list.
+        # The first draft carried a hand-written list of default helper names
+        # and immediately raised dnsclient and netprofm on a clean machine -
+        # both shipped by Windows, both missing from my list. A name list of
+        # this kind cannot be kept correct, and this repo has shipped five
+        # stale ones already. A bare name resolves out of System32, which only
+        # an Administrator can write to; the attack has to put its DLL
+        # somewhere the user can write. That is the thing worth saying.
+        $nsKey = 'HKLM:\SOFTWARE\Microsoft\NetSh'
+        if (Test-PathSafe $nsKey) {
+            $props = $null
+            try { $props = Get-ItemProperty -LiteralPath $nsKey -ErrorAction SilentlyContinue } catch {}
+            if ($props) {
+                foreach ($pr in @($props.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' })) {
+                    $leaf = [string]$pr.Value
+                    # A bare file name means System32, which is not user-writable.
+                    if ($leaf -notmatch '[\\/]') { continue }
+                    if ($leaf -notmatch $script:UserWritablePattern) { continue }
+                    Add-Finding -Severity 'High' -Category 'persistence' -ArtifactClass 'netsh-helper' `
+                        -Message ("netsh helper DLL in a user-writable location: {0}" -f $pr.Name) `
+                        -Detail ("{0} - netsh.exe loads every helper registered here, so this DLL runs whenever netsh does, and it sits where a non-Administrator can replace it." -f $leaf)
+                }
+            }
+        }
+
+        # ---- protocol handlers / filters (HijackThis O18) ---------------
+        # A handler maps a URL scheme to a DLL. Replacing one redirects every
+        # application that resolves that scheme, browsers included.
+        foreach ($proto in @('Handler','Filter')) {
+            $pk = "HKLM:\SOFTWARE\Classes\PROTOCOLS\$proto"
+            if (-not (Test-PathSafe $pk)) { continue }
+            foreach ($h in @(Get-ChildItem $pk -ErrorAction SilentlyContinue)) {
+                $clsid = $null
+                try { $clsid = (Get-ItemProperty -LiteralPath $h.PSPath -ErrorAction SilentlyContinue).CLSID } catch {}
+                if (-not $clsid) { continue }
+                $srvKey = "HKLM:\SOFTWARE\Classes\CLSID\$clsid\InProcServer32"
+                $dll = $null
+                try { $dll = (Get-ItemProperty -LiteralPath $srvKey -ErrorAction SilentlyContinue).'(default)' } catch {}
+                if (-not $dll) { continue }
+                # "Outside %SystemRoot%" was the first rule and it was wrong:
+                # Office alone registers five handlers under Program Files and
+                # every one of them came out as a finding on a clean machine.
+                # Program Files needs Administrator to write, so it is not the
+                # hijack vector. A user-writable path is.
+                if ($dll -notmatch $script:UserWritablePattern) { continue }
+                Add-Finding -Severity 'High' -Category 'persistence' -ArtifactClass 'protocol-handler' `
+                    -Message ("Protocol {0} served by a DLL in a user-writable location: {1}" -f $proto.ToLower(), $h.PSChildName) `
+                    -Detail ("{0} -> {1} . Every application that resolves this scheme loads that DLL, and it sits where a non-Administrator can replace it." -f $clsid, $dll)
+            }
+        }
+    } catch { Add-Err "PersistenceExtra failed: $_" }
 }
 
 function Collect-Autoruns {
@@ -1968,6 +2178,7 @@ function Write-Summary {
                         suppressed       = $false; suppressReason = ''; iocMatch = $true
                         iocIndicator     = $val
                         module           = 'ioc'
+                        artifactClass    = 'ioc-match'
                         collected_at     = Get-IsoUtc
                         paths            = @(Get-PathCandidate "$bMsg $bDet")
                     })
@@ -2024,7 +2235,7 @@ function Write-Summary {
     $jsonObj = [pscustomobject]@{
         tool            = 'TATAR Triage Toolkit'
         version         = $script:ToolVersion
-        schemaVersion   = '1.4'
+        schemaVersion   = '1.5'
         platform        = 'windows'
         host            = $hn
         os              = $osCap

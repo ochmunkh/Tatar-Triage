@@ -191,6 +191,32 @@ map_technique() {  # map_technique CATEGORY MESSAGE -> space-separated technique
     esac
 }
 
+# Artifact classes: `category` says which module raised a finding, artifactClass
+# says what the evidence IS. Different axes - `persistence` covers cron, systemd
+# units, rc files and shell profiles at once, so a rule written against the
+# category cannot aim at one of them. Same vocabulary the Windows edition uses,
+# held to it by check_docs_parity.py; the list is closed so a typo cannot invent
+# a class no rule will ever match.
+ARTIFACT_CLASSES="account admin-group bash-history cron deleted-binary dns-cache hosts-file ioc-match logon-failure network-connection package process-commandline service ssh-key suid temp-executable unknown writable-path"
+
+map_artifact_class() {  # map_artifact_class CATEGORY "MESSAGE DETAIL"
+    local c="$1" t="$2"
+    case "$c" in
+        persistence) case "$t" in *cron*|*Cron*) echo "cron";; *) echo "service";; esac ;;
+        process)     case "$t" in *DELETED*|*deleted*) echo "deleted-binary";; *) echo "process-commandline";; esac ;;
+        users)       case "$t" in *sudo*|*wheel*|*admin*) echo "admin-group";; *) echo "account";; esac ;;
+        network)     case "$t" in *hosts*) echo "hosts-file";; *DNS*|*resolv*) echo "dns-cache";; *) echo "network-connection";; esac ;;
+        indicators)  case "$t" in *writable*) echo "writable-path";; *) echo "temp-executable";; esac ;;
+        sessions)    echo "logon-failure" ;;
+        suid)        echo "suid" ;;
+        sshkeys)     echo "ssh-key" ;;
+        bashhistory) echo "bash-history" ;;
+        packages)    echo "package" ;;
+        ioc)         echo "ioc-match" ;;
+        *)           echo "unknown" ;;
+    esac
+}
+
 FIND_SEQ=0
 add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
     local sev="$1" cat="$2" msg="$3" det="$4" tech="${5:-}"
@@ -212,9 +238,18 @@ add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
     FIND_SEQ=$((FIND_SEQ+1))
     id=$(printf 'TTR-F-%03d' "$FIND_SEQ")
     # columns (FSEP-delimited):
-    #   id | sev | cat | msg | det | tech | conf | module | collected_at
-    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
-        "$id" "$sev" "$cat" "$msg" "$det" "$tech" "$conf" "$CURRENT_MODULE" "$(iso)" >> "$FINDINGS_FILE"
+    #   id | sev | cat | msg | det | tech | conf | module | collected_at | class
+    local acls
+    acls="$(map_artifact_class "$cat" "$msg $det")"
+    # Closed vocabulary, same reason the severity above is closed: a class
+    # nobody declared is a class no allowlist or IOC rule will ever match, and
+    # it would reach a SIEM before anyone noticed.
+    case " $ARTIFACT_CLASSES " in
+        *" $acls "*) : ;;
+        *) printf "add_finding: unknown artifactClass '%s'\n" "$acls" >&2; acls="unknown" ;;
+    esac
+    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+        "$id" "$sev" "$cat" "$msg" "$det" "$tech" "$conf" "$CURRENT_MODULE" "$(iso)" "$acls" >> "$FINDINGS_FILE"
 }
 
 # Why a finding carries the confidence it does. The number is derived, so the
@@ -1138,9 +1173,9 @@ except Exception: print(1)' "$ALLOWLIST" 2>/dev/null || echo 1)"
         if grep -qE '"packageOwned"[[:space:]]*:[[:space:]]*false' "$ALLOWLIST" 2>/dev/null; then AL_PKGOWN=0; fi
     fi
     if [ -s "$FINDINGS_FILE" ]; then
-        local fid fs fc fm fd ft fconf fmod fts supp reason paths pathsj path h g
+        local fid fs fc fm fd ft fconf fmod fts facls supp reason paths pathsj path h g
         local tok_ok tok_reason all_ok first_reason
-        while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fmod fts; do
+        while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fmod fts facls; do
             supp=false; reason=""
             # The paths a finding names are recorded whether or not an
             # allowlist was supplied: they are the first thing an analyst
@@ -1199,9 +1234,10 @@ EOF
             #   1 id   2 sev  3 cat   4 msg          5 det
             #   6 tech 7 conf 8 supp  9 supReason   10 iocMatch
             #  11 module 12 collected_at 13 paths(GSEP) 14 confReason 15 iocIndicator
-            printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+            #  16 artifactClass
+            printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
                 "$fid" "$fs" "$fc" "$fm" "$fd" "$ft" "$fconf" "$supp" "$reason" "false" \
-                "$fmod" "$fts" "$pathsj" "$(conf_reason "$fconf")" "" >> "$F2"
+                "$fmod" "$fts" "$pathsj" "$(conf_reason "$fconf")" "" "${facls:-unknown}" >> "$F2"
         done < "$FINDINGS_FILE"
     fi
 
@@ -1221,7 +1257,7 @@ EOF
         local F2b IOC_HIT; F2b="$(mktemp)"; IOC_HIT="$(mktemp)"
         local xid xs xc xm xd xt xconf xsup xreason xioc xmod xts xpaths xcr xind
         local hit path h ind
-        while IFS="$FSEP" read -r xid xs xc xm xd xt xconf xsup xreason xioc xmod xts xpaths xcr xind; do
+        while IFS="$FSEP" read -r xid xs xc xm xd xt xconf xsup xreason xioc xmod xts xpaths xcr xind xacls; do
             hit=""
             # string IOCs (ip/domain/filename) in message or detail
             if [ -n "$IOC_STR" ]; then
@@ -1252,9 +1288,9 @@ EOF
                 xind="$hit"; xcr="$(conf_reason 0.95)"
                 xd="IOC match: $hit | $xd"
             fi
-            printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+            printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
                 "$xid" "$xs" "$xc" "$xm" "$xd" "$xt" "$xconf" "$xsup" "$xreason" "$xioc" \
-                "$xmod" "$xts" "$xpaths" "$xcr" "$xind" >> "$F2b"
+                "$xmod" "$xts" "$xpaths" "$xcr" "$xind" "${xacls:-unknown}" >> "$F2b"
         done < "$F2"
         mv "$F2b" "$F2"
 
@@ -1288,11 +1324,11 @@ EOF
                     bmsg="IOC observed in collected evidence: $val"
                     bdet="$(printf '%s' "$ln" | tr '\t\035\037' '   ' | cut -c1-160)"
                     bpaths="$(al_paths_of "$bmsg" "$bdet" | tr '\n' "$GSEP" | sed "s/${GSEP}*\$//")"
-                    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
+                    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
                         "$(printf 'TTR-F-%03d' "$FIND_SEQ")" "High" "ioc" \
                         "$bmsg" "$bdet" \
                         "$(ioc_technique "$val")" "0.95" "false" "" "true" \
-                        "ioc" "$(iso)" "$bpaths" "$(conf_reason 0.95)" "$val" >> "$F2"
+                        "ioc" "$(iso)" "$bpaths" "$(conf_reason 0.95)" "$val" "ioc-match" >> "$F2"
                 fi
             done
         fi
@@ -1350,7 +1386,7 @@ EOF
         echo "---------- SUSPICIOUS FINDINGS: $active_count active, $sup_count allowlisted (leads, NOT verdicts) ----------"
         if [ -s "$F2" ] && [ "$active_count" -gt 0 ]; then
             for sev in High Review; do
-                while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc fmod fts fpaths fcr find_; do
+                while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc fmod fts fpaths fcr find_ facls; do
                     [ "$fs" = "$sev" ] || continue
                     [ "$fsup" = true ] && continue
                     local tag=""; [ "$fioc" = true ] && tag="[IOC] "
@@ -1373,7 +1409,7 @@ EOF
         if [ "$sup_count" -gt 0 ]; then
             echo ""
             echo "-------- SUPPRESSED BY ALLOWLIST: $sup_count (kept for audit) --------"
-            while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc fmod fts fpaths fcr find_; do
+            while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc fmod fts fpaths fcr find_ facls; do
                 [ "$fsup" = true ] || continue
                 printf '  %s [%s] (%s) %s  <- %s\n' "$fid" "$fs" "$fc" "$fm" "$freason"
             done < "$F2"
@@ -1391,7 +1427,7 @@ EOF
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
         printf '  "version": "%s",\n' "$VERSION"
-        printf '  "schemaVersion": "1.4",\n'
+        printf '  "schemaVersion": "1.5",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "os": "%s",\n' "$(json_escape "$os")"
@@ -1461,7 +1497,7 @@ EOF
     {
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
-        printf '  "schemaVersion": "1.4",\n'
+        printf '  "schemaVersion": "1.5",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "caseId": "%s",\n' "$(json_escape "$CASE_ID")"
@@ -1484,9 +1520,9 @@ EOF
 # Emit the findings[] array items (schema 1.3) from an augmented findings file.
 _emit_findings_json() {  # $1 = F2 path
     local f2="$1" first=1 fid fs fc fm fd ft fconf fsup freason fioc techjson
-    local fmod fts fpaths fcr find_ pathsjson
+    local fmod fts fpaths fcr find_ facls pathsjson
     [ -s "$f2" ] || return 0
-    while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc fmod fts fpaths fcr find_; do
+    while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc fmod fts fpaths fcr find_ facls; do
         [ $first -eq 1 ] && first=0 || printf ','
         if [ -n "$ft" ]; then
             techjson=$(printf '%s' "$ft" | awk '{printf "[";for(i=1;i<=NF;i++)printf "%s\"%s\"",(i>1?",":""),$i;printf "]"}')
@@ -1508,11 +1544,11 @@ $(printf '%s' "$fpaths" | tr "$GSEP" '\n')
 EOF
             pathsjson="$pathsjson]"
         else pathsjson="[]"; fi
-        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"confidenceReason":"%s","suppressed":%s,"suppressReason":"%s","iocMatch":%s,"iocIndicator":"%s","module":"%s","collected_at":"%s","paths":%s}' \
+        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"confidenceReason":"%s","suppressed":%s,"suppressReason":"%s","iocMatch":%s,"iocIndicator":"%s","module":"%s","artifactClass":"%s","collected_at":"%s","paths":%s}' \
             "$(json_escape "$fid")" "$(json_escape "$fs")" "$(json_escape "$fc")" "$techjson" \
             "$(json_escape "$fm")" "$(json_escape "$fd")" "$fconf" "$(json_escape "$fcr")" \
             "${fsup:-false}" "$(json_escape "$freason")" "$fioc" "$(json_escape "$find_")" \
-            "$(json_escape "$fmod")" "$(json_escape "$fts")" "$pathsjson"
+            "$(json_escape "$fmod")" "$(json_escape "${facls:-unknown}")" "$(json_escape "$fts")" "$pathsjson"
     done < "$f2"
 }
 

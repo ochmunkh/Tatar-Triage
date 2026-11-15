@@ -75,7 +75,7 @@ The consolidated report flags suspicious activity as it goes (sample):
 
 ## Architecture
 
-TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.4`), so a SIEM/SOAR pipeline ingests either platform identically.
+TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.5`), so a SIEM/SOAR pipeline ingests either platform identically.
 
 ```
                     TATAR Triage
@@ -85,7 +85,7 @@ TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `li
      (PowerShell, 33 modules)      (Bash, 18 modules)
           └──────────────┬──────────────┘
                          ▼
-             Unified JSON schema  (summary.schema.json · v1.4)
+             Unified JSON schema  (summary.schema.json · v1.5)
                          ▼
         ┌────────────────┼────────────────┐
         ▼                ▼                ▼
@@ -382,6 +382,73 @@ quietly shipping an unexplained artifact.
 
 ---
 
+## What the evidence IS: `artifactClass`
+
+`category` says which module raised a finding. `artifactClass` says what the
+evidence **is** — and the difference is operational. `persistence` covers Run
+keys, IFEO, Winlogon, the Startup folder, scheduled tasks and COM hijacks all
+at once, so an allowlist or an IOC rule written against the category cannot aim
+at one of them. HijackThis made exactly this distinction with its `O4` / `O20`
+section codes, and it is why knowledge like *"O20 is almost always bad"* could
+be written down and reused.
+
+The vocabulary is **closed**: a collector refuses to emit a class nobody
+declared, `unknown` is emitted rather than a guess, and `check_docs_parity.py`
+fails the build if the shell edition declares a class the Windows edition has
+never heard of. It is the same vocabulary `ARTIFACTS.md` uses for files,
+applied to findings. Added in schema 1.5.
+
+| | Windows | Linux |
+|---|---|---|
+| Classes declared | 46 | 18 |
+| Derived by | `Get-ArtifactClass` | `map_artifact_class` |
+| Unit-tested cases | 42 | 20 |
+
+### Three more persistence techniques
+
+`persistence` now also reads, all as plain registry lookups, all measured at
+**+1.0 s**:
+
+| Technique | ATT&CK | What is flagged |
+|---|---|---|
+| COM hijack | T1546.015 | a CLSID registered under **both** `HKCU\Software\Classes` and HKLM — the per-user copy shadows the machine one and needs no Administrator to plant |
+| netsh helper DLL | T1546.007 | a helper whose DLL sits in a **user-writable** location |
+| Protocol handler / filter | — (HijackThis `O18`) | a scheme served by a DLL in a **user-writable** location |
+
+Each rule looks for the *shadowing* or the *deviation*, not for the key's mere
+existence. The first drafts did the obvious thing — "not on my list of default
+netsh helpers", "DLL outside `%SystemRoot%`" — and raised seven findings on a
+clean workstation, every one of them Microsoft Office or Windows itself. The
+shipped rules raise none there.
+
+A note on cost, because it nearly went the other way: `Test-Path` against a key
+that does **not** exist under `HKLM\Software\Classes\CLSID` takes about two
+seconds, and twenty-two of those turned a 0.8 s module into a 22 s one.
+`persistence` is in `-Quick`, so the lookups go through the .NET registry API
+instead, which returns immediately on a miss.
+
+### Known-answer verification
+
+```powershell
+powershell -NoProfile -File tests\Test-KnownAnswer.ps1
+bash tests/test-known-answer.sh
+```
+
+Publishing `SHA256SUMS.txt` proves the file you hold is the file that was
+released. It does not tell an operator whether **this build, on this machine,
+behaves correctly**. This does: a recorded finding set replayed through the
+real analysis code, checked against an answer worked out from the rules rather
+than from what the code happens to do. Nothing is collected and nothing on the
+host is touched, so a mismatch is the build and not the environment.
+
+It is deliberately *not* a `--self-test` that plants suspicious-looking files
+and checks they are found. The Linux contract suite does a version of that and
+has already broken once on a host that refused to run its own probe; on Windows
+the same idea is a Defender detection waiting to happen, and not tripping AV is
+this tool's first constraint.
+
+---
+
 ## Output
 
 ```
@@ -631,7 +698,7 @@ Triage гэдэг ойлголт эмнэлгээс гаралтай. Эмч ө�
 
 ## Архитектур
 
-TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 33 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.4`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
+TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 33 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.5`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
 
 ```
                     TATAR Triage
@@ -641,7 +708,7 @@ TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1`
      (PowerShell, 33 модуль)       (Bash, 18 модуль)
           └──────────────┬──────────────┘
                          ▼
-             Нэгдсэн JSON schema  (summary.schema.json · v1.4)
+             Нэгдсэн JSON schema  (summary.schema.json · v1.5)
                          ▼
         ┌────────────────┼────────────────┐
         ▼                ▼                ▼
@@ -920,6 +987,73 @@ finding-ийг — allowlist тэр замыг аль хэдийн «мэдэг�
 `ARTIFACTS.md` нь машинд шалгагдах `Uncatalogued: N` мөрөөр төгсөж, CI нь `0`-
 оос өөр утгад унана: хэн ч тайлбарлаагүй файл бичиж эхэлсэн модуль build-ийг
 унагаана, тайлбаргүй артефакт чимээгүй гаргахын оронд.
+
+---
+
+## Нотлох баримт юу болох нь: `artifactClass`
+
+`category` нь аль модуль finding гаргасныг хэлнэ. `artifactClass` нь нотлох
+баримт **юу болохыг** хэлнэ — ялгаа нь ажиллагааных. `persistence` гэдэг нэг
+шошгон доор Run key, IFEO, Winlogon, Startup хавтас, scheduled task, COM hijack
+бүгд багтдаг тул ангиллын эсрэг бичсэн allowlist буюу IOC дүрэм тэдгээрийн аль
+нэгийг онож чадахгүй. HijackThis яг энэ ялгааг `O4` / `O20` кодоор хийсэн бөгөөд
+*«O20 бараг үргэлж муу»* гэх мэдлэгийг бичиж, дахин ашиглах боломжтой болгосон
+шалтгаан нь тэр.
+
+Нэршил нь **хаалттай**: коллектор зарлагдаагүй ангилал гаргахаас татгалзаж,
+таамгийн оронд `unknown` гаргана, мөн shell хувилбар Windows-ийн мэдэхгүй
+ангилал зарлавал `check_docs_parity.py` build-ийг унагаана. Энэ нь
+`ARTIFACTS.md`-ийн файлд хэрэглэдэг яг тэр нэршил, finding дээр хэрэглэгдсэн нь.
+Schema 1.5-д нэмэгдсэн.
+
+| | Windows | Linux |
+|---|---|---|
+| Зарласан ангилал | 46 | 18 |
+| Гаргадаг нь | `Get-ArtifactClass` | `map_artifact_class` |
+| Unit тестийн кейс | 42 | 20 |
+
+### Persistence-ийн гурван нэмэлт техник
+
+`persistence` одоо эдгээрийг ч уншина — бүгд энгийн registry уншилт, хэмжсэн
+өртөг **+1.0 секунд**:
+
+| Техник | ATT&CK | Юуг тэмдэглэх |
+|---|---|---|
+| COM hijack | T1546.015 | `HKCU\Software\Classes` **ба** HKLM хоёуланд бүртгэгдсэн CLSID — хэрэглэгчийн хуулбар машиныхыг халхалдаг, суулгахад Administrator шаардахгүй |
+| netsh helper DLL | T1546.007 | DLL нь **хэрэглэгч бичих боломжтой** байрлалд байгаа helper |
+| Protocol handler / filter | — (HijackThis `O18`) | **хэрэглэгч бичих боломжтой** байрлалын DLL-ээр үйлчлүүлж буй схем |
+
+Дүрэм бүр түлхүүрийн зүгээр л оршин байхыг биш, *халхлалт* буюу *хазайлтыг*
+хайна. Эхний ноорогууд илэрхий зүйлийг хийсэн — «миний анхдагч netsh жагсаалтад
+байхгүй», «`%SystemRoot%`-ээс гадна байгаа DLL» — цэвэр ажлын станц дээр долоон
+finding гаргасан бөгөөд бүгд нь Microsoft Office эсвэл Windows өөрөө байв.
+Нийлүүлэгдсэн дүрмүүд тэнд нэгийг ч гаргахгүй.
+
+Өртгийн тухай нэг тэмдэглэл, учир нь энэ өөрөөр эргэж барагтай байсан:
+`HKLM\Software\Classes\CLSID` дор **байхгүй** түлхүүр дээрх `Test-Path` нь
+ойролцоогоор хоёр секунд авдаг бөгөөд хорин хоёр ийм хайлт 0.8 секундын
+модулийг 22 секунд болгосон. `persistence` нь `-Quick`-д байдаг тул хайлтууд
+.NET-ийн registry API-аар явдаг болсон — тэр нь олдоогүй үед шууд буцдаг.
+
+### Known-answer баталгаа
+
+```powershell
+powershell -NoProfile -File tests\Test-KnownAnswer.ps1
+bash tests/test-known-answer.sh
+```
+
+`SHA256SUMS.txt` нийтлэх нь таны гар дээрх файл нь гаргасан файл мөн гэдгийг
+нотолно. Гэхдээ **энэ build, энэ машин дээр зөв ажиллаж байна уу** гэдгийг
+хэлэхгүй. Энэ нь хэлнэ: бичигдсэн finding багцыг жинхэнэ шинжилгээний кодоор
+дахин тоглуулж, кодын хийдэг зүйлээс биш **дүрмээс** гаргасан хариутай
+тулгана. Юу ч цуглуулахгүй, хостод хүрэхгүй — тиймээс зөрүү гарвал энэ нь
+build-ийнх, орчиных биш.
+
+Энэ нь зориудаар `--self-test` **биш** — сэжигтэй харагдах файл суулгаад олдог
+эсэхийг шалгадаг хувилбар биш. Linux-ийн contract suite түүний нэг хэлбэрийг
+хийдэг бөгөөд өөрийн probe-оо ажиллуулж чадаагүй хост дээр аль хэдийн нэг удаа
+унасан; Windows дээр тэр санаа бол Defender-ийн илрүүлэлт хүлээж байгаа хэрэг,
+AV сэрээхгүй байх нь энэ хэрэгслийн нэгдүгээр хязгаарлалт.
 
 ---
 

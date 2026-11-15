@@ -1,0 +1,6 @@
+TTR-F-001Reviewpersistencecron entry runs /tmp/evil.sh/etc/cron.d/xT1053.0030.4falsefalsepersistence2026-01-01T00:00:00Z/tmp/evil.shrecordedcron
+TTR-F-002Highindicatorsexecutable in a world-writable directory: /tmp/evil.shmode 777T10360.7falsefalseindicators2026-01-01T00:00:00Z/tmp/evil.shrecordedtemp-executable
+TTR-F-003Reviewpersistencecron entry runs /opt/known.sh/etc/cron.d/yT1053.0030.4trueallowlist path: /opt/*falsepersistence2026-01-01T00:00:00Z/opt/known.shrecordedcron
+TTR-F-004Highindicatorsexecutable in a world-writable directory: /opt/known.shmode 777T10360.7falsefalseindicators2026-01-01T00:00:00Z/opt/known.shrecordedtemp-executable
+TTR-F-005HighiocIOC observed: evil.exampleline 3T10710.95falsetrueioc2026-01-01T00:00:00Z/tmp/evil.shrecordedevil.exampleioc-match
+TTR-F-006ReviewusersSecond UID-0 account/etc/passwdT11360.4falsefalseusers2026-01-01T00:00:00Zrecordedaccount

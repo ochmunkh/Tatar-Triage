@@ -1,0 +1,36 @@
+# platform	category	message	detail	expect	note
+# Shared by tests/test-artifact-class.sh and tests/Test-ArtifactClass.ps1.
+# artifactClass is what a suppression or IOC rule aims at, so a finding filed
+# under the wrong class is a finding the right rule will never match.
+# NO COLUMN MAY BE EMPTY: bash read collapses consecutive TABs. Write "-".
+windows	persistence	Run key points at a user-writable path	HKCU Run -> C:\Users\a\AppData\x.exe	run-key	the default for persistence, since Run keys are the common case
+windows	persistence	AppInit_DLLs is set (DLL loaded into most user processes)	-	winlogon	AppInit and Winlogon are the same key family
+windows	persistence	Debugger set under Image File Execution Options for sethc.exe	-	ifeo	
+windows	persistence	COM CLSID registered per-user AND machine-wide: {0000-0000}	HKCU InProcServer32 -> C:\Users\a\AppData\e.dll	com-hijack	the HKCU shadow IS the technique
+windows	persistence	netsh helper DLL in a user-writable location: vpnhelper	C:\Users\a\AppData\nsh.dll	netsh-helper	
+windows	persistence	Protocol handler served by a DLL in a user-writable location: about	-> C:\Users\a\AppData\p.dll	protocol-handler	
+windows	persistence	Scheduled task runs from a user-writable path	TaskName \Updater	scheduled-task	
+windows	persistence	Startup folder contains a script	C:\Users\a\Start Menu\Programs\Startup\x.vbs	startup-folder	
+windows	lateral	WMI event subscription consumer found: __FilterToConsumerBinding	-	wmi-subscription	fileless persistence, raised by the lateral module
+windows	useractivity	MUICache names a script that is no longer on disk	-	muicache	
+windows	useractivity	Script or unusual executable started from the shell by this user	-	userassist	the default for useractivity
+windows	rmm	Remote access / RMM tool present: AnyDesk	check it against the connection history below	rmm-product	the DETAIL mentions connection history; the class must come from the message
+windows	rmm	AnyDesk connection history present: 3 entr(y/ies)	-	rmm-connection-log	
+windows	motw	File downloaded from the internet was never unblocked	-	mark-of-the-web	
+windows	network	hosts file has 2 custom entries	-	hosts-file	
+windows	users	1 local Administrators member(s) besides the built-in account	-	admin-group	
+windows	users	Enabled local account with NO password required: Admin	-	account	
+windows	process	Running process from a DELETED binary (PID 1)	-	deleted-binary	
+windows	indicators	3 executable file(s) in temp/appdata locations	-	temp-executable	
+windows	obfscan	Suspicious pattern 'IEX' in C:\x.ps1	-	obfuscated-script	
+windows	nosuchcategory	anything at all	-	unknown	an unmapped category must say so rather than guess
+linux	persistence	cron entry runs a script from /tmp	/etc/cron.d/x	cron	
+linux	persistence	systemd unit points at a world-writable binary	-	service	
+linux	process	Running process from a DELETED binary (PID 1)	-	deleted-binary	the same rule, the same class, on both platforms
+linux	users	Second UID-0 account	/etc/passwd	account	
+linux	network	/etc/hosts has 4 custom entries	-	hosts-file	
+linux	indicators	world-writable system file	-	writable-path	
+linux	suid	SUID binary outside standard paths	/opt/x	suid	
+linux	sshkeys	authorized_keys modified recently	-	ssh-key	
+linux	bashhistory	history contains a download-and-execute chain	-	bash-history	
+linux	nosuchcategory	anything at all	-	unknown	an unmapped category must say so rather than guess

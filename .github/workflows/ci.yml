@@ -82,6 +82,17 @@ jobs:
       - name: Evidence correlation unit tests
         run: bash tests/test-correlation.sh
 
+      - name: Artifact-class mapping unit tests
+        run: bash tests/test-artifact-class.sh
+
+      # The one test an OPERATOR can run to answer "does this build behave
+      # correctly?" without trusting the machine it runs on: a recorded finding
+      # set replayed through the real analysis code, against an answer worked
+      # out from the rules. Deliberately not a self-test that plants
+      # suspicious-looking files - see the header of the script.
+      - name: Known-answer verification
+        run: bash tests/test-known-answer.sh
+
       - name: Allowlist path-extraction unit tests
         run: bash tests/test-allowlist-path.sh
 
@@ -212,6 +223,14 @@ jobs:
       # '-Modules a,b' arrives as an ARRAY from a PowerShell prompt and as a
       # literal string from cmd.exe. Both shapes have to reach the same module
       # list; only the cmd.exe one ever did before 1.5.0.
+      - name: Artifact-class mapping unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-ArtifactClass.ps1
+
+      - name: Known-answer verification
+        shell: pwsh
+        run: pwsh -File tests/Test-KnownAnswer.ps1
+
       - name: Argument-value parsing unit tests
         shell: pwsh
         run: pwsh -File tests/Test-ArgValue.ps1
@@ -326,6 +345,14 @@ jobs:
       - name: Evidence correlation unit tests
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-Correlation.ps1
+
+      - name: Artifact-class mapping unit tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-ArtifactClass.ps1
+
+      - name: Known-answer verification
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-KnownAnswer.ps1
 
       - name: Argument-value parsing unit tests
         shell: powershell

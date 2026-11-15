@@ -1,0 +1,44 @@
+{
+  "_comment": "Known answer for findings.json in this folder: the outcomes a correct build MUST produce from that recorded document. Nothing here is collected from a host, so the result cannot drift with the machine the test runs on - which is the point. Worked out from the RULES, not from what the code happens to do.",
+  "findingsCount": 10,
+  "activeFindingsCount": 9,
+  "suppressedCount": 1,
+  "correlation": {
+    "raisedTo085": [
+      "TTR-F-001",
+      "TTR-F-002",
+      "TTR-F-003",
+      "TTR-F-004"
+    ],
+    "why": {
+      "TTR-F-001 + TTR-F-002": "COR-01: motw and useractivity name C:\\Users\\a\\Downloads\\setup.exe",
+      "TTR-F-003 + TTR-F-004": "COR-02: persistence and indicators name C:\\Users\\a\\AppData\\Local\\Temp\\svc.exe"
+    },
+    "mustNotRise": {
+      "TTR-F-005": "its only path-partner, TTR-F-006, is suppressed by the allowlist - correlating on it would re-raise exactly the noise the allowlist removed",
+      "TTR-F-006": "suppressed, so it takes no part at all",
+      "TTR-F-007": "names no path, so nothing can agree with it",
+      "TTR-F-008": "already an IOC hit at 0.95, which outranks 0.85",
+      "TTR-F-009": "names no path",
+      "TTR-F-010": "names no path"
+    }
+  },
+  "confidenceLadder": [
+    0.4,
+    0.7,
+    0.85,
+    0.95
+  ],
+  "severityUnchangedBy Correlation": true,
+  "classesPresent": [
+    "account",
+    "hosts-file",
+    "ioc-match",
+    "mark-of-the-web",
+    "muicache",
+    "rmm-product",
+    "run-key",
+    "temp-executable",
+    "userassist"
+  ]
+}

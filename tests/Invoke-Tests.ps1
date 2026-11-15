@@ -73,7 +73,7 @@ function Assert-Contract {
     Check "$Label : summary.json parses"            ($null -ne $S)
     if ($null -eq $S) { return }
 
-    Check "$Label : schemaVersion is 1.4"           ($S.schemaVersion -eq '1.4') "got '$($S.schemaVersion)'"
+    Check "$Label : schemaVersion is 1.5"           ($S.schemaVersion -eq '1.5') "got '$($S.schemaVersion)'"
     Check "$Label : version is SemVer"              ($S.version -match '^\d+\.\d+\.\d+$') "got '$($S.version)'"
     Check "$Label : platform is windows"            ($S.platform -eq 'windows')
 
@@ -175,6 +175,17 @@ function Assert-Contract {
     # skip them. A field present nine times out of ten is worse than no field,
     # because a downstream rule written against it fails on the tenth. The
     # Linux harness asserts the same list, so the two editions cannot drift.
+    # artifactClass is what a suppression or IOC rule aims at, so a finding
+    # without one is a finding no rule can target precisely.
+    $badAc = @($f | Where-Object { [string]::IsNullOrWhiteSpace($_.artifactClass) })
+    Check "$Label : every finding carries an artifactClass" ($badAc.Count -eq 0) (($badAc | ForEach-Object { $_.id }) -join ',')
+    # The vocabulary is LIFTED from the collector: a harness carrying its own
+    # copy would pass while the shipped list was broken.
+    $vsrc = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\Tatar.ps1'))
+    $vm = [regex]::Match($vsrc, '\$script:ArtifactClasses\s*=\s*@\((.*?)\)', 'Singleline')
+    $vocab = @([regex]::Matches($vm.Groups[1].Value, "'([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+    $badV = @($f | Where-Object { $_.artifactClass -and ($vocab -notcontains $_.artifactClass) })
+    Check "$Label : artifactClass comes from the declared vocabulary" ($badV.Count -eq 0) (($badV | ForEach-Object { "$($_.id)=$($_.artifactClass)" }) -join ',')
     $req13   = 'confidenceReason','iocIndicator','module','collected_at','paths'
     $names13 = @($f | ForEach-Object { $_.PSObject.Properties.Name })
     $missing13 = @()
