@@ -4,7 +4,7 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.5.0] — 2026-11-15
 
 ### Added
 - **`artifactClass` on every finding (schema 1.5).** `category` says which

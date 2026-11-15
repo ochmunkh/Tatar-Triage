@@ -35,19 +35,19 @@ Run everything with a single command:
   <img src="docs/screenshot_terminal.png" alt="TATAR Triage Toolkit run" width="840">
 </p>
 
-Every run produces a self-contained, hashed evidence folder:
+Every run produces a self-contained, hashed evidence folder — and `ARTIFACTS.md` in it says what each file is and what opens it:
 
 <p align="center">
   <img src="docs/sample_output_tree.png" alt="Output structure" width="840">
 </p>
 
-The v1.1 triage summary (`summary.txt`) gives the IR lead a one-page starting point:
+The triage summary (`summary.txt`) gives the IR lead a one-page starting point — each finding carries its artifact class, its ATT&CK technique and its confidence, and the run says plainly what it could **not** collect:
 
 <p align="center">
   <img src="docs/sample_summary.png" alt="Triage summary" width="840">
 </p>
 
-The consolidated report flags suspicious activity as it goes (sample):
+The consolidated report flags suspicious activity as it goes, per module (sample):
 
 <p align="center">
   <img src="docs/sample_report.png" alt="Sample report" width="840">
@@ -453,11 +453,14 @@ this tool's first constraint.
 
 ```
 C:\Forensic\<HOST>_<YYYY-MM-DD_HH-mm-ss>\
+├─ ARTIFACTS.md                      # what every file here is, and what opens it   (NEW)
+├─ paste.txt                         # the whole run in <60 lines, for a ticket     (NEW)
+├─ allowlist.suggested.json          # this host as an allowlist DRAFT              (NEW)
 ├─ TATAR_Report_<HOST>_<stamp>.txt   # consolidated human-readable report
-├─ summary.txt                       # analyst-first triage summary + findings  (NEW v1.1)
-├─ summary.json                      # same, machine-readable (SIEM/automation) (NEW v1.1)
-├─ findings.json                     # findings-only feed for SOAR / SIEM              (NEW)
-├─ tatar.log                         # execution log: START/OK/WARN/FAILED      (NEW v1.1)
+├─ summary.txt                       # analyst-first triage summary + findings
+├─ summary.json                      # same, machine-readable (SIEM/automation)
+├─ findings.json                     # findings-only feed for SOAR / SIEM
+├─ tatar.log                         # execution log, and what was NOT collected
 ├─ chain_of_custody.txt              # case/examiner/times/script hash
 ├─ manifest_sha256.txt               # SHA-256 of every collected file, `sha256sum -c` format (tatar.log excluded)
 ├─ timeline.csv                      # process / prefetch / recent / installs
@@ -523,9 +526,14 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.5.0 — when two artifacts agree (current)
+### v1.5.0 — what the evidence is, and what to do with it (current)
 
-- **Evidence correlation.** Two named rules — `COR-01` download-then-execute, `COR-02` autorun-on-suspect-file — raise a finding's confidence to `0.85` when two findings from *different* modules name the same path, and say in `confidenceReason` which artifacts agreed. Severity is untouched, nothing is merged, nothing is invented. 50 new assertions, most of them about the ways it must **not** fire.
+- **`artifactClass` on every finding (schema 1.5).** `category` says which module found it; this says what the evidence *is* — `run-key`, `ifeo`, `com-hijack`, `wmi-subscription`, `userassist` — so an allowlist or IOC rule can aim at one technique instead of a whole module. Closed vocabulary, 46 classes on Windows and 18 on Linux, gated across both.
+- **"Collected — now what?"** Every run now writes `ARTIFACTS.md` (what each file is and what opens it), `paste.txt` (the whole run in under 60 lines, stable enough to diff) and `allowlist.suggested.json` (this host as a baseline draft). None of them costs anything at collection time.
+- **Three more persistence techniques** — COM hijack (HKCU shadowing HKLM), netsh helper DLLs and protocol handlers — inside the existing module, +1.0 s measured, and tuned until a clean workstation raises none of them.
+- **Known-answer verification.** `Test-KnownAnswer.ps1` / `test-known-answer.sh` replay a recorded finding set through the real analysis code and check it against an answer worked out from the rules. An operator can now prove their build behaves correctly, not just that the file hashes match.
+- **Evidence correlation.** Two named rules — `COR-01` download-then-execute, `COR-02` autorun-on-suspect-file — raise confidence to `0.85` when two findings from *different* modules name the same path, and say in `confidenceReason` which artifacts agreed. Severity is untouched, nothing is merged, nothing is invented.
+- **Fixed, all found by running it rather than reading it:** a path extractor that truncated at the first dotted directory (so the allowlist, hash and IOC passes judged the wrong string); a non-Administrator run that left Prefetch empty and said nothing; `useractivity` telling an Administrator run it needed Administrator; `obfscan` at 43 of 65 findings; a UTF-8 BOM on every text output; two collected files missing from the manifest; and a relative-path test that broke on a case difference or an 8.3 path — in the manifest, silently, since it was written.
 - **AV / EDR safety is now gated, not promised.** Eight numbered claims in [docs/AV-SAFETY.md](docs/AV-SAFETY.md), each enforced by a CI check, cross-referenced both ways so neither the document nor the checks can drift ahead of the other.
 - **`-Quick` / `--quick`** — a high-signal profile chosen by measurement (Windows 9 modules / 10.1 s, Linux 10 modules / under 1 s).
 - **CI runs the suite on Windows PowerShell 5.1**, not only pwsh 7. It immediately earned its keep twice.
@@ -652,7 +660,7 @@ Run бүр бие даасан, хэшлэгдсэн нотолгооны хав
   <img src="docs/sample_output_tree.png" alt="Гаралтын бүтэц" width="840">
 </p>
 
-v1.1-ээс хойш `summary.txt` нь IR ахлагчид нэг хуудсаар эхлэх цэг өгнө:
+`summary.txt` нь IR ахлагчид нэг хуудсаар эхлэх цэг өгнө — finding бүр артефактын ангилал, ATT&CK техник, итгэлийн түвшинтэй, мөн юуг цуглуулж **чадаагүйг** шууд хэлнэ:
 
 <p align="center">
   <img src="docs/sample_summary.png" alt="Triage дүгнэлт" width="840">
@@ -1061,11 +1069,14 @@ AV сэрээхгүй байх нь энэ хэрэгслийн нэгдүгээ
 
 ```
 <OutputPath>/<HOST>_<YYYY-MM-DD_HH-mm-ss>/
+├─ ARTIFACTS.md                      # файл бүр юу болох, юугаар нээхийг хэлнэ   (ШИНЭ)
+├─ paste.txt                         # бүтэн ажиллагаа <60 мөрөөр, тикетэд наахад (ШИНЭ)
+├─ allowlist.suggested.json          # энэ хост allowlist-ийн НООРОГ болсон нь    (ШИНЭ)
 ├─ TATAR_Report_<HOST>_<stamp>.txt   # нэгдсэн, хүн уншихад зориулсан тайлан
 ├─ summary.txt                       # шинжээч-төвтэй triage дүгнэлт + findings
 ├─ summary.json                      # нэгдсэн schema (SIEM/автоматжуулалт)
 ├─ findings.json                     # findings-only feed (SOAR/SIEM)
-├─ tatar.log                         # гүйцэтгэлийн лог: START/OK/WARN/FAILED
+├─ tatar.log                         # гүйцэтгэлийн лог, мөн юуг цуглуулж ЧАДААГҮЙ нь
 ├─ chain_of_custody.txt              # case/examiner/цаг/скриптийн hash
 ├─ manifest_sha256.txt               # файл бүрийн SHA-256 (`sha256sum -c`-гээр шалгаж болно)
 ├─ timeline.csv · binary_hashes.txt · ...

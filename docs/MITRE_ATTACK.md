@@ -39,6 +39,9 @@ technique without raising a finding for it.
 | `persistence` | Winlogon `Shell` / `Userinit` | T1547.004 Winlogon Helper DLL |
 | `persistence` | LSA authentication / notification packages | T1547.005 Security Support Provider · T1556.002 Password Filter DLL |
 | `persistence` | Print Processors / Monitors | T1547.012 Print Processors |
+| `persistence` | COM hijack — a CLSID registered under **both** HKCU and HKLM | T1546.015 COM Hijacking |
+| `persistence` | netsh helper DLL in a user-writable location | T1546.007 Netsh Helper DLL |
+| `persistence` | Protocol handler / filter served from a user-writable location | T1546.015 COM Hijacking · T1112 Modify Registry |
 | `autoruns` | Sysinternals Autoruns (all ASEPs) | multiple (T1547, T1037, …) |
 
 ### Privilege Escalation
@@ -199,6 +202,9 @@ finding үүсгэхгүйгээр техникийн *нотолгоог* л б
 | `persistence` | Winlogon `Shell` / `Userinit` | T1547.004 Winlogon Helper DLL |
 | `persistence` | LSA-гийн authentication / notification package | T1547.005 Security Support Provider · T1556.002 Password Filter DLL |
 | `persistence` | Print Processor / Monitor | T1547.012 Print Processors |
+| `persistence` | COM hijack — HKCU **ба** HKLM хоёуланд бүртгэгдсэн CLSID | T1546.015 COM Hijacking |
+| `persistence` | Хэрэглэгч бичих боломжтой байрлалын netsh helper DLL | T1546.007 Netsh Helper DLL |
+| `persistence` | Хэрэглэгч бичих боломжтой байрлалаас үйлчилж буй protocol handler / filter | T1546.015 COM Hijacking · T1112 Modify Registry |
 | `autoruns` | Sysinternals Autoruns (бүх ASEP) | олон (T1547, T1037, …) |
 
 #### Privilege Escalation

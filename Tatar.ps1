@@ -287,7 +287,15 @@ function Get-Technique {
             else { return @('T1068') }
         }
         'persistence' {
-            if ($Message -match 'IFEO|Image File Execution') { return @('T1546.012') }
+            # The three techniques added in this release come first: each has its own
+            # ATT&CK id, and without them they would all have fallen through to
+            # T1547.001 (Run keys) - a finding mapped to the wrong technique is
+            # worse than one mapped to none, because a coverage report built
+            # from it is confidently wrong.
+            if     ($Message -match 'COM CLSID')        { return @('T1546.015') }
+            elseif ($Message -match 'netsh helper')     { return @('T1546.007') }
+            elseif ($Message -match 'Protocol handler|Protocol filter') { return @('T1546.015','T1112') }
+            elseif ($Message -match 'IFEO|Image File Execution') { return @('T1546.012') }
             elseif ($Message -match 'AppInit')  { return @('T1546.010') }
             elseif ($Message -match 'AppCert')  { return @('T1546.009') }
             elseif ($Message -match 'Winlogon') { return @('T1547.004') }
