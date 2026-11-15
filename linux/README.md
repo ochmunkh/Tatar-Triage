@@ -243,7 +243,7 @@ sudo ./tatar-linux.sh --all --dry-run --output /mnt/usb/evidence --allowlist all
 # зөвхөн сонгосон модулиуд
 sudo ./tatar-linux.sh --modules network,process,persistence,sshkeys
 
-# гадаад зөөвөрлөгч рүү бүтэн run, case мета, шахаж хэшлэсэн
+# гадаад зөөвөрлөгч рүү бүтэн run, case мета, шахаж хэш тооцсон
 sudo ./tatar-linux.sh --all --output /mnt/usb/evidence \
      --caseid IR-2026-014 --examiner "Enkhbat.O" --compress
 
@@ -270,7 +270,7 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 | `--compress` | Төгсгөлд нь гаралтыг `tar.gz` болгож SHA-256 авна |
 | `--silent` / `--quiet` | Консолын **бүх** гаралтыг дарна (SSH / cron / алсын run-д) |
 | `--dry-run` / `--preview` | Тодорхойлсон гаралтын хавтас, модулиудыг ажиллах дарааллаар нь, аль gated үйлдэл асаалттайг, allowlist / IOC feed уншигдаж байгаа эсэхийг хэвлээд `0`-ээр гарна — **юу ч үүсгэхгүй, юу ч бичихгүй** |
-| `--dump-deleted` | Ажиллаж байгаа устгагдсан binary-г `/proc/PID/exe`-ээс сэргээнэ (opt-in; **default-оор унтраалттай**, read-only-first) |
+| `--dump-deleted` | Ажиллаж байгаа устгагдсан binary-г `/proc/PID/exe`-ээс сэргээнэ (opt-in; **анхдагчаар унтраалттай**, read-only-first) |
 | `--allowlist <json>` | **v1.2** Мэдэгдэж байгаа цэвэр finding-ийг зам, SHA-256, эсвэл dpkg/rpm багцын эзэмшлээр нууна (доор үз) |
 | `--ioc <json>` | **v1.2** Finding болон цуглуулсан нотолгоог офлайн IOC feed-тэй тулгана (доор үз) |
 
@@ -288,7 +288,7 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 
 `sysinfo` · `network` · `process` · `sessions` · `users` · `services` · `persistence` · `apps` · `suid` · `sshkeys` · `bashhistory` · `kernelmods` · `indicators` · `hashes` · `logs` · `timeline` · `containers` · `integrity`
 
-Хамрах хүрээ: систем/kernel мэдээлэл, сүлжээний socket · routing · DNS, **`/tmp`-ээс ажиллаж буй ба устгагдсан binary-г илрүүлдэг** process tree, нэвтрэлт (`who`/`last`/`lastb`, auth лог), хэрэглэгч/бүлэг/sudo (**UID-0 ба хоосон нууц үгийн шалгалт**), systemd service ба enabled unit, persistence (cron, systemd timer, `rc.local`, profile скрипт), суулгасан багц (`dpkg`/`rpm`), **SUID/SGID** жагсаалт, SSH түлхүүр ба `sshd_config`, shell history, kernel модуль ба taint, сэжигтэй индикатор (бүгд бичиж чадах системийн файл, `/tmp`·`/dev/shm`·`/var/tmp` доторх exec, `/etc`-д саяхан орсон өөрчлөлт, immutable файл), ажиллаж буй binary-ийн SHA-256, чухал логийн хуулбар, файлын өөрчлөлтийн хөнгөн timeline. **v1.1**-д container / cloud context (`containers`), критикал файлын SHA-256 integrity baseline (`integrity`), established холболтын тоо, ажиллаж байгаа устгагдсан binary-г сэргээх сонголт (`--dump-deleted`) нэмэгдсэн.
+Хамрах хүрээ: систем/kernel мэдээлэл, сүлжээний socket · routing · DNS, **`/tmp`-ээс ажиллаж буй ба устгагдсан binary-г илрүүлдэг** process tree, нэвтрэлт (`who`/`last`/`lastb`, auth лог), хэрэглэгч/бүлэг/sudo (**UID-0 ба хоосон нууц үгийн шалгалт**), systemd service ба enabled unit, persistence (cron, systemd timer, `rc.local`, profile скрипт), суулгасан багц (`dpkg`/`rpm`), **SUID/SGID** жагсаалт, SSH түлхүүр ба `sshd_config`, shell history, kernel модуль ба taint, сэжигтэй индикатор (бүгд бичиж чадах системийн файл, `/tmp`·`/dev/shm`·`/var/tmp` доторх exec, `/etc`-д саяхан орсон өөрчлөлт, immutable файл), ажиллаж буй binary-ийн SHA-256, чухал логийн хуулбар, файлын өөрчлөлтийн хөнгөн timeline. **v1.1**-д container / cloud context (`containers`), чухал файлын SHA-256 integrity baseline (`integrity`), established холболтын тоо, ажиллаж байгаа устгагдсан binary-г сэргээх сонголт (`--dump-deleted`) нэмэгдсэн.
 
 ---
 
@@ -298,7 +298,7 @@ if [ $? -ne 0 ]; then echo "TATAR finished with issues - check tatar.log"; fi
 
 **`--allowlist <json>`** нь мэдэгдэж байгаа цэвэр finding-ийг `suppressed` гэж тэмдэглэнэ — тэдгээр нь `suppressReason`-тойгоо `summary.json` / `findings.json`-д аудитын төлөө үлдэх ба зөвхөн үндсэн жагсаалтаас гарна. Тулгалт нь `paths[]` (glob, жишээ нь `/usr/lib/*`), `hashes[]` (binary-ийн SHA-256), эсвэл `"packageOwned": true` үед finding-ийн binary-г `dpkg -S` / `rpm -qf` эзэмшдэг эсэхээр (vendor-д итгэсэн) явагдана. Windows-д л хамаарах `publishers[]` түлхүүрийг Linux дээр үл тоомсорлоно — тиймээс нэг allowlist файл хоёр edition-д хоёуланд нь тохирно.
 
-**`--ioc <json>`** бол known-bad feed: `hashes[]` (зөвхөн SHA-256), `ips[]`, `domains[]`, `filenames[]`. *Pass A* нь одоо байгаа finding-уудыг `iocMatch`-аар тэмдэглэнэ; IOC таарвал **allowlist-ийг давж**, нууцалсан finding дахин идэвхжиж `High` / confidence `0.95` болно. *Pass B* нь цуглуулсан нотолгооны хаанаас ч (процесс, socket, хэшлэсэн binary, timeline) олдсон IOC-д зориулж шинэ finding үүсгэх ба Pass A-тай давхцуулахгүй, technique-ийг indicator-ийн төрлөөр тавина — IP → `T1071`, domain → `T1071.004`, filename → `T1204.002`, hash → `T1588.001`.
+**`--ioc <json>`** бол known-bad feed: `hashes[]` (зөвхөн SHA-256), `ips[]`, `domains[]`, `filenames[]`. *Pass A* нь одоо байгаа finding-уудыг `iocMatch`-аар тэмдэглэнэ; IOC таарвал **allowlist-ийг давж**, нууцалсан finding дахин идэвхжиж `High` / confidence `0.95` болно. *Pass B* нь цуглуулсан нотолгооны хаанаас ч (процесс, socket, хэш тооцсон binary, timeline) олдсон IOC-д зориулж шинэ finding үүсгэх ба Pass A-тай давхцуулахгүй, technique-ийг indicator-ийн төрлөөр тавина — IP → `T1071`, domain → `T1071.004`, filename → `T1204.002`, hash → `T1588.001`.
 
 Хоёр замыг **цуглуулга эхлэхээс өмнө** шалгана. Уншигдахгүй замыг чимээгүй өнгөрөөхгүй: консол дээр сануулж, error бүртгэж, exit code-ийг `2` болгоно.
 
@@ -309,8 +309,8 @@ Finding-ууд `id`, `confidence`, `suppressed`, `suppressReason`, `iocMatch`, �
 ---
 ## Нотлох баримтын хамаарал
 
-Нэг ул мөр бол сэжүүр; хоёр бие даасан ул мөр **нэг ижил зам** нэрлэж байгаа нь
-өөр мэдэгдэл. Shell хувилбар нэг нэртэй дүрэм авч явна:
+Нэг artifact дангаараа зөвхөн сэжүүр болно; хоёр бие даасан artifact ижил
+**file path** зааж байвал энэ нь илүү хүчтэй нотолгоо. Shell хувилбар нэг нэртэй дүрэм авч явна:
 
 | Дүрэм | Хэзээ ажиллах | Ямар утгатай |
 |-------|---------------|--------------|
@@ -325,14 +325,14 @@ finding (цэвэр гэж шийдэгдсэн) болон IOC таарсныг
 Windows хувилбар мөн `COR-01` (download-then-execute) авч явах ба Linux дээр
 түүний хос байхгүй: энд файл интернэтээс ирснийг бүртгэх зүйл байхгүй.
 
-## Цуглууллаа — одоо яах вэ?
+## Цуглуулалт дууслаа. Одоо яах вэ?
 
 Нотлох баримтын хавтас өмнө нь нээлттэй орхидог байсан асуултад гурван гаралт
 хариулна, аль нь ч цуглуулалтын талд өртөг нэмэхгүй:
 
 | Файл | Юунд зориулагдсан |
 |---|---|
-| `ARTIFACTS.md` | Энэ ажиллагааны гаргасан файл бүр, юунд хариулдаг, юугаар нээх вэ. Машинд шалгагдах `Uncatalogued: N` мөрөөр төгсөнө; CI нь `0`-оос өөр утгад унана. |
+| `ARTIFACTS.md` | Энэ ажиллагааны гаргасан файл бүр, юунд хариулдаг, юугаар нээх вэ. Машинд шалгагдах `Uncatalogued: N` мөрөөр төгсөнө; CI нь `0`-ээс өөр утгатай бол build амжилтгүй болно. |
 | `paste.txt` | Бүтэн ажиллагаа 60-аас цөөн мөрөөр, тикет/чатад наахад. Зориудаар тогтвортой — хугацаа, тоолуур байхгүй, pid нэгтгэгдсэн — тиймээс хоёр paste лог-ийн diff нь хост дээр юу өөрчлөгдсөнийг харуулна. |
 | `allowlist.suggested.json` | Энэ хостын finding-үүдийн замууд allowlist-ийн **ноорог** болсон нь, `--allowlist` уншдаг форматаар. Юуг ч шүүхгүй; итгэхээсээ өмнө тайрна уу. |
 
@@ -359,7 +359,7 @@ Windows хувилбар мөн `COR-01` (download-then-execute) авч явах
 
 ## Finding бол сэжүүр, эцсийн дүгнэлт биш
 
-Нэгтгэсэн **сэжигтэй finding**-үүдийн жагсаалт нь эвристик pattern match дээр тогтдог — UID-0 account, хоосон нууц үг, `/tmp`-ээс эсвэл устгагдсан binary-аас ажиллаж буй процесс, стандарт замаас гадуурх SUID, сэжигтэй cron/history команд, `root`-ийн `authorized_keys`, бүгд бичиж чадах системийн файл гэх мэт. Хууль ёсны программ, админы ердийн ажил ч эдгээрийг мөн асааж болно. **Дүгнэлт гаргахаасаа өмнө сэжүүр бүрийг бүтэн тайлантай тулгаж үргэлж баталгаажуул.**
+Нэгтгэсэн **сэжигтэй finding**-үүдийн жагсаалт нь эвристик pattern match дээр тогтдог — UID-0 account, хоосон нууц үг, `/tmp`-ээс эсвэл устгагдсан binary-аас ажиллаж буй процесс, стандарт замаас гадуурх SUID, сэжигтэй cron/history команд, `root`-ийн `authorized_keys`, бүгд бичиж чадах системийн файл гэх мэт. Хууль ёсны программ, админы ердийн ажил ч эдгээрийг мөн асааж болно. **Дүгнэлт гаргахаасаа өмнө сэжүүр бүрийг дэлгэрэнгүй тайлантай тулгаж үргэлж баталгаажуул.**
 
 ---
 
