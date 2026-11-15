@@ -287,10 +287,15 @@ Assert-Contract $s1 'T1' $t1
 # v1.5.0 shipped with summary.json saying 1.5 and findings.json still saying
 # 1.4: both validated, because the schema accepts either, and both harnesses
 # only ever looked at summary.json.
-$fj1 = Join-Path (Split-Path $s1 -Parent) 'findings.json'
-$fv1 = if (Test-Path $fj1) { (Get-Content $fj1 -Raw | ConvertFrom-Json).schemaVersion } else { '(missing)' }
-$sv1 = (Get-Content $s1 -Raw | ConvertFrom-Json).schemaVersion
-Check "T1 : summary.json and findings.json declare the same schemaVersion" ($fv1 -eq $sv1) "summary=$sv1 findings=$fv1"
+# $s1 is the PARSED summary, not a path - Get-Summary returns the object. The
+# run directory comes from $t1.Dir. The first version of this used
+# Split-Path on $s1, which made both sides empty and the comparison pass
+# vacuously on 5.1 while failing on pwsh: a check that cannot fail is worse
+# than no check, and this one nearly shipped as one.
+$fj1 = if ($t1.Dir) { Join-Path $t1.Dir 'findings.json' } else { $null }
+$fv1 = if ($fj1 -and (Test-Path $fj1)) { (Get-Content $fj1 -Raw | ConvertFrom-Json).schemaVersion } else { '(missing)' }
+$sv1 = if ($s1) { [string]$s1.schemaVersion } else { '(missing)' }
+Check "T1 : summary.json and findings.json declare the same schemaVersion" ($fv1 -eq $sv1 -and $sv1 -ne '(missing)') "summary=$sv1 findings=$fv1"
 $ioc1 = @(Get-IocFindings $s1)
 Check 'T1 : no IOC findings without an IOC feed' ($ioc1.Count -eq 0) "got $($ioc1.Count)"
 # summary.txt tells the analyst to grep the log for FAILED, so a clean run must
