@@ -449,6 +449,29 @@ this tool's first constraint.
 
 ---
 
+### Which platform collects what
+
+The two editions share an output contract, not a module list — 33 modules on
+Windows, 18 on Linux. That is not an oversight on the shell side: most of the
+difference is Windows artifacts that have no Linux equivalent, and the shell
+edition collects things Windows has nothing to collect.
+
+| | Modules |
+|---|---|
+| **Both** (11) | `sysinfo` `network` `process` `sessions` `users` `services` `persistence` `apps` `indicators` `hashes` `timeline` |
+| **Windows only** (22) | `memory` `autoruns` `shares` `firewall` `drivers` `prefetch` `usb` `pshistory` `obfscan` `rdp` `lateral` `privesc` `browser` `fsartifacts` `deleted` `shadow` `eventlogs` `hives` `mft` `rmm` `useractivity` `motw` |
+| **Linux only** (7) | `suid` `sshkeys` `bashhistory` `kernelmods` `logs` `containers` `integrity` |
+
+Most of the Windows-only column is the registry, NTFS and the Windows event
+log — Prefetch, Shellbags, Mark-of-the-Web, UserAssist, shadow copies and
+registry hives simply do not exist on Linux. What a Linux responder gives up
+in return is real and worth naming: **no execution-evidence module**
+(`prefetch` / `useractivity` have no counterpart), **no download-provenance**
+(`motw`, which is why `COR-01` is Windows-only), and **no RMM detection**
+(`rmm`). Those are the three gaps to be aware of, not the module count.
+
+---
+
 ## Output
 
 ```
@@ -1063,6 +1086,30 @@ build-ийнх, орчиных биш.
 хийдэг бөгөөд өөрийн probe-оо ажиллуулж чадаагүй хост дээр аль хэдийн нэг удаа
 унасан; Windows дээр тэр санаа бол Defender-ийн илрүүлэлт хүлээж байгаа хэрэг,
 AV сэрээхгүй байх нь энэ хэрэгслийн нэгдүгээр хязгаарлалт.
+
+---
+
+### Аль платформ юуг цуглуулдаг вэ
+
+Хоёр хувилбар модулийн жагсаалтаа биш, **гаралтын contract**-аа хуваалцдаг —
+Windows дээр 33, Linux дээр 18 модуль. Энэ нь shell талын дутагдал биш:
+ялгааны ихэнх нь Linux дээр эквивалентгүй Windows-ийн артефактууд бөгөөд
+shell хувилбар нь Windows дээр цуглуулах зүйлгүй зүйлсийг цуглуулдаг.
+
+| | Модулиуд |
+|---|---|
+| **Хоёуланд** (11) | `sysinfo` `network` `process` `sessions` `users` `services` `persistence` `apps` `indicators` `hashes` `timeline` |
+| **Зөвхөн Windows** (22) | `memory` `autoruns` `shares` `firewall` `drivers` `prefetch` `usb` `pshistory` `obfscan` `rdp` `lateral` `privesc` `browser` `fsartifacts` `deleted` `shadow` `eventlogs` `hives` `mft` `rmm` `useractivity` `motw` |
+| **Зөвхөн Linux** (7) | `suid` `sshkeys` `bashhistory` `kernelmods` `logs` `containers` `integrity` |
+
+Зөвхөн Windows-ийн баганын ихэнх нь registry, NTFS, Windows event log —
+Prefetch, Shellbags, Mark-of-the-Web, UserAssist, shadow copy, registry hive
+зэрэг нь Linux дээр огт байдаггүй. Харин Linux дээр хариу арга хэмжээ авагч
+юуг алдаж байгааг нэрлэх нь зүйтэй: **гүйцэтгэлийн нотолгооны модуль байхгүй**
+(`prefetch` / `useractivity`-ийн хос алга), **файл хаанаас ирснийг мэдэх
+боломжгүй** (`motw` — COR-01 зөвхөн Windows байдгийн шалтгаан нь энэ), мөн
+**RMM илрүүлэлт байхгүй** (`rmm`). Анхаарах гурван цоорхой нь модулийн тоо
+биш, яг эдгээр.
 
 ---
 

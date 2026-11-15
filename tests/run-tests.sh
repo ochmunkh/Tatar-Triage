@@ -289,7 +289,20 @@ if [ $? -eq 0 ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); fi
 printf '\nT1  baseline run (no allowlist, no IOC)\n'
 D1="$(run_collector t1)"; E1="$(cat "$EXITFILE" 2>/dev/null)"
 check_exit T1 "$E1"
+# The two documents one run writes must agree about which schema they are.
+# v1.5.0 shipped with summary.json saying 1.5 and findings.json still saying
+# 1.4: both validated, because the schema accepts either, and both harnesses
+# only ever looked at summary.json.
+assert_same_schema() {  # assert_same_schema DIR LABEL
+    local a b
+    a=$(python3 -c "import json;print(json.load(open('$1/summary.json'))['schemaVersion'])" 2>/dev/null)
+    b=$(python3 -c "import json;print(json.load(open('$1/findings.json'))['schemaVersion'])" 2>/dev/null)
+    check "$2 : summary.json and findings.json declare the same schemaVersion" \
+          "$([ -n "$a" ] && [ "$a" = "$b" ] && echo 1 || echo 0)" "summary=$a findings=$b"
+}
+
 assert_contract "$D1/summary.json" "T1"
+assert_same_schema "$D1" "T1"
 N1="$(ioc_finding_count "$D1/summary.json")"
 [ "$N1" = "0" ] && check "T1 : no IOC findings without an IOC feed" 1 || check "T1 : no IOC findings without an IOC feed" 0 "got $N1"
 # summary.txt tells the analyst to grep the log for FAILED. A module that ends

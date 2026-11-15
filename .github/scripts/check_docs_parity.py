@@ -117,6 +117,20 @@ def check_single_version_literal(name, text, expected):
 
 def schema_version(ps1, sh):
     """The schemaVersion each producer writes. Both must agree."""
+    # findall, not search. v1.5.0 shipped with summary.json declaring 1.5 and
+    # findings.json still declaring 1.4 - two literals, and a gate that read
+    # only the first one saw nothing wrong. The tool version has had a
+    # one-copy-only rule since 1.2.4 for exactly this reason; the schema
+    # version did not, and drifted the moment it was bumped.
+    wall = re.findall(r"schemaVersion\s+=\s*'([0-9.]+)'", ps1)
+    if len(set(wall)) > 1:
+        fail("Tatar.ps1 emits more than one schemaVersion: %s - every document "
+             "this tool writes must declare the same one"
+             % ", ".join(sorted(set(wall))))
+    lall = re.findall(r'"schemaVersion": "([0-9.]+)"', sh)
+    if len(set(lall)) > 1:
+        fail("linux/tatar-linux.sh emits more than one schemaVersion: %s"
+             % ", ".join(sorted(set(lall))))
     w = re.search(r"schemaVersion\s+=\s*'([0-9.]+)'", ps1)
     l = re.search(r'"schemaVersion":\s*\\"%s\\"', sh)
     l = re.search(r'schemaVersion\\": \\"([0-9.]+)', sh) or re.search(r'"schemaVersion": "([0-9.]+)"', sh)
@@ -363,6 +377,24 @@ def check_artifact_classes(win, lin):
             fail("%s: artifact class(es) are not lower-case kebab: %s" % (name, ", ".join(bad)))
 
 
+def check_changelog_headings(root):
+    """No version may head two sections of CHANGELOG.md.
+
+    release.yml takes the release notes from the first `## [x.y.z]` heading to
+    the NEXT `## [` heading, so a duplicate silently truncates the notes at the
+    second copy. v1.5.0 shipped with two `## [1.5.0]` sections for that reason.
+    """
+    path = os.path.join(root, "CHANGELOG.md")
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        vers = re.findall(r"^## \[([^\]]+)\]", fh.read(), re.M)
+    dupes = sorted({v for v in vers if vers.count(v) > 1})
+    if dupes:
+        fail("CHANGELOG.md has more than one section for %s - release.yml would "
+             "cut the release notes at the second one" % ", ".join(dupes))
+
+
 def check_version_badge(name, text, expected):
     # The README version badge sat at 1.2 for the whole 1.3 line. A badge is
     # the first thing a reader believes, so it is held to the code the way the
@@ -421,6 +453,9 @@ def main(argv):
     # 1b-v. the artifact-class vocabularies do not drift apart
     awin, alin = artifact_classes(ps1, sh)
     check_artifact_classes(awin, alin)
+
+    # 1b-vi. no version heads two CHANGELOG sections
+    check_changelog_headings(root)
 
     # 1c. each collector states its version exactly once
     full = re.search(r"\$script:ToolVersion\s*=\s*'([^']+)'", ps1)

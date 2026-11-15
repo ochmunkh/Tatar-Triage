@@ -1,0 +1,16 @@
+# input	expect	note
+# Shared by tests/test-csv-cell.sh and tests/Test-CsvCell.ps1.
+# A cell beginning with = + @ - is a FORMULA in Excel/LibreOffice/Sheets, so
+# collected text can run code on the ANALYST machine. Expect a leading '.
+# NO COLUMN MAY BE EMPTY: bash read collapses consecutive TABs. Write "-".
+=cmd|'/c calc'!A1.txt	'=cmd|'/c calc'!A1.txt	the classic DDE payload, as a file name
+=1+1	'=1+1	a plain formula
++SUM(1)	'+SUM(1)	plus also starts a formula
+@SUM(1)	'@SUM(1)	at-sign, used by Lotus-style syntax Excel still honours
+-cmd /c calc	'-cmd /c calc	minus followed by text is a formula, not a number
+-1	-1	a negative NUMBER must be left alone - quoting it would corrupt real data
+-1.5	-1.5	and so must a negative decimal
+-12,5	-12,5	decimal comma, same rule
+C:\\Windows\\System32\\cmd.exe	C:\\Windows\\System32\\cmd.exe	an ordinary path is untouched
+normal text	normal text	ordinary text is untouched
+2026-11-15T10:00:00Z	2026-11-15T10:00:00Z	a timestamp starts with a digit, untouched

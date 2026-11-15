@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.5.0"
+VERSION="1.5.1"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -573,6 +573,30 @@ write_artifact_index() {
     return 0
 }
 
+# Makes one CSV cell safe to open in a spreadsheet. Two separate problems:
+#
+#   1. A cell beginning with =, +, @ or - is a FORMULA in Excel, LibreOffice
+#      and Google Sheets. A file named  =cmd|'/c calc'!A1.txt  on the suspect
+#      host becomes code that runs on the ANALYST's machine when they open
+#      timeline.csv. A leading apostrophe is the documented fix.
+#   2. A double quote inside a quoted field must be doubled, or the field ends
+#      early and every column after it shifts. The previous printf did not do
+#      this, so a file name containing " silently corrupted the rest of the row.
+#
+# A negative NUMBER is left alone: -1 is not a formula and quoting it would
+# corrupt real data.
+csv_cell() {
+    local v="$1"
+    case "$v" in
+        [=+@]*|"	"*) v="'$v" ;;
+        -*) case "$v" in
+                -[0-9]*) case "$v" in *[!0-9.,-]*) v="'$v" ;; esac ;;
+                *) v="'$v" ;;
+            esac ;;
+    esac
+    printf '%s' "$(printf '%s' "$v" | sed 's/"/""/g')"
+}
+
 # Boundary-aware IOC match. Plain substring matching used to let "127.0.0" match
 # 127.0.0.1 and "ocalhost" match localhost, raising false High findings. awk keeps
 # this portable: GNU grep -P is not available everywhere.
@@ -1075,7 +1099,7 @@ m_timeline() {
     local tf="$OUTDIR/timeline.csv"
     echo "MTime,Path,Source" > "$tf"
     find /etc /root /home /usr/local/bin /tmp /var/tmp /dev/shm -xdev -type f -mtime -14 ! -path "$OUTPUT_BASE/*" 2>/dev/null | head -n 5000 | while read -r f; do
-        printf '"%s","%s","fs"\n' "$(stat -c '%y' "$f" 2>/dev/null)" "$f" >> "$tf"
+        printf '"%s","%s","fs"\n' "$(csv_cell "$(stat -c '%y' "$f" 2>/dev/null)")" "$(csv_cell "$f")" >> "$tf"
     done
     local n; n=$(( $(wc -l < "$tf" 2>/dev/null) - 1 )); [ "$n" -lt 0 ] && n=0
     add_stat "TimelineEntries" "$n"

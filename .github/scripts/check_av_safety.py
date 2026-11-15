@@ -329,6 +329,39 @@ def claim_av08(errors, ps, sh, ps_s, sh_s, raw_ps, raw_sh, root):
            r">>?\s*/etc/(cron|rc\.local|systemd))", SH)
 
 
+def claim_av09(errors, ps, sh, ps_s, sh_s, raw_ps, raw_sh, root):
+    """Collected text cannot execute in the analyst's spreadsheet."""
+    # Windows: every CSV goes through ConvertTo-SafeCsv. The only bare
+    # ConvertTo-Csv allowed is the one INSIDE that function.
+    inner = raw_ps.count("$rows.ToArray() | ConvertTo-Csv -NoTypeInformation")
+    bare = len(re.findall(r"\bConvertTo-Csv\b", ps)) - inner
+    if bare > 0:
+        errors.append(
+            "AV-09: CSV safety -- %s has %d bare ConvertTo-Csv call(s); every CSV "
+            "must go through ConvertTo-SafeCsv so a collected file name cannot "
+            "become a formula in the analyst's spreadsheet" % (PS, bare))
+    forbid(errors, "AV-09", "unprotected CSV writer", ps, r"\bExport-Csv\b", PS)
+    for name, fn_name in (("Protect-CsvCell", "Protect-CsvCell"),
+                          ("ConvertTo-SafeCsv", "ConvertTo-SafeCsv")):
+        require(errors, "AV-09", "%s is present" % name, raw_ps,
+                r"function %s" % re.escape(fn_name), PS)
+    # Linux: the one CSV writer must pass both columns through csv_cell.
+    require(errors, "AV-09", "csv_cell is present", raw_sh, r"^csv_cell\(\) \{", SH)
+    # Every %s that carries data must be wrapped, not just one of them: the
+    # first version of this check only looked for the word csv_cell anywhere on
+    # the line, and a mutation that unwrapped the SECOND column sailed past it.
+    for m in re.finditer(r"^\s*printf '[^']*%s[^']*'[^\n]*>> \"\$tf\"", raw_sh, re.M):
+        line = m.group(0)
+        fmt = re.search(r"printf '([^']*)'", line).group(1)
+        want = fmt.count("%s")
+        got = line.count("csv_cell")
+        if got < want:
+            errors.append(
+                "AV-09: CSV safety -- %s writes a CSV row with %d column(s) but "
+                "only %d csv_cell call(s); every collected column must be "
+                "guarded: %s" % (SH, want, got, line.strip()[:70]))
+
+
 CLAIMS = {
     "AV-01": ("No network egress", claim_av01),
     "AV-02": ("No credential material is read", claim_av02),
@@ -338,6 +371,7 @@ CLAIMS = {
     "AV-06": ("No driver or binary is shipped", claim_av06),
     "AV-07": ("Host state is not modified", claim_av07),
     "AV-08": ("No persistence is installed", claim_av08),
+    "AV-09": ("Collected text cannot execute in the analyst's tools", claim_av09),
 }
 
 

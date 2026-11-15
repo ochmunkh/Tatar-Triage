@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     TATAR Triage Toolkit - Windows quick DFIR triage / incident-response collector.
 
@@ -13,8 +13,8 @@
         publisher or SHA-256 (kept in the report as suppressed, with a reason).
       * -IOCFile <json>   - offline IOC feed (hashes/ips/domains/filenames); a hit
         overrides the allowlist and escalates to High / 0.95.
-      * findings v2 fields (id, confidence, suppressed, suppressReason, iocMatch),
-        schemaVersion 1.4.
+      * findings v2 fields (id, confidence, suppressed, suppressReason, iocMatch,
+        artifactClass), schemaVersion 1.5.
 
     v1.1 additions:
       * summary.txt / summary.json - analyst-first triage summary with an
@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.5.0'
+$script:ToolVersion = '1.5.1'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -864,6 +864,52 @@ function Write-ArtifactIndex {
             Add-Note ("{0} produced file(s) are not described in the artifact dictionary - see ARTIFACTS.md" -f $unmatched.Count)
         }
     } catch { Add-Err "Artifact index failed: $_" }
+}
+
+function Protect-CsvCell {
+    <#
+        Stops collected text from becoming a FORMULA when the analyst opens the
+        CSV in a spreadsheet.
+
+        Excel, LibreOffice and Google Sheets treat a cell beginning with =, +,
+        @ or - as a formula, so a file named
+
+            =cmd|'/c calc'!A1.txt
+
+        on the suspect host becomes code that runs on the ANALYST's machine the
+        moment they open timeline.csv. Every CSV this tool writes carries
+        host-controlled text - file names, command lines, event messages - so
+        this is the spreadsheet version of the separator-injection problem the
+        flat record already solves for the findings pipeline, and it lands
+        somewhere worse: the analyst is certain to open the file.
+
+        A leading apostrophe is the documented fix; the spreadsheet shows the
+        original text and evaluates nothing. A negative NUMBER is left alone,
+        because -1 is not a formula and quoting it would corrupt real data.
+    #>
+    param([object]$Value)
+    if ($null -eq $Value) { return $Value }
+    $s = [string]$Value
+    if ($s.Length -eq 0) { return $Value }
+    if ($s -match '^[=+@\t\r]') { return "'" + $s }
+    if ($s -match '^-' -and $s -notmatch '^-\d+([.,]\d+)?$') { return "'" + $s }
+    return $Value
+}
+
+function ConvertTo-SafeCsv {
+    # ConvertTo-Csv with every cell run through Protect-CsvCell first. Every CSV
+    # this tool writes goes through here; check_av_safety.py (AV-09) fails the
+    # build if a bare ConvertTo-Csv or Export-Csv reappears.
+    [CmdletBinding()]
+    param([Parameter(ValueFromPipeline = $true)][object]$InputObject)
+    begin { $rows = New-Object System.Collections.Generic.List[object] }
+    process {
+        if ($null -eq $InputObject) { return }
+        $o = [ordered]@{}
+        foreach ($pr in $InputObject.PSObject.Properties) { $o[$pr.Name] = Protect-CsvCell $pr.Value }
+        $rows.Add([pscustomobject]$o)
+    }
+    end { if ($rows.Count -gt 0) { $rows.ToArray() | ConvertTo-Csv -NoTypeInformation } }
 }
 
 function Out-FileNoBom {
@@ -1641,13 +1687,13 @@ function Collect-RDP {
         foreach ($pair in @(@('Security',4624),@('Security',4778),@('Security',4779))) {
             try {
                 Get-WinEvent -FilterHashtable @{LogName=$pair[0]; Id=[int]$pair[1]} -MaxEvents 40 -ErrorAction Stop |
-                    Select-Object TimeCreated, Id, Message | ConvertTo-Csv -NoTypeInformation | Out-FileNoBom (Join-Path $rd ("sec_$($pair[1]).csv"))
+                    Select-Object TimeCreated, Id, Message | ConvertTo-SafeCsv | Out-FileNoBom (Join-Path $rd ("sec_$($pair[1]).csv"))
             } catch {}
         }
         foreach ($lg in 'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational','Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational') {
             try {
                 Get-WinEvent -LogName $lg -MaxEvents 60 -ErrorAction Stop | Select-Object TimeCreated, Id, Message |
-                    ConvertTo-Csv -NoTypeInformation | Out-FileNoBom (Join-Path $rd (($lg -split '/')[0].Split('-')[-1] + '.csv'))
+                    ConvertTo-SafeCsv | Out-FileNoBom (Join-Path $rd (($lg -split '/')[0].Split('-')[-1] + '.csv'))
             } catch {}
         }
         # RDP client MRU (outbound destinations)
@@ -1785,7 +1831,7 @@ function Collect-Deleted {
                     Size        = $rb.GetDetailsOf($it, 3)
                 }
             }
-            $rows | ConvertTo-Csv -NoTypeInformation | Out-FileNoBom (Join-Path $script:OutDir 'recyclebin.csv')
+            $rows | ConvertTo-SafeCsv | Out-FileNoBom (Join-Path $script:OutDir 'recyclebin.csv')
             Add-Report ("Recycle Bin items: {0} (saved to recyclebin.csv)" -f (@($rows).Count))
         } else { Add-Report 'Recycle Bin namespace not available.' }
     } catch { Add-Err "Deleted (Recycle Bin) failed: $_" }
@@ -1817,7 +1863,7 @@ function Collect-EventLogs {
             $log = if ($id -eq '4104') { 'Microsoft-Windows-PowerShell/Operational' } else { 'Security' }
             try {
                 $evts = Get-WinEvent -FilterHashtable @{LogName=$log; Id=[int]$id} -MaxEvents 50 -ErrorAction Stop
-                $evts | Select-Object TimeCreated, Id, Message | ConvertTo-Csv -NoTypeInformation | Out-FileNoBom (Join-Path $ev ("evt_$id.csv"))
+                $evts | Select-Object TimeCreated, Id, Message | ConvertTo-SafeCsv | Out-FileNoBom (Join-Path $ev ("evt_$id.csv"))
                 if ($id -eq '1102' -and @($evts).Count -gt 0) {
                     Add-Finding -Severity 'High' -Category 'eventlogs' -Message ("Security log cleared - event 1102 present ({0} occurrence(s))" -f @($evts).Count) -Detail 'See EventLogs\evt_1102.csv - log clearing is a strong anti-forensics indicator (T1070.001)'
                 }
@@ -1961,7 +2007,7 @@ function Collect-Timeline {
             }
         }
         if ($badDates -gt 0) { Add-Note ("{0} Uninstall entry/entries had an InstallDate that does not parse as a date and are not in timeline.csv." -f $badDates) }
-        $tl | Where-Object { $_.Time } | Sort-Object Time -Descending | ConvertTo-Csv -NoTypeInformation | Out-FileNoBom (Join-Path $script:OutDir 'timeline.csv')
+        $tl | Where-Object { $_.Time } | Sort-Object Time -Descending | ConvertTo-SafeCsv | Out-FileNoBom (Join-Path $script:OutDir 'timeline.csv')
         $script:Stats['TimelineEntries'] = $tl.Count
         Add-Report ("Timeline entries: {0} -> timeline.csv" -f $tl.Count)
     } catch { Add-Err "Timeline failed: $_" }
@@ -2276,7 +2322,7 @@ function Write-Summary {
     # findings-only file for SOAR / SIEM ingestion
     $findObj = [pscustomobject]@{
         tool          = 'TATAR Triage Toolkit'
-        schemaVersion = '1.4'
+        schemaVersion = '1.5'
         platform      = 'windows'
         host          = $hn
         caseId        = $CaseId

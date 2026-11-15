@@ -4,6 +4,53 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.5.1] — 2026-11-16
+
+### Fixed
+- **`findings.json` declared schemaVersion 1.4 while carrying 1.5 fields.**
+  v1.5.0 shipped with `summary.json` saying `1.5` and `findings.json` still
+  saying `1.4`, so a consumer keying off the version was handed `artifactClass`
+  by a document that promised it did not exist. Three guards each had a reason
+  not to catch it, and all three are closed now: `check_docs_parity.py` used
+  `re.search` and read only the **first** literal; the schema accepts 1.1
+  through 1.5, so `1.4` validated cleanly; and both contract harnesses only
+  ever looked at `summary.json`. The tool version has had a one-copy-only rule
+  since 1.2.4 for exactly this reason - the schema version did not, and drifted
+  the moment it was bumped.
+- **A duplicate `## [1.5.0]` heading in this file.** Two sections carried the
+  same version, so `release.yml`, which takes the notes from the first heading
+  to the next one, would have cut the notes at the second. Merged.
+
+### Added
+- **AV-09: collected text cannot execute in the analyst's tools.** Every CSV
+  this tool writes carries host-controlled text - file names, command lines,
+  event messages - and a cell beginning with `=`, `+`, `@` or `-` is a
+  **formula** in Excel, LibreOffice and Sheets. A file named
+  `=cmd|'/c calc'!A1.txt` on the suspect host was enough to run code on the
+  **analyst's** machine when they opened `timeline.csv`. It is the spreadsheet
+  form of the separator injection the flat record already defends against, and
+  it lands somewhere worse: the analyst is certain to open the file.
+
+  All five Windows CSV writers go through one guard now, and the Linux timeline
+  writer guards both of its columns. A negative *number* is left alone, because
+  `-1` is not a formula and quoting it would corrupt real data. The Linux writer
+  also doubles embedded quotes, which it never did - a file name containing `"`
+  ended the field early and shifted every column after it.
+
+  Mutation-tested against six planted violations, including one that unguarded
+  only the *second* column and sailed past the first version of the check. 25
+  unit cases over a table shared by both editions.
+
+- **A platform-coverage table in both READMEs.** 33 modules against 18 is not a
+  number a Linux reader should have to interpret alone. The table says what both
+  editions have, what is Windows-only and why (registry, NTFS, the Windows event
+  log), and names the three gaps that actually matter on Linux: no execution
+  evidence, no download provenance, no RMM detection.
+
+### Changed
+- `docs/AV-SAFETY.md`'s Mongolian half edited for sense, the same pass the
+  READMEs had: sentences rebuilt rather than words swapped.
+
 ## [1.5.0] — 2026-11-15
 
 ### Added
@@ -186,8 +233,6 @@ one as Administrator, did more for this release than any amount of re-reading.
 - **RMM findings name the product's executable** when it is present in the
   install directory, instead of only a directory - a directory has no
   extension, so it never reached `paths[]`.
-
-## [1.5.0] — 2026-11-09
 
 ### Added
 - **Evidence correlation** — the tool now says when two artifacts agree.

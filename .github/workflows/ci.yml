@@ -90,6 +90,12 @@ jobs:
       # set replayed through the real analysis code, against an answer worked
       # out from the rules. Deliberately not a self-test that plants
       # suspicious-looking files - see the header of the script.
+      # A collected file name beginning with = + @ or - is a FORMULA when the
+      # analyst opens the CSV. These assert the guard that stops the suspect
+      # host from running code on the responder's machine.
+      - name: CSV cell safety unit tests
+        run: bash tests/test-csv-cell.sh
+
       - name: Known-answer verification
         run: bash tests/test-known-answer.sh
 
@@ -227,6 +233,13 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Test-ArtifactClass.ps1
 
+      # A collected file name beginning with = + @ or - is a FORMULA when the
+      # analyst opens the CSV. These assert the guard that stops the suspect
+      # host from running code on the responder's machine.
+      - name: CSV cell safety unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-CsvCell.ps1
+
       - name: Known-answer verification
         shell: pwsh
         run: pwsh -File tests/Test-KnownAnswer.ps1
@@ -349,6 +362,13 @@ jobs:
       - name: Artifact-class mapping unit tests
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-ArtifactClass.ps1
+
+      # A collected file name beginning with = + @ or - is a FORMULA when the
+      # analyst opens the CSV. These assert the guard that stops the suspect
+      # host from running code on the responder's machine.
+      - name: CSV cell safety unit tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-CsvCell.ps1
 
       - name: Known-answer verification
         shell: powershell
