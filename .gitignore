@@ -13,6 +13,10 @@ __pycache__/
 tatar.log
 summary.json
 findings.json
+# ...except the recorded one the known-answer test replays. It is a test
+# input, not collector output, and without this the test cannot run from a
+# fresh clone - which is exactly where an operator would run it.
+!tests/fixtures/known-answer/findings.json
 TATAR_Report_*.txt
 manifest_sha256.txt
 chain_of_custody.txt

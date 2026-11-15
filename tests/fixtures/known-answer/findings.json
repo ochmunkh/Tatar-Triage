@@ -1,0 +1,227 @@
+{
+  "tool": "TATAR Triage Toolkit",
+  "schemaVersion": "1.5",
+  "platform": "windows",
+  "host": "KNOWN-ANSWER",
+  "caseId": "KA-1",
+  "generated": "2026-01-01T00:00:00Z",
+  "findingsCount": 10,
+  "activeFindingsCount": 9,
+  "suppressedCount": 1,
+  "findings": [
+    {
+      "id": "TTR-F-001",
+      "severity": "Review",
+      "category": "motw",
+      "technique": [
+        "T1059"
+      ],
+      "message": "File downloaded from the internet was never unblocked: C:\\Users\\a\\Downloads\\setup.exe",
+      "detail": "Zone.Identifier present",
+      "confidence": 0.4,
+      "confidenceReason": "recorded",
+      "suppressed": false,
+      "suppressReason": "",
+      "iocMatch": false,
+      "iocIndicator": "",
+      "module": "motw",
+      "artifactClass": "mark-of-the-web",
+      "collected_at": "2026-01-01T00:00:00Z",
+      "paths": [
+        "C:\\Users\\a\\Downloads\\setup.exe"
+      ]
+    },
+    {
+      "id": "TTR-F-002",
+      "severity": "Review",
+      "category": "useractivity",
+      "technique": [
+        "T1059"
+      ],
+      "message": "Script or unusual executable started from the shell by this user: C:\\Users\\a\\Downloads\\setup.exe",
+      "detail": "UserAssist records 3 launch(es)",
+      "confidence": 0.4,
+      "confidenceReason": "recorded",
+      "suppressed": false,
+      "suppressReason": "",
+      "iocMatch": false,
+      "iocIndicator": "",
+      "module": "useractivity",
+      "artifactClass": "userassist",
+      "collected_at": "2026-01-01T00:00:00Z",
+      "paths": [
+        "C:\\Users\\a\\Downloads\\setup.exe"
+      ]
+    },
+    {
+      "id": "TTR-F-003",
+      "severity": "High",
+      "category": "persistence",
+      "technique": [
+        "T1059"
+      ],
+      "message": "Run key points at a user-writable path: C:\\Users\\a\\AppData\\Local\\Temp\\svc.exe",
+      "detail": "HKCU Run",
+      "confidence": 0.7,
+      "confidenceReason": "recorded",
+      "suppressed": false,
+      "suppressReason": "",
+      "iocMatch": false,
+      "iocIndicator": "",
+      "module": "persistence",
+      "artifactClass": "run-key",
+      "collected_at": "2026-01-01T00:00:00Z",
+      "paths": [
+        "C:\\Users\\a\\AppData\\Local\\Temp\\svc.exe"
+      ]
+    },
+    {
+      "id": "TTR-F-004",
+      "severity": "Review",
+      "category": "indicators",
+      "technique": [
+        "T1059"
+      ],
+      "message": "Executable in a temp location: C:\\Users\\a\\AppData\\Local\\Temp\\svc.exe",
+      "detail": "written 2 days ago",
+      "confidence": 0.4,
+      "confidenceReason": "recorded",
+      "suppressed": false,
+      "suppressReason": "",
+      "iocMatch": false,
+      "iocIndicator": "",
+      "module": "indicators",
+      "artifactClass": "temp-executable",
+      "collected_at": "2026-01-01T00:00:00Z",
+      "paths": [
+        "C:\\Users\\a\\AppData\\Local\\Temp\\svc.exe"
+      ]
+    },
+    {
+      "id": "TTR-F-005",
+      "severity": "Review",
+      "category": "useractivity",
+      "technique": [
+        "T1059"
+      ],
+      "message": "MUICache names a script that is no longer on disk: C:\\Users\\a\\Desktop\\old.bat",
+      "detail": "not on disk",
+      "confidence": 0.4,
+      "confidenceReason": "recorded",
+      "suppressed": false,
+      "suppressReason": "",
+      "iocMatch": false,
+      "iocIndicator": "",
+      "module": "useractivity",
+      "artifactClass": "muicache",
+      "collected_at": "2026-01-01T00:00:00Z",
+      "paths": [
+        "C:\\Users\\a\\Desktop\\old.bat"
+      ]
+    },
+    {
+      "id": "TTR-F-006",
+      "severity": "Review",
+      "category": "motw",
+      "technique": [
+        "T1059"
+      ],
+      "message": "File downloaded from the internet was never unblocked: C:\\Users\\a\\Desktop\\old.bat",
+      "detail": "Zone.Identifier present",
+      "confidence": 0.4,
+      "confidenceReason": "recorded",
+      "suppressed": true,
+      "suppressReason": "allowlist path: *",
+      "iocMatch": false,
+      "iocIndicator": "",
+      "module": "motw",
+      "artifactClass": "mark-of-the-web",
+      "collected_at": "2026-01-01T00:00:00Z",
+      "paths": [
+        "C:\\Users\\a\\Desktop\\old.bat"
+      ]
+    },
+    {
+      "id": "TTR-F-007",
+      "severity": "High",
+      "category": "rmm",
+      "technique": [
+        "T1059"
+      ],
+      "message": "Remote access / RMM tool present: AnyDesk",
+      "detail": "directory C:\\Program Files\\AnyDesk",
+      "confidence": 0.7,
+      "confidenceReason": "recorded",
+      "suppressed": false,
+      "suppressReason": "",
+      "iocMatch": false,
+      "iocIndicator": "",
+      "module": "rmm",
+      "artifactClass": "rmm-product",
+      "collected_at": "2026-01-01T00:00:00Z",
+      "paths": []
+    },
+    {
+      "id": "TTR-F-008",
+      "severity": "High",
+      "category": "ioc",
+      "technique": [
+        "T1059"
+      ],
+      "message": "IOC observed in collected evidence: evil.example",
+      "detail": "line 3",
+      "confidence": 0.95,
+      "confidenceReason": "recorded",
+      "suppressed": false,
+      "suppressReason": "",
+      "iocMatch": true,
+      "iocIndicator": "evil.example",
+      "module": "ioc",
+      "artifactClass": "ioc-match",
+      "collected_at": "2026-01-01T00:00:00Z",
+      "paths": [
+        "C:\\Users\\a\\Downloads\\setup.exe"
+      ]
+    },
+    {
+      "id": "TTR-F-009",
+      "severity": "Review",
+      "category": "users",
+      "technique": [
+        "T1059"
+      ],
+      "message": "Enabled local account with NO password required: guest2",
+      "detail": "-",
+      "confidence": 0.4,
+      "confidenceReason": "recorded",
+      "suppressed": false,
+      "suppressReason": "",
+      "iocMatch": false,
+      "iocIndicator": "",
+      "module": "users",
+      "artifactClass": "account",
+      "collected_at": "2026-01-01T00:00:00Z",
+      "paths": []
+    },
+    {
+      "id": "TTR-F-010",
+      "severity": "Review",
+      "category": "network",
+      "technique": [
+        "T1059"
+      ],
+      "message": "hosts file has 2 custom entries",
+      "detail": "-",
+      "confidence": 0.4,
+      "confidenceReason": "recorded",
+      "suppressed": false,
+      "suppressReason": "",
+      "iocMatch": false,
+      "iocIndicator": "",
+      "module": "network",
+      "artifactClass": "hosts-file",
+      "collected_at": "2026-01-01T00:00:00Z",
+      "paths": []
+    }
+  ]
+}
