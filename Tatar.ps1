@@ -708,7 +708,13 @@ function Write-ArtifactIndex {
 
         foreach ($f in $files) {
             $rel = $f.FullName
-            if ($rel.StartsWith($root)) { $rel = $rel.Substring($root.Length) }
+            # OrdinalIgnoreCase: String.StartsWith is case-SENSITIVE by default,
+            # and Windows paths are not. A GitHub runner whose TEMP differs in
+            # case from the path Get-ChildItem returns left every path absolute,
+            # so nothing matched a pattern and the whole folder came out
+            # "uncatalogued" - and the manifest, which uses the same test, was
+            # silently writing absolute paths instead of ./relative ones.
+            if ($rel.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { $rel = $rel.Substring($root.Length) }
             $rel = $rel.TrimStart('\')
             # First pattern wins, so the table is ordered specific-before-general
             # (FsArtifacts\*.lnk must be tried before FsArtifacts\*).
@@ -2963,7 +2969,9 @@ try {
             $h = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256 -ErrorAction SilentlyContinue
             if ($h) {
                 $rel = $_.FullName
-                if ($rel.StartsWith($root)) { $rel = $rel.Substring($root.Length) }
+                # Case-insensitive on purpose; see Write-ArtifactIndex for what
+                # a case-sensitive StartsWith did to this same comparison.
+                if ($rel.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { $rel = $rel.Substring($root.Length) }
                 $rel = $rel.TrimStart('\').Replace('\','/')
                 $mLines.Add(("{0}  ./{1}" -f $h.Hash.ToLower(), $rel))
             }
