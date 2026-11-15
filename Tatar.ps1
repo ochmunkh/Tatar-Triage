@@ -701,21 +701,20 @@ function Write-ArtifactIndex {
         way five other hand-maintained lists in this repo already have.
     #>
     try {
-        $root  = $script:OutDir.TrimEnd('\')
-        $files = @(Get-ChildItem -Path $script:OutDir -Recurse -File -Force -ErrorAction SilentlyContinue)
+        # -Name returns each path RELATIVE to the directory given, which is
+        # what the patterns are written against. The previous version took the
+        # prefix off $_.FullName by string arithmetic, and that is wrong twice
+        # over: String.StartsWith is case-SENSITIVE while Windows paths are not,
+        # and a path can arrive in 8.3 short form ($env:TEMP on a GitHub runner
+        # is C:\Users\RUNNER~1\...) while Get-ChildItem hands back the long
+        # form, so the prefix does not match in either spelling. No arithmetic,
+        # no mismatch.
+        $rels  = @(Get-ChildItem -LiteralPath $script:OutDir -Recurse -File -Force -Name -ErrorAction SilentlyContinue)
         $rows  = New-Object System.Collections.Generic.List[object]
         $unmatched = New-Object System.Collections.Generic.List[string]
 
-        foreach ($f in $files) {
-            $rel = $f.FullName
-            # OrdinalIgnoreCase: String.StartsWith is case-SENSITIVE by default,
-            # and Windows paths are not. A GitHub runner whose TEMP differs in
-            # case from the path Get-ChildItem returns left every path absolute,
-            # so nothing matched a pattern and the whole folder came out
-            # "uncatalogued" - and the manifest, which uses the same test, was
-            # silently writing absolute paths instead of ./relative ones.
-            if ($rel.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { $rel = $rel.Substring($root.Length) }
-            $rel = $rel.TrimStart('\')
+        foreach ($rel in $rels) {
+            $rel = [string]$rel
             # First pattern wins, so the table is ordered specific-before-general
             # (FsArtifacts\*.lnk must be tried before FsArtifacts\*).
             $hit = $null
@@ -2956,26 +2955,30 @@ try {
     Add-Report ''
     Add-Report 'Manifest coverage: every collected file is hashed in manifest_sha256.txt, including hidden and system files. Two are NOT covered, by construction: manifest_sha256.txt (cannot hash itself) and tatar.log (still being appended while the manifest is built).'
     $manifest = Join-Path $script:OutDir 'manifest_sha256.txt'
-    $exclude  = @($manifest, $script:ExecLog)   # tatar.log keeps growing after hashing, so it is excluded
-    $root     = $script:OutDir.TrimEnd('\')
+    # Compared by NAME, not by full path: the relative names come from
+    # Get-ChildItem -Name while these two were built with Join-Path, and the two
+    # spellings need not agree (8.3 vs long form). Matching on the name cannot
+    # drift. tatar.log keeps growing after hashing, so it is excluded.
+    $exclude  = @('manifest_sha256.txt', (Split-Path $script:ExecLog -Leaf))
     $mLines   = New-Object System.Collections.Generic.List[string]
     # -Force, because Get-ChildItem hides hidden and system files by default and
     # the collection picks some up: FsArtifacts\Recent carries desktop.ini, which
     # was being written into the evidence folder and then left out of the
     # manifest. A collected file that is not hashed is a hole in the chain of
     # custody, however uninteresting the file is.
-    Get-ChildItem -Path $script:OutDir -Recurse -File -Force -ErrorAction SilentlyContinue |
-        Where-Object { $exclude -notcontains $_.FullName } | Sort-Object FullName | ForEach-Object {
-            $h = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256 -ErrorAction SilentlyContinue
-            if ($h) {
-                $rel = $_.FullName
-                # Case-insensitive on purpose; see Write-ArtifactIndex for what
-                # a case-sensitive StartsWith did to this same comparison.
-                if ($rel.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { $rel = $rel.Substring($root.Length) }
-                $rel = $rel.TrimStart('\').Replace('\','/')
-                $mLines.Add(("{0}  ./{1}" -f $h.Hash.ToLower(), $rel))
-            }
+    # -Name, for the same reason as Write-ArtifactIndex: taking the prefix off
+    # a full path by string arithmetic breaks on a case difference and on an
+    # 8.3 short path, and when it breaks here the manifest silently records
+    # ABSOLUTE paths - which makes `sha256sum -c` fail for whoever verifies the
+    # folder on another machine. A chain-of-custody defect no test would see.
+    foreach ($rel in @(Get-ChildItem -LiteralPath $script:OutDir -Recurse -File -Force -Name -ErrorAction SilentlyContinue | Sort-Object)) {
+        if ($exclude -contains ([string]$rel)) { continue }
+        $full = Join-Path $script:OutDir ([string]$rel)
+        $h = Get-FileHash -LiteralPath $full -Algorithm SHA256 -ErrorAction SilentlyContinue
+        if ($h) {
+            $mLines.Add(("{0}  ./{1}" -f $h.Hash.ToLower(), ([string]$rel).Replace('\','/')))
         }
+    }
     [IO.File]::WriteAllText($manifest, (($mLines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
     Write-ExecLog 'INFO' "Manifest written: $manifest ($($mLines.Count) file(s))"
 } catch { Add-Err "Manifest failed: $_" }
