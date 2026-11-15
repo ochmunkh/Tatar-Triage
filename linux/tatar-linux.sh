@@ -638,6 +638,14 @@ m_process() {
             *"(deleted)"*)
                 echo "[!] PID $pid deleted-binary exe: $exe | cmd: $cmd" >> "$REPORT"
                 add_finding "High" "process" "Running process from a DELETED binary (PID $pid)" "$exe | cmd: $cmd"
+                # Parity with the Windows edition's gated modules: what was NOT
+                # collected has to reach moduleLimitations, not only the report.
+                # A deleted running binary is the one artifact that disappears
+                # the moment the process exits, so "we did not take a copy"
+                # is exactly the kind of gap an analyst must be told about.
+                if [ "$DUMP_DELETED" -ne 1 ]; then
+                    add_note "the deleted binary behind PID $pid was NOT recovered: --dump-deleted was not supplied, and it is gone once the process exits"
+                fi
                 if [ "$DUMP_DELETED" -eq 1 ]; then
                     dd_dir="$OUTDIR/extracted_binaries"; mkdir -p "$dd_dir" 2>/dev/null
                     if cp "/proc/$pid/exe" "$dd_dir/pid_${pid}_recovered" 2>/dev/null; then

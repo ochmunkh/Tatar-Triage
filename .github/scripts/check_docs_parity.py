@@ -248,7 +248,34 @@ def correlation_rules(ps1, sh):
     return win, lin
 
 
-def check_correlation_rules(win, lin, win_modules, lin_modules):
+def finding_emitters(ps1, sh):
+    """Which modules can actually RAISE a finding, per edition.
+
+    A correlation rule is a claim that two modules can corroborate each other.
+    A module that never calls Add-Finding / add_finding cannot be one side of
+    that claim -- it has nothing to correlate WITH. COR-01 shipped in 1.5.0
+    naming `prefetch`, which only writes a report table, so half of that rule
+    could never fire while the README documented it as working. Exactly the
+    silent no-op this project keeps finding, and the gate that was supposed to
+    guard correlation rules only checked that the module EXISTED.
+    """
+    win = set()
+    for m in re.finditer(r"^\s*(\w+)\s*=\s*\$\{function:(Collect-\w+)\}", ps1, re.M):
+        mod, fn = m.group(1), m.group(2)
+        body = re.search(r"^function %s\b.*?(?=^function |\Z)" % re.escape(fn),
+                         ps1, re.S | re.M | re.I)
+        if body and "Add-Finding" in body.group(0):
+            win.add(mod)
+    lin = set()
+    for m in re.finditer(r"^\s*(\w+)\)\s*(m_\w+)\s*;;", sh, re.M):
+        mod, fn = m.group(1), m.group(2)
+        body = re.search(r"^%s\(\) \{.*?^\}" % re.escape(fn), sh, re.S | re.M)
+        if body and "add_finding" in body.group(0):
+            lin.add(mod)
+    return win, lin
+
+
+def check_correlation_rules(win, lin, win_modules, lin_modules, win_emit, lin_emit):
     """Correlation rules must name real modules, and must not drift apart.
 
     This is the one pass that raises a finding's confidence on the strength of
@@ -257,8 +284,9 @@ def check_correlation_rules(win, lin, win_modules, lin_modules):
     and the worst possible place for it: the analyst would read the unraised
     confidence as "the artifacts did not agree".
     """
-    for name, rules, modules in (("Tatar.ps1", win, win_modules),
-                                 ("linux/tatar-linux.sh", lin, lin_modules)):
+    for name, rules, modules, emitters in (
+            ("Tatar.ps1", win, win_modules, win_emit),
+            ("linux/tatar-linux.sh", lin, lin_modules, lin_emit)):
         if not rules:
             fail("%s: no correlation rules found" % name)
             continue
@@ -273,6 +301,15 @@ def check_correlation_rules(win, lin, win_modules, lin_modules):
             if set(a) & set(b):
                 fail("%s: %s has %s on both sides - a module cannot corroborate itself"
                      % (name, rid, ", ".join(sorted(set(a) & set(b)))))
+            # A module that raises no finding has nothing to corroborate with,
+            # so naming it is a rule that can never fire while the docs say it
+            # does. Checked here and not left to a live run, because a run on a
+            # clean host produces no correlations either way.
+            silent = [m for m in a + b if m in modules and m not in emitters]
+            if silent:
+                fail("%s: %s names %s, which raise(s) no finding - that side of "
+                     "the rule can never fire. Remove it, or make the module "
+                     "raise findings." % (name, rid, ", ".join(sorted(set(silent)))))
 
     shared = (set(win) | set(lin)) - WINDOWS_ONLY_CORRELATIONS
     for rid in sorted(shared - set(win)):
@@ -342,7 +379,8 @@ def main(argv):
 
     # 1b-iv. the correlation rules name real modules and do not drift apart
     cwin, clin = correlation_rules(ps1, sh)
-    check_correlation_rules(cwin, clin, win, lin)
+    ewin, elin = finding_emitters(ps1, sh)
+    check_correlation_rules(cwin, clin, win, lin, ewin, elin)
 
     # 1c. each collector states its version exactly once
     full = re.search(r"\$script:ToolVersion\s*=\s*'([^']+)'", ps1)

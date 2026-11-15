@@ -24,3 +24,7 @@ windows	LOLBAS pattern: rundll32	rundll32.exe C:\Temp\evil.dll,Start	C:\Temp\evi
 windows	Service with unusual binary path: Foo	"C:\Program Files\App\svc.exe" -k netsvcs	C:\Program Files\App\svc.exe	-	quoted path with spaces; the quotes are excluded
 windows	High volume of failed logons (4625): 15+ in recent Security log	See report section 04	-	-	structurally unsuppressible: no drive-letter path
 windows	Unquoted service path	C:\Program Files\App\svc.exe C:\Program Files\App\svc.exe	C:\Program Files\App\svc.exe	-	the same path twice must be de-duplicated
+windows	Suspicious pattern 'IEX' in C:\Users\bob\AppData\Local\Temp\x4hwcywj.0p1\PrecheckTools\Setup.ps1	line 12: IEX $x	C:\Users\bob\AppData\Local\Temp\x4hwcywj.0p1\PrecheckTools\Setup.ps1	-	a random TEMP directory whose name looks like a file must not truncate the path - the lazy pattern used to return the directory, so the allowlist could never match the real script
+windows	Executable in a dotted directory: C:\Program Files\Foo.Bar\app.exe	-	C:\Program Files\Foo.Bar\app.exe	-	a dotted DIRECTORY plus spaces in the path: both segments must be kept
+windows	Two files named in one message: C:\Temp\a.exe and C:\Temp\b.dll	-	C:\Temp\a.exe C:\Temp\b.dll	-	greedy directory matching must not swallow the prose between two paths - the drive-letter colon is the boundary
+windows	Path followed by prose: C:\Users\bob\My Documents\report.docx was modified	-	C:\Users\bob\My Documents\report.docx	-	spaces are legal in a path, so the file name stops at the first real extension, not at the first space

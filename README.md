@@ -314,8 +314,13 @@ agreement means.
 
 | Rule | Fires when | What it means |
 |------|-----------|---------------|
-| **COR-01** `download-then-execute` | `motw` and (`useractivity` or `prefetch`) name the same path | a file that arrived from the internet was also executed |
-| **COR-02** `autorun-on-suspect-file` | (`persistence` or `autoruns`) and (`motw` or `indicators`) name the same path | an autorun entry points at a file that is itself suspect |
+| **COR-01** `download-then-execute` | `motw` and `useractivity` name the same path | a file that arrived from the internet was also executed |
+| **COR-02** `autorun-on-suspect-file` | `persistence` and (`motw` or `indicators`) name the same path | an autorun entry points at a file that is itself suspect |
+
+`prefetch` and `autoruns` were named in these rules when they shipped and have
+since been removed: both collect into the report but neither raises a finding,
+so those rule halves could never fire while this table said they did. The gate
+now refuses a rule that names a module which raises no finding.
 
 COR-01 is Windows-only: Mark-of-the-Web is an NTFS alternate data stream and
 nothing on Linux records that a file came from the internet. That asymmetry is
@@ -817,8 +822,13 @@ chainsaw hunt EventLogs/ -s sigma/ --mapping mappings/sigma-event-logs-all.yml
 
 | Дүрэм | Хэзээ ажиллах | Ямар утгатай |
 |-------|---------------|--------------|
-| **COR-01** `download-then-execute` | `motw` ба (`useractivity` эсвэл `prefetch`) нэг зам нэрлэвэл | интернэтээс ирсэн файл бас ажиллуулагдсан |
-| **COR-02** `autorun-on-suspect-file` | (`persistence` эсвэл `autoruns`) ба (`motw` эсвэл `indicators`) нэг зам нэрлэвэл | autorun бичлэг нь өөрөө сэжигтэй файл заасан |
+| **COR-01** `download-then-execute` | `motw` ба `useractivity` нэг зам нэрлэвэл | интернэтээс ирсэн файл бас ажиллуулагдсан |
+| **COR-02** `autorun-on-suspect-file` | `persistence` ба (`motw` эсвэл `indicators`) нэг зам нэрлэвэл | autorun бичлэг нь өөрөө сэжигтэй файл заасан |
+
+`prefetch` ба `autoruns` эхэндээ эдгээр дүрэмд нэрлэгдсэн байсныг хассан: хоёул
+тайланд цуглуулдаг ч аль нь ч finding гаргадаггүй тул тэр хагас нь энэ хүснэгт
+ажилладаг гэж бичиж байхад хэзээ ч ажиллах боломжгүй байв. Gate одоо finding
+гаргадаггүй модуль нэрлэсэн дүрмийг зөвшөөрөхгүй.
 
 COR-01 нь зөвхөн Windows: Mark-of-the-Web бол NTFS-ийн alternate data stream
 бөгөөд Linux дээр файл интернэтээс ирснийг бүртгэдэг зүйл байхгүй. Энэ ялгааг

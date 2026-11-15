@@ -4,6 +4,78 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+Six defects, every one of them found by running the tool on a real workstation
+rather than by reading it. Two runs of the same build, one as a normal user and
+one as Administrator, did more for this release than any amount of re-reading.
+
+- **Correlation rules named modules that raise no findings.** COR-01 named
+  `prefetch` and COR-02 named `autoruns`; both collect into the report and
+  neither calls `Add-Finding`, so those halves of both rules could never fire
+  while the README documented them as working. `check_docs_parity.py` now
+  refuses a correlation rule that names a module which raises no finding - the
+  first version of that gate checked only that the module *existed*, which is
+  what let this through.
+
+- **The path extractor truncated at the first dotted segment.** A finding naming
+  `C:\Users\A\AppData\Local\Temp\x4hwcywj.0p1\PrecheckTools\Setup.ps1` put only
+  `...\Temp\x4hwcywj.0p1` into `paths[]` - a *directory* whose random name
+  merely looks like a file. `paths[]` is what the allowlist, hash, publisher and
+  IOC passes judge, and what correlation keys on, so every one of them was
+  silently working on the wrong string. Directory segments are now matched
+  greedily and only the file name lazily. Four cases added to the shared path
+  fixture, including two paths in one message and a path followed by prose,
+  which is what the greedy form had to be proven not to break.
+
+- **Silent skips.** A non-Administrator run produced an empty Prefetch section
+  with no error, no note and nothing in `moduleLimitations` - an analyst reads
+  that as *nothing executed recently* when it means *we could not look*. Every
+  gated or unavailable module now records why: `memory` (no `-MemoryDump`, or no
+  `winpmem.exe`), `hives` (no `-CollectHives`), `autoruns` (no `autoruns64.exe`),
+  `prefetch` (needs Administrator / prefetching disabled / empty window). The
+  Linux edition does the same for a deleted binary left unrecovered without
+  `--dump-deleted`. On the run that found this, `moduleLimitations` went from 5
+  entries to 9.
+
+- **`useractivity` told an Administrator run that it needed Administrator.**
+  The note was emitted unconditionally. It is now stated only when true.
+
+- **`obfscan` was 43 of 65 findings on an ordinary workstation.** 35 of them
+  were one signed installer unpacking the same script into a fresh random temp
+  directory every run. Findings are now grouped by pattern + **file name**;
+  grouping by directory was the obvious key and the wrong one, since each copy
+  had a distinct random parent. The report still lists every match. On the same
+  host: obfscan 43 -> 6 findings, total 65 -> 29.
+
+- **UTF-8 BOM on every text output.** The JSON documents were moved off
+  `Out-File -Encoding UTF8` when the BOM made them unparseable; the report, the
+  summary, the CSVs and `tatar.log` were left behind, so on PowerShell 5.1 each
+  began with a stray U+FEFF - in the log that breaks the first record for
+  `grep '^\['` and for any ingester anchoring at the line start. All ~70 call
+  sites now go through one no-BOM writer.
+
+- **Two collected files were missing from the manifest.** `Get-ChildItem` hides
+  hidden and system files by default, so `FsArtifacts\Recent\desktop.ini` was
+  written into the evidence folder and never hashed. A collected file that is
+  not hashed is a hole in the chain of custody. The manifest now walks with
+  `-Force`, and the report states the two files that cannot be covered by
+  construction (the manifest itself, and `tatar.log`, still being appended).
+
+### Added
+- **`Resolve-KnownFolder`** - UserAssist records many entries behind a
+  `{KNOWNFOLDERID}` prefix. The collector left them all raw on the reasoning
+  that a wrong translation is worse than an untranslated one, which is right,
+  and is why this resolves only the folder ids whose meaning is fixed by
+  Windows, from this host's own environment, for the same user whose UserAssist
+  is being read. Anything else is returned unchanged. The cost of leaving them
+  raw was not visible until a live run: an unresolved entry carries no path, so
+  it could never be allowlisted, matched or correlated.
+- **RMM findings name the product's executable** when it is present in the
+  install directory, instead of only a directory - a directory has no
+  extension, so it never reached `paths[]`.
+
 ## [1.5.0] — 2026-11-09
 
 ### Added
