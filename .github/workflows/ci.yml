@@ -31,6 +31,22 @@ jobs:
           python3 .github/scripts/validate_summary.py "$d/summary.json"  schema/summary.schema.json
           python3 .github/scripts/validate_summary.py "$d/findings.json" schema/findings.schema.json
 
+      # ARTIFACTS.md names every file the collector produced and what opens it.
+      # The dictionary behind it is a hand-maintained list of names, and this
+      # repo has shipped five stale ones, so it is checked against a REAL RUN:
+      # a module that starts writing a file nobody catalogued fails the build
+      # instead of quietly shipping an unexplained artifact.
+      - name: Every produced artifact is catalogued
+        run: |
+          d="$(find /tmp/tt -mindepth 1 -maxdepth 1 -type d | head -n1)"
+          test -f "$d/ARTIFACTS.md" || { echo "ARTIFACTS.md was not written"; exit 1; }
+          if ! grep -qx 'Uncatalogued: 0' "$d/ARTIFACTS.md"; then
+            echo "::error::uncatalogued artifacts were produced"
+            sed -n '/## Uncatalogued/,$p' "$d/ARTIFACTS.md"
+            exit 1
+          fi
+          echo "OK: every produced file is described in the artifact dictionary"
+
       - name: Allowlist + IOC run (v1.2 engines) + schema validation
         run: |
           ./linux/tatar-linux.sh --modules sysinfo,process,network,users,persistence,hashes --silent --caseid CI-IOC \
@@ -132,6 +148,25 @@ jobs:
           python -m pip install --quiet jsonschema
           python .github/scripts/validate_summary.py (Join-Path $d 'summary.json')  schema/summary.schema.json
           python .github/scripts/validate_summary.py (Join-Path $d 'findings.json') schema/findings.schema.json
+
+      # ARTIFACTS.md names every file the collector produced and what opens it.
+      # The dictionary behind it is a hand-maintained list of names, and this
+      # repo has shipped five stale ones, so it is checked against a REAL RUN:
+      # a module that starts writing a file nobody catalogued fails the build
+      # instead of quietly shipping an unexplained artifact.
+      - name: Every produced artifact is catalogued
+        shell: pwsh
+        run: |
+          $d = (Get-ChildItem "$env:TEMP\tt" -Directory | Select-Object -First 1).FullName
+          $idx = Join-Path $d 'ARTIFACTS.md'
+          if (-not (Test-Path $idx)) { throw 'ARTIFACTS.md was not written' }
+          $line = @(Get-Content $idx | Where-Object { $_ -match '^Uncatalogued: ' })[0]
+          if ($line -ne 'Uncatalogued: 0') {
+            Write-Host "::error::$line"
+            Get-Content $idx | Select-Object -Last 45
+            exit 1
+          }
+          'OK: every produced file is described in the artifact dictionary'
 
       - name: Allowlist + IOC run (allowlist / IOC engines)
         shell: pwsh
@@ -254,6 +289,25 @@ jobs:
           python -m pip install --quiet jsonschema
           python .github/scripts/validate_summary.py (Join-Path $d 'summary.json')  schema/summary.schema.json
           python .github/scripts/validate_summary.py (Join-Path $d 'findings.json') schema/findings.schema.json
+
+      # ARTIFACTS.md names every file the collector produced and what opens it.
+      # The dictionary behind it is a hand-maintained list of names, and this
+      # repo has shipped five stale ones, so it is checked against a REAL RUN:
+      # a module that starts writing a file nobody catalogued fails the build
+      # instead of quietly shipping an unexplained artifact.
+      - name: Every produced artifact is catalogued
+        shell: powershell
+        run: |
+          $d = (Get-ChildItem "$env:TEMP\tt51" -Directory | Select-Object -First 1).FullName
+          $idx = Join-Path $d 'ARTIFACTS.md'
+          if (-not (Test-Path $idx)) { throw 'ARTIFACTS.md was not written' }
+          $line = @(Get-Content $idx | Where-Object { $_ -match '^Uncatalogued: ' })[0]
+          if ($line -ne 'Uncatalogued: 0') {
+            Write-Host "::error::$line"
+            Get-Content $idx | Select-Object -Last 45
+            exit 1
+          }
+          'OK: every produced file is described in the artifact dictionary'
 
       - name: Allowlist + IOC run (allowlist / IOC engines)
         shell: powershell

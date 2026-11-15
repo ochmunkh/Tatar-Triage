@@ -6,6 +6,57 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+### Added
+- **`ARTIFACTS.md`, `paste.txt`, `allowlist.suggested.json`** — one idea with
+  three outputs, and the first new capability in a while that costs nothing at
+  collection time: all three are written from the finished finding set, so the
+  AV surface and the run time are unchanged.
+
+  The hardest question a responder asks is not *what do I run*, it is *I have
+  the folder, now what*. `ARTIFACTS.md` answers it per file: what this is, what
+  question it answers, what opens it (`.evtx` -> Hayabusa/Chainsaw, `.lnk` ->
+  LECmd, jump lists -> JLECmd, hives -> RegRipper). It is built from the files
+  actually produced, so a non-Administrator run describes less because it
+  collected less.
+
+  `paste.txt` is the whole run in under 60 lines, for the ticket or the chat
+  message that asks *is this normal?*. It is **stable on purpose**: no
+  durations, no counters, process ids normalised, findings sorted by severity
+  then category then message rather than by discovery order. Two lines differ
+  between runs and the file says which. Proven by running twice in a row -
+  the first attempt differed in three places, and the third was a PID, which is
+  why they are normalised now.
+
+  `allowlist.suggested.json` turns this host's finding paths into an allowlist
+  draft in the format the collector already reads: take it from a build you
+  trust, trim it, and the fleet then shows only its differences. It says in its
+  own first field that a baseline from an unchecked host suppresses exactly the
+  compromise you were looking for.
+
+  **The dictionary behind `ARTIFACTS.md` is gated against a real run.** It is a
+  hand-maintained list of names and this repo has shipped five stale ones, so
+  the file ends with a machine-checkable `Uncatalogued: N` and CI fails on
+  anything but `0`, in all three jobs that run a collector. A module that starts
+  writing a file nobody described breaks the build.
+
+### Fixed
+- **A limitation raised before any module started was filed under an empty
+  module name.** That is the "not running as root / as Administrator" note -
+  the single most important thing a reader needs to know about a thin finding
+  list - and it grouped under a blank key in `summary.json` and was dropped
+  from `paste.txt` entirely. It is now filed under `(run)`. Found by reading
+  the first `paste.txt` the Linux edition produced.
+- **`@(...)` over a `List[object]` in the new writers** threw *Argument types
+  do not match* on Windows PowerShell 5.1 - the third occurrence of this exact
+  trap in this project, after `moduleLimitations` in 1.4 and the correlation
+  pass in 1.5.
+
+### Verified
+- `Collect-Persistence`'s section header promises "startup, Run keys, scheduled
+  tasks". It keeps the promise: `Get-ScheduledTask` is there. An earlier doubt
+  about this came from a bad grep, not from the code.
+
+
 ### Fixed
 Six defects, every one of them found by running the tool on a real workstation
 rather than by reading it. Two runs of the same build, one as a normal user and

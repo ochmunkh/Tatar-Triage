@@ -575,6 +575,189 @@ NOTES:
 "@ | Write-Host
 }
 
+function Write-PasteLog {
+    <#
+        paste.txt: the whole run in 60 lines or fewer, to paste into a ticket,
+        a chat or an email. The evidence folder is the record; this is the thing
+        a responder can actually show someone while asking "is this normal?".
+
+        Written to be STABLE between runs on an unchanged host. Durations,
+        counters and per-run timings are deliberately absent, and the findings
+        are sorted by severity, then category, then message - never by discovery
+        order, which moves. One line carries the collection time and is marked
+        as the only line expected to differ, so `diff` across two runs shows
+        what CHANGED on the host rather than what the clock did. That property
+        is what kept HijackThis logs useful for a decade.
+    #>
+    param([object[]]$Findings, [bool]$IsAdmin)
+    try {
+        $L = New-Object System.Collections.Generic.List[string]
+        $hn = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { [System.Net.Dns]::GetHostName() }
+        $osCap = ''
+        try { $osCap = (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).Caption } catch {}
+        $act = @($Findings | Where-Object { -not $_.suppressed })
+        $hi  = @($act | Where-Object { $_.severity -eq 'High' }).Count
+
+        $L.Add("TATAR $($script:ToolVersion) | $hn | $osCap | admin=$IsAdmin")
+        $L.Add("collected $(Get-IsoUtc)")
+        $L.Add("(two lines differ between runs by design: this one and the sha256 at the end -")
+        $L.Add(" everything between them is stable, so a diff of two paste logs shows what")
+        $L.Add(" changed on the HOST, not what the clock did)")
+        if ($CaseId -or $Examiner) { $L.Add("case=$CaseId examiner=$Examiner") }
+        $L.Add("")
+        $L.Add("FINDINGS: $($act.Count) active ($hi High) - leads for review, NOT verdicts")
+        $L.Add("")
+
+        $sorted = @($act | Sort-Object @{E={ if ($_.severity -eq 'High') { 0 } else { 1 } }}, category, message)
+        $shown = 0
+        foreach ($f in $sorted) {
+            if ($shown -ge 45) { break }
+            $tag = if ($f.severity -eq 'High') { 'H' } else { 'R' }
+            $msg = [string]$f.message
+            # A process id changes on every reboot, so leaving it here would
+            # make a diff of two paste logs report a restart as a change on the
+            # host. Measured, not guessed: a diff of two consecutive runs showed
+            # exactly three differing lines - the collection time, the sha256,
+            # and this. The PID is one file away, in summary.txt and
+            # findings.json; what this log is for is "is this normal?".
+            $msg = [regex]::Replace($msg, '\(PID \d+\)', '(PID n)')
+            if ($msg.Length -gt 150) { $msg = $msg.Substring(0,150) + '...' }
+            $L.Add(("{0} [{1,-12}] {2}" -f $tag, $f.category, $msg))
+            $shown++
+        }
+        if ($sorted.Count -gt $shown) { $L.Add("... and $($sorted.Count - $shown) more - see summary.txt") }
+
+        $L.Add("")
+        if ($script:ModuleLimitations.Count -gt 0) {
+            # What was NOT collected belongs in the pasteable log too: without
+            # it a reader takes a short finding list for a clean host.
+            $L.Add("NOT COLLECTED (so absence of evidence here is not evidence of absence):")
+            foreach ($m in $script:ModuleLimitations.ToArray()) {
+                $lim = [string]$m.limitation
+                if ($lim.Length -gt 110) { $lim = $lim.Substring(0,110) + '...' }
+                $L.Add("  - $($m.module): $lim")
+            }
+            $L.Add("")
+        }
+        $fj = Join-Path $script:OutDir 'findings.json'
+        if (Test-PathSafe $fj) {
+            $h = Get-FileHash -LiteralPath $fj -Algorithm SHA256 -ErrorAction SilentlyContinue
+            if ($h) { $L.Add("sha256(findings.json) = $($h.Hash.ToLower())") }
+        }
+        $L.Add("Full evidence folder: see ARTIFACTS.md for what each file is.")
+
+        [IO.File]::WriteAllText((Join-Path $script:OutDir 'paste.txt'),
+            (($L -join "`r`n") + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+        Write-ExecLog 'INFO' ("paste.txt written: {0} line(s)" -f $L.Count)
+    } catch { Add-Err "paste.txt failed: $_" }
+}
+
+function Write-SuggestedAllowlist {
+    <#
+        allowlist.suggested.json: this host's active findings turned into an
+        allowlist draft, in the format -Allowlist already reads.
+
+        The workflow it exists for: run on a known-good build, trim the draft by
+        hand, and use it as the fleet baseline - after which a run on fifty
+        similar machines shows only the DIFFERENCES. HijackThis had the same
+        idea as an interactive ignore list; the file is enough here.
+
+        It is a DRAFT on purpose. Every path this host produced goes in, nothing
+        is judged, and the comment says so - an allowlist generated from a host
+        nobody checked is a way to suppress the compromise you were looking for.
+    #>
+    param([object[]]$Findings)
+    try {
+        $paths = New-Object System.Collections.Generic.List[string]
+        foreach ($f in @($Findings | Where-Object { -not $_.suppressed })) {
+            foreach ($p in @($f.paths)) { if ($p -and -not $paths.Contains([string]$p)) { $paths.Add([string]$p) } }
+        }
+        $obj = [ordered]@{
+            _comment = ("DRAFT generated by TATAR {0} from {1} on {2}. NOT an allowlist yet: it lists every path this host's findings named, with nothing judged. Review every line and delete what you cannot vouch for BEFORE using it with -Allowlist - a baseline taken from a host nobody checked will suppress exactly the compromise you were looking for. Intended use: take it from a known-good build, trim it, and run the fleet against it so only the differences show." -f $script:ToolVersion, $(if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { 'this host' }), (Get-IsoUtc))
+            paths = @($paths | Sort-Object)
+            publishers = @()
+            hashes = @()
+            packageOwned = $false
+        }
+        Write-JsonNoBom -Path (Join-Path $script:OutDir 'allowlist.suggested.json') -Json ($obj | ConvertTo-Json -Depth 5)
+        Write-ExecLog 'INFO' ("allowlist.suggested.json written: {0} path(s)" -f $paths.Count)
+    } catch { Add-Err "allowlist.suggested.json failed: $_" }
+}
+
+function Write-ArtifactIndex {
+    <#
+        Writes ARTIFACTS.md: what is in this evidence folder, what question
+        each thing answers, and what opens it.
+
+        Built from the files that were ACTUALLY produced, not from the module
+        list, so it describes this run rather than the tool in general - a
+        non-Administrator run says less because it collected less.
+
+        The last line is machine-checkable on purpose. Any produced file that
+        no pattern in $script:Artifacts claims is counted as uncatalogued, and
+        CI fails on a non-zero count: a new module that writes a file nobody
+        described breaks the build instead of quietly shipping an unexplained
+        artifact. That is the only thing keeping this list from going stale the
+        way five other hand-maintained lists in this repo already have.
+    #>
+    try {
+        $root  = $script:OutDir.TrimEnd('\')
+        $files = @(Get-ChildItem -Path $script:OutDir -Recurse -File -Force -ErrorAction SilentlyContinue)
+        $rows  = New-Object System.Collections.Generic.List[object]
+        $unmatched = New-Object System.Collections.Generic.List[string]
+
+        foreach ($f in $files) {
+            $rel = $f.FullName
+            if ($rel.StartsWith($root)) { $rel = $rel.Substring($root.Length) }
+            $rel = $rel.TrimStart('\')
+            # First pattern wins, so the table is ordered specific-before-general
+            # (FsArtifacts\*.lnk must be tried before FsArtifacts\*).
+            $hit = $null
+            foreach ($a in $script:Artifacts) { if ($rel -like $a.Pattern) { $hit = $a; break } }
+            if ($hit) { $rows.Add([pscustomobject]@{ Class = $hit.Class; Question = $hit.Question; Next = $hit.Next; Rel = $rel }) }
+            else      { $unmatched.Add($rel) }
+        }
+
+        $L = New-Object System.Collections.Generic.List[string]
+        $L.Add("# Artifacts in this folder")
+        $L.Add("")
+        $L.Add("Host: $(if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { [System.Net.Dns]::GetHostName() })  |  Collected: $(Get-IsoUtc)  |  TATAR $($script:ToolVersion)")
+        $L.Add("")
+        $L.Add("Start with ``summary.txt``. If a section looks empty, read ``tatar.log`` before")
+        $L.Add("concluding that nothing was there - it records what the collector could not reach.")
+        $L.Add("")
+        $L.Add("| What | Files | Answers | Open it with |")
+        $L.Add("|---|---|---|---|")
+        foreach ($g in ($rows | Group-Object Class)) {
+            $n = @($g.Group).Count
+            $first = @($g.Group)[0]
+            $names = if ($n -eq 1) { '`' + $first.Rel + '`' } else { "$n files" }
+            $L.Add(("| {0} | {1} | {2} | {3} |" -f $g.Name, $names, $first.Question, $first.Next))
+        }
+        $L.Add("")
+        $L.Add("Written before ``manifest_sha256.txt`` and the tail of ``tatar.log``, so those two")
+        $L.Add("are described above but may not yet have existed when this index was built.")
+        if ($unmatched.Count -gt 0) {
+            $L.Add("")
+            $L.Add("## Uncatalogued")
+            $L.Add("")
+            $L.Add("These files were produced but no entry in the artifact dictionary claims them.")
+            $L.Add("That is a gap in the tool's documentation, not in the evidence:")
+            $L.Add("")
+            foreach ($u in ($unmatched | Select-Object -First 40)) { $L.Add("- ``$u``") }
+        }
+        $L.Add("")
+        $L.Add(("Uncatalogued: {0}" -f $unmatched.Count))
+
+        $idx = Join-Path $script:OutDir 'ARTIFACTS.md'
+        [IO.File]::WriteAllText($idx, (($L -join "`r`n") + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+        Write-ExecLog 'INFO' ("Artifact index written: {0} file(s) catalogued, {1} uncatalogued" -f $rows.Count, $unmatched.Count)
+        if ($unmatched.Count -gt 0) {
+            Add-Note ("{0} produced file(s) are not described in the artifact dictionary - see ARTIFACTS.md" -f $unmatched.Count)
+        }
+    } catch { Add-Err "Artifact index failed: $_" }
+}
+
 function Out-FileNoBom {
     <#
         Out-File -Encoding UTF8 writes a UTF-8 BOM on Windows PowerShell 5.1 and
@@ -666,7 +849,11 @@ function Add-Note {
     "[$t] NOTE: $Msg" | Out-FileNoBom -FilePath $script:ReportFile -Append
     Write-ExecLog 'WARN' $Msg
     $script:ModuleLimitations.Add([pscustomobject]@{
-        module     = $(if ($script:CurrentModule) { $script:CurrentModule } else { '' })
+        # '(run)', not '': a limitation raised before any module starts - the
+        # "not running as Administrator" one above all - grouped under a blank
+        # key in summary.json and was dropped from paste.txt, which is the one
+        # place a reader most needs to see it.
+        module     = $(if ($script:CurrentModule) { $script:CurrentModule } else { '(run)' })
         limitation = $Msg
     })
 }
@@ -2442,6 +2629,60 @@ $script:QuickModules = @('sysinfo','network','process','sessions','users','servi
 # =====================================================================
 #  Module registry  (ORDER = order of volatility, then derived artifacts)
 # =====================================================================
+# ---------------------------------------------------------------------------
+#  Artifact dictionary
+# ---------------------------------------------------------------------------
+# What each output IS, what question it answers, and what opens it. A responder
+# who has just run the tool asks "collected - now what?", and until now nothing
+# in the evidence folder answered that: they got ~30 files and five directories
+# and had to already know what a .automaticDestinations-ms is.
+#
+# This is a hand-maintained list of names, and this repo has shipped five stale
+# ones (module list, version badge, README changelog, version literal, quick
+# profile). So it is gated against a REAL RUN rather than against the source:
+# Write-ArtifactIndex matches every file actually produced against these
+# patterns and reports what it could not place. CI fails on a non-zero count,
+# which means a new module that writes a file nobody catalogued breaks the
+# build rather than quietly producing an unexplained artifact.
+#
+# Scope discipline: this names what TATAR produces. It is not a catalogue of
+# DFIR artifacts in general, and must not grow into one.
+$script:Artifacts = @(
+    [pscustomobject]@{ Pattern = 'summary.json';            Class = 'triage summary (structured)'; Question = 'what the run found, machine-readable';                 Next = 'SIEM / SOAR ingest; validates against schema/summary.schema.json' }
+    [pscustomobject]@{ Pattern = 'findings.json';           Class = 'findings only (structured)';  Question = 'the leads, without the rest of the summary';           Next = 'SIEM / SOAR ingest; schema/findings.schema.json' }
+    [pscustomobject]@{ Pattern = 'summary.txt';             Class = 'triage summary (human)';      Question = 'the same findings, to read now';                      Next = 'read directly - start here' }
+    [pscustomobject]@{ Pattern = 'TATAR_Report_*.txt';      Class = 'full collection report';      Question = 'everything every module collected, in order';         Next = 'read directly; grep by section number' }
+    [pscustomobject]@{ Pattern = 'tatar.log';               Class = 'execution log';               Question = 'what the collector did, and what it could NOT do';    Next = 'read directly - check this before trusting an empty section' }
+    [pscustomobject]@{ Pattern = 'ARTIFACTS.md';            Class = 'this index';                  Question = 'what is in this folder and what opens it';            Next = 'you are reading it' }
+    [pscustomobject]@{ Pattern = 'paste.txt';               Class = 'pasteable summary';          Question = 'the whole run in under 60 lines, to show someone';    Next = 'paste into a ticket or chat. Stable between runs, so diff two of them to see what changed on the host' }
+    [pscustomobject]@{ Pattern = 'allowlist.suggested.json'; Class = 'allowlist draft';           Question = 'what a baseline for this host would look like';       Next = 'review EVERY line, delete what you cannot vouch for, then pass it to -Allowlist' }
+    [pscustomobject]@{ Pattern = 'manifest_sha256.txt';     Class = 'integrity manifest';          Question = 'has anything in this folder changed since collection'; Next = 'sha256sum -c manifest_sha256.txt' }
+    [pscustomobject]@{ Pattern = 'chain_of_custody.txt';    Class = 'chain of custody';            Question = 'who collected this, where and when';                  Next = 'read directly; attach to the case file' }
+    [pscustomobject]@{ Pattern = 'timeline.csv';            Class = 'timeline';                    Question = 'what happened in what order';                         Next = 'Timeline Explorer, Excel, or any CSV viewer' }
+    [pscustomobject]@{ Pattern = 'binary_hashes.txt';       Class = 'binary hashes';               Question = 'which binaries were running, by SHA-256';             Next = 'VirusTotal / an internal hash reputation service (offline: compare to a known-good baseline)' }
+    [pscustomobject]@{ Pattern = 'hosts.txt';               Class = 'name resolution';             Question = 'has name resolution been tampered with';              Next = 'read directly - any non-default line is worth a look' }
+    [pscustomobject]@{ Pattern = 'arp.txt';                 Class = 'network state';               Question = 'who this host has been talking to on the LAN';        Next = 'read directly' }
+    [pscustomobject]@{ Pattern = 'routes.txt';              Class = 'network state';               Question = 'where traffic from this host goes';                   Next = 'read directly - an unexpected route is a redirect' }
+    [pscustomobject]@{ Pattern = 'ipconfig.txt';            Class = 'network state';               Question = 'the host addressing and DNS servers';                 Next = 'read directly' }
+    [pscustomobject]@{ Pattern = 'dns_cache.txt';           Class = 'DNS cache';                   Question = 'what names this host resolved recently';              Next = 'read directly; cross-check against a C2 domain list' }
+    [pscustomobject]@{ Pattern = 'firewall_rules.txt';      Class = 'firewall configuration';      Question = 'what was allowed in or out';                          Next = 'read directly - look for rules nobody recognises' }
+    [pscustomobject]@{ Pattern = 'recyclebin.csv';          Class = 'deleted files';               Question = 'what was deleted, from where, and when';              Next = 'any CSV viewer' }
+    [pscustomobject]@{ Pattern = 'autoruns.csv';            Class = 'autoruns (Sysinternals)';     Question = 'everything configured to start automatically';        Next = 'Autoruns GUI, or any CSV viewer' }
+    [pscustomobject]@{ Pattern = 'EventLogs\evt_*.csv';     Class = 'event log preview';           Question = 'the 15 highest-signal Security event IDs';            Next = 'read directly. Capped at 50 events each - NOT a hunting corpus' }
+    [pscustomobject]@{ Pattern = 'EventLogs\*.evtx';        Class = 'Windows event log';           Question = 'the full log history';                                Next = 'Hayabusa, Chainsaw (Sigma), or Event Viewer. Needs -ExportEvtx' }
+    [pscustomobject]@{ Pattern = 'RDP\*.csv';               Class = 'RDP session evidence';        Question = 'who connected over RDP, and from where';              Next = 'any CSV viewer' }
+    [pscustomobject]@{ Pattern = 'BrowserArtifacts\*';      Class = 'browser metadata';            Question = 'what the browser profiles look like';                 Next = 'read the summary; the profile files themselves need a browser-forensics tool' }
+    [pscustomobject]@{ Pattern = 'FsArtifacts\*.lnk';       Class = 'shortcut (LNK)';              Question = 'what files were opened, and from what volume';        Next = 'LECmd' }
+    [pscustomobject]@{ Pattern = 'FsArtifacts\*Destinations-ms'; Class = 'jump list';              Question = 'what each application opened, per user';              Next = 'JLECmd' }
+    [pscustomobject]@{ Pattern = 'FsArtifacts\*.hve';       Class = 'registry hive fragment';      Question = 'user-activity keys taken from a loaded profile';      Next = 'RegRipper, Registry Explorer' }
+    [pscustomobject]@{ Pattern = 'FsArtifacts\*';           Class = 'filesystem artifacts';        Question = 'volume, disk and USN state';                          Next = 'read directly' }
+    [pscustomobject]@{ Pattern = 'MFT\*';                   Class = 'NTFS / MFT information';      Question = 'volume geometry and MFT layout';                      Next = 'read directly. Full $MFT parsing needs MFTECmd on an offline image' }
+    [pscustomobject]@{ Pattern = 'RegistryHives\*';         Class = 'registry hive';               Question = 'the full registry, offline';                          Next = 'RegRipper, Registry Explorer. Contains CREDENTIAL MATERIAL - encrypt' }
+    [pscustomobject]@{ Pattern = 'memory.raw';              Class = 'memory image';                Question = 'what was in RAM';                                     Next = 'Volatility 3' }
+    [pscustomobject]@{ Pattern = 'memory.raw.sha256.txt';   Class = 'memory image hash';           Question = 'integrity of the memory image';                       Next = 'compare before analysis' }
+    [pscustomobject]@{ Pattern = 'winpmem_log.txt';         Class = 'acquisition log';             Question = 'whether memory acquisition actually worked';          Next = 'read directly if memory.raw is missing or empty' }
+)
+
 $script:Collectors = [ordered]@{
     memory      = ${function:Collect-Memory}
     network     = ${function:Collect-Network}
@@ -2692,6 +2933,17 @@ try {
     # edition, written LF-only and without a BOM, so `sha256sum -c
     # manifest_sha256.txt` verifies an evidence folder from either platform.
     # The CSV this used to write was not checkable by any standard tool.
+    # Both read the finished finding set, and paste.txt hashes findings.json,
+    # so they run after the JSON documents are on disk and before the index
+    # catalogues them and the manifest hashes them.
+    # .ToArray(), NOT @(...): the array subexpression operator over a
+    # List[object] throws "Argument types do not match" on Windows PowerShell
+    # 5.1. Third time in this project - moduleLimitations in 1.4, the
+    # correlation pass in 1.5, here now.
+    Write-PasteLog -Findings $script:Findings.ToArray() -IsAdmin $isAdmin
+    Write-SuggestedAllowlist -Findings $script:Findings.ToArray()
+    Write-ArtifactIndex
+
     # Written BEFORE the walk. Appending to the report after the manifest has
     # hashed it is exactly the trailer bug this file already carries a warning
     # about, and it would leave one manifest entry permanently wrong.

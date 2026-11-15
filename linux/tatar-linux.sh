@@ -157,7 +157,11 @@ section() { printf '\n===== %s =====\n\n' "$1" >> "$REPORT"; }
 add_note() {  # add_note MESSAGE
     local msg="$1"
     execlog "WARN" "$msg"
-    [ -n "${LIMITS_FILE:-}" ] && printf '%s\037%s\n' "$CURRENT_MODULE" "$(printf '%s' "$msg" | tr '\t\n\035\037' '    ')" >> "$LIMITS_FILE"
+    # A note raised before any module starts - "not running as root" is the
+    # big one - used to be filed under an EMPTY module name. It then grouped
+    # under a blank key in summary.json and was dropped entirely from
+    # paste.txt, which is the one place a reader most needs to see it.
+    [ -n "${LIMITS_FILE:-}" ] && printf '%s\037%s\n' "${CURRENT_MODULE:-(run)}" "$(printf '%s' "$msg" | tr '\t\n\035\037' '    ')" >> "$LIMITS_FILE"
     return 0
 }
 
@@ -384,6 +388,154 @@ correlate_findings() {
     fi
 
     printf '%s' "$count"
+}
+
+# ---------------------------------------------------------------------------
+#  Artifact dictionary  (parity with the Windows edition's $script:Artifacts)
+# ---------------------------------------------------------------------------
+# What each output IS, what question it answers, and what opens it. A responder
+# who has just run the tool asks "collected - now what?", and the evidence
+# folder did not answer that. Format: glob|class|question|next tool.
+#
+# Hand-maintained, so it is gated against a REAL RUN: write_artifact_index
+# matches every produced file against these globs and prints the count it could
+# not place. CI fails on a non-zero count, which means a module that starts
+# writing a new file breaks the build rather than shipping it unexplained.
+ARTIFACT_INDEX='summary.json|triage summary (structured)|what the run found, machine-readable|SIEM / SOAR ingest; schema/summary.schema.json
+findings.json|findings only (structured)|the leads, without the rest of the summary|SIEM / SOAR ingest; schema/findings.schema.json
+summary.txt|triage summary (human)|the same findings, to read now|read directly - start here
+TATAR_Report_*.txt|full collection report|everything every module collected, in order|read directly; grep by section number
+tatar.log|execution log|what the collector did, and what it could NOT do|read directly - check this before trusting an empty section
+ARTIFACTS.md|this index|what is in this folder and what opens it|you are reading it
+paste.txt|pasteable summary|the whole run in under 60 lines, to show someone|paste into a ticket or chat. Stable between runs, so diff two of them to see what changed on the host
+allowlist.suggested.json|allowlist draft|what a baseline for this host would look like|review EVERY line, delete what you cannot vouch for, then pass it to --allowlist
+manifest_sha256.txt|integrity manifest|has anything in this folder changed since collection|sha256sum -c manifest_sha256.txt
+chain_of_custody.txt|chain of custody|who collected this, where and when|read directly; attach to the case file
+timeline.csv|timeline|what happened in what order|any CSV viewer
+binary_hashes.txt|binary hashes|which binaries were running, by SHA-256|an internal hash reputation service (offline: compare to a known-good baseline)
+logs/*|copied system logs|the raw login and system logs as they were on the host|last/lastb for wtmp/btmp; read the text logs directly
+extracted_binaries/*|recovered deleted binary|the on-disk image of a process whose file was unlinked|a sandbox or a static analyser - treat as live malware'
+
+# paste.txt: the whole run in under 60 lines, to paste into a ticket or chat.
+# Written to be STABLE between runs on an unchanged host - sorted by severity
+# then category then message, no durations, no counters, and process ids
+# normalised, because a pid changes on every reboot and would make a diff of
+# two paste logs report a restart as a change on the host. Two lines differ by
+# design and say so. Parity with the Windows edition's Write-PasteLog.
+write_paste_log() {  # $1 = F2
+    local f2="$1" out="$OUTDIR/paste.txt" act hi
+    act=$(awk -F"$FSEP" '$8 != "true"' "$f2" 2>/dev/null | wc -l | tr -d ' ')
+    hi=$(awk -F"$FSEP" '$8 != "true" && $2 == "High"' "$f2" 2>/dev/null | wc -l | tr -d ' ')
+    {
+        printf 'TATAR %s | %s | %s | root=%s\n' "$VERSION" "$(hostname 2>/dev/null)" \
+               "$( ( . /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-linux}" ) )" \
+               "$( [ "$(id -u)" -eq 0 ] && echo true || echo false )"
+        printf 'collected %s\n' "$(iso)"
+        printf '(two lines differ between runs by design: this one and the sha256 at the end -\n'
+        printf ' everything between them is stable, so a diff of two paste logs shows what\n'
+        printf ' changed on the HOST, not what the clock did)\n'
+        [ -n "$CASE_ID$EXAMINER" ] && printf 'case=%s examiner=%s\n' "$CASE_ID" "$EXAMINER"
+        printf '\nFINDINGS: %s active (%s High) - leads for review, NOT verdicts\n\n' "$act" "$hi"
+        awk -F"$FSEP" -v OFS='' '
+            $8 != "true" {
+                tag = ($2 == "High") ? "H" : "R"
+                sev = ($2 == "High") ? 0 : 1
+                msg = $4
+                gsub(/\(PID [0-9]+\)/, "(PID n)", msg)
+                gsub(/\(pid [0-9]+\)/, "(pid n)", msg)
+                if (length(msg) > 150) msg = substr(msg, 1, 150) "..."
+                printf "%d\t%s\t%s\t%s [%-12s] %s\n", sev, $3, msg, tag, $3, msg
+            }' "$f2" 2>/dev/null | sort -t"$(printf '\t')" -k1,1n -k2,2 -k3,3 | cut -f4- | head -n 45
+        local total
+        total=$(awk -F"$FSEP" '$8 != "true"' "$f2" 2>/dev/null | wc -l | tr -d ' ')
+        [ "${total:-0}" -gt 45 ] && printf '... and %s more - see summary.txt\n' "$((total-45))"
+        # Counted first: a LIMITS_FILE holding only a blank line printed the
+        # header with nothing under it, which reads as "nothing was missed"
+        # followed by silence - the opposite of what this section is for.
+        if [ "$(grep -c . "$LIMITS_FILE" 2>/dev/null || echo 0)" -gt 0 ]; then
+            printf '\nNOT COLLECTED (so absence of evidence here is not evidence of absence):\n'
+            while IFS="$FSEP" read -r lmod llim; do
+                [ -n "$lmod" ] || continue
+                printf '  - %s: %s\n' "$lmod" "$(printf '%s' "$llim" | cut -c1-110)"
+            done < "$LIMITS_FILE"
+        fi
+        printf '\n'
+        [ -f "$OUTDIR/findings.json" ] && printf 'sha256(findings.json) = %s\n' \
+            "$(sha256sum "$OUTDIR/findings.json" 2>/dev/null | cut -d' ' -f1)"
+        printf 'Full evidence folder: see ARTIFACTS.md for what each file is.\n'
+    } > "$out" 2>/dev/null
+    execlog "INFO" "paste.txt written"
+    return 0
+}
+
+# allowlist.suggested.json: this host's finding paths as an allowlist DRAFT, in
+# the format --allowlist already reads. Nothing is judged; the comment says so.
+write_suggested_allowlist() {  # $1 = F2
+    local f2="$1" out="$OUTDIR/allowlist.suggested.json" first=1
+    {
+        printf '{\n  "_comment": "%s",\n  "paths": [' \
+            "$(json_escape "DRAFT generated by TATAR $VERSION from $(hostname 2>/dev/null) on $(iso). NOT an allowlist yet: it lists every path this host's findings named, with nothing judged. Review every line and delete what you cannot vouch for BEFORE using it with --allowlist - a baseline taken from a host nobody checked will suppress exactly the compromise you were looking for. Intended use: take it from a known-good build, trim it, and run the fleet against it so only the differences show.")"
+        awk -F"$FSEP" -v GS="$GSEP" '$8 != "true" { n = split($13, P, GS); for (i=1;i<=n;i++) if (P[i] != "") print P[i] }' "$f2" 2>/dev/null \
+            | sort -u | while read -r pth; do
+                [ -n "$pth" ] || continue
+                [ "$first" -eq 1 ] && first=0 || printf ','
+                printf '\n    "%s"' "$(json_escape "$pth")"
+            done
+        printf '\n  ],\n  "publishers": [],\n  "hashes": [],\n  "packageOwned": false\n}\n'
+    } > "$out" 2>/dev/null
+    execlog "INFO" "allowlist.suggested.json written"
+    return 0
+}
+
+# Writes ARTIFACTS.md from the files ACTUALLY produced, so it describes this run
+# rather than the tool in general. The last line is machine-checkable on purpose.
+write_artifact_index() {
+    local idx="$OUTDIR/ARTIFACTS.md" rel cls q nx line hit uncat=0 n
+    local tmp; tmp="$(mktemp)"
+    {
+        printf '# Artifacts in this folder\n\n'
+        printf 'Host: %s  |  Collected: %s  |  TATAR %s\n\n' "$(hostname 2>/dev/null)" "$(iso)" "$VERSION"
+        printf 'Start with `summary.txt`. If a section looks empty, read `tatar.log` before\n'
+        printf 'concluding that nothing was there - it records what the collector could not reach.\n\n'
+        printf '| What | Files | Answers | Open it with |\n|---|---|---|---|\n'
+    } > "$tmp"
+    ( cd "$OUTDIR" 2>/dev/null && find . -type f 2>/dev/null | sed 's|^\./||' | sort ) > "$tmp.files"
+    # one row per class, counted - first glob wins, so the table is ordered
+    # specific-before-general exactly as the Windows table is.
+    printf '%s\n' "$ARTIFACT_INDEX" | while IFS='|' read -r glob cls q nx; do
+        [ -n "$glob" ] || continue
+        n=0
+        while read -r rel; do
+            [ -n "$rel" ] || continue
+            grep -qxF "$rel" "$tmp.claimed" 2>/dev/null && continue
+            case "$rel" in
+                $glob) printf '%s\n' "$rel" >> "$tmp.claimed"; n=$((n+1)); last="$rel" ;;
+            esac
+        done < "$tmp.files"
+        if [ "$n" -gt 0 ]; then
+            if [ "$n" -eq 1 ]; then printf '| %s | `%s` | %s | %s |\n' "$cls" "$last" "$q" "$nx" >> "$tmp"
+            else printf '| %s | %s files | %s | %s |\n' "$cls" "$n" "$q" "$nx" >> "$tmp"; fi
+        fi
+    done
+    uncat=0
+    if [ -s "$tmp.files" ]; then
+        comm -23 "$tmp.files" <(sort -u "$tmp.claimed" 2>/dev/null || true) > "$tmp.uncat" 2>/dev/null || cp "$tmp.files" "$tmp.uncat"
+        uncat=$(wc -l < "$tmp.uncat" | tr -d ' ')
+    fi
+    {
+        printf '\nWritten before `manifest_sha256.txt` and the tail of `tatar.log`, so those two\n'
+        printf 'are described above but may not yet have existed when this index was built.\n'
+        if [ "${uncat:-0}" -gt 0 ]; then
+            printf '\n## Uncatalogued\n\nThese files were produced but no entry in the artifact dictionary claims them.\nThat is a gap in the tool'"'"'s documentation, not in the evidence:\n\n'
+            head -n 40 "$tmp.uncat" | while read -r rel; do printf -- '- `%s`\n' "$rel"; done
+        fi
+        printf '\nUncatalogued: %s\n' "${uncat:-0}"
+    } >> "$tmp"
+    cp "$tmp" "$idx" 2>/dev/null
+    execlog "INFO" "Artifact index written: ${uncat:-0} uncatalogued"
+    [ "${uncat:-0}" -gt 0 ] && add_note "${uncat} produced file(s) are not described in the artifact dictionary - see ARTIFACTS.md"
+    rm -f "$tmp" "$tmp.files" "$tmp.claimed" "$tmp.uncat" 2>/dev/null
+    return 0
 }
 
 # Boundary-aware IOC match. Plain substring matching used to let "127.0.0" match
@@ -1323,6 +1475,9 @@ EOF
         printf '}\n'
     } > "$JF"
 
+    write_paste_log "$F2"
+    write_suggested_allowlist "$F2"
+
     rm -f "$F2" 2>/dev/null
 }
 
@@ -1588,6 +1743,9 @@ write_summary "$START_ISO" "$END_ISO" "$TO_RUN" "$IS_ROOT" "$DUR" "$SKIPPED"
 # appending to an already-hashed file left one entry permanently wrong, so
 # `sha256sum -c manifest_sha256.txt` failed on every single run.
 printf '\n=== Collection finished: %s ===\n' "$END_ISO" >> "$REPORT"
+
+# Before the manifest, so ARTIFACTS.md is itself hashed.
+write_artifact_index
 
 MANIFEST="$OUTDIR/manifest_sha256.txt"
 ( cd "$OUTDIR" && find . -type f ! -name 'manifest_sha256.txt' ! -name 'tatar.log' -exec sha256sum {} \; ) > "$MANIFEST" 2>/dev/null

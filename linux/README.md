@@ -126,6 +126,17 @@ files; the Windows edition folds case, for the opposite reason. The Windows
 edition also carries `COR-01` (download-then-execute), which has no Linux
 counterpart: nothing here records that a file came from the internet.
 
+## Collected — now what?
+
+Three outputs answer the question the evidence folder used to leave open, and
+none of them costs anything at collection time:
+
+| File | What it is for |
+|---|---|
+| `ARTIFACTS.md` | Every file this run produced, what it answers, and what opens it. Ends with a machine-checkable `Uncatalogued: N`; CI fails on anything but `0`. |
+| `paste.txt` | The whole run in under 60 lines, to paste into a ticket or chat. Deliberately stable — no durations, no counters, pids normalised — so a diff of two paste logs shows what changed on the host. |
+| `allowlist.suggested.json` | This host's finding paths as an allowlist **draft**, in the format `--allowlist` reads. Nothing is judged; trim it before trusting it. |
+
 ## Output
 
 ```
@@ -313,6 +324,17 @@ finding (цэвэр гэж шийдэгдсэн) болон IOC таарсныг
 ба `/Tmp/X` бол өөр файл; Windows хувилбар эсрэг шалтгаанаар үсгийг нэгтгэдэг.
 Windows хувилбар мөн `COR-01` (download-then-execute) авч явах ба Linux дээр
 түүний хос байхгүй: энд файл интернэтээс ирснийг бүртгэх зүйл байхгүй.
+
+## Цуглууллаа — одоо яах вэ?
+
+Нотлох баримтын хавтас өмнө нь нээлттэй орхидог байсан асуултад гурван гаралт
+хариулна, аль нь ч цуглуулалтын талд өртөг нэмэхгүй:
+
+| Файл | Юунд зориулагдсан |
+|---|---|
+| `ARTIFACTS.md` | Энэ ажиллагааны гаргасан файл бүр, юунд хариулдаг, юугаар нээх вэ. Машинд шалгагдах `Uncatalogued: N` мөрөөр төгсөнө; CI нь `0`-оос өөр утгад унана. |
+| `paste.txt` | Бүтэн ажиллагаа 60-аас цөөн мөрөөр, тикет/чатад наахад. Зориудаар тогтвортой — хугацаа, тоолуур байхгүй, pid нэгтгэгдсэн — тиймээс хоёр paste лог-ийн diff нь хост дээр юу өөрчлөгдсөнийг харуулна. |
+| `allowlist.suggested.json` | Энэ хостын finding-үүдийн замууд allowlist-ийн **ноорог** болсон нь, `--allowlist` уншдаг форматаар. Юуг ч шүүхгүй; итгэхээсээ өмнө тайрна уу. |
 
 ## Гаралт
 

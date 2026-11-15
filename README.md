@@ -348,6 +348,40 @@ platforms.
 
 ---
 
+## Collected — now what?
+
+The hardest question a first responder asks is not *what do I run*, it is
+*I have the folder, now what*. Three outputs answer it, and none of them costs
+anything at collection time.
+
+| File | What it is for |
+|---|---|
+| `ARTIFACTS.md` | Every file this run produced, what question it answers, and what opens it — `.evtx` → Hayabusa/Chainsaw, `.lnk` → LECmd, jump lists → JLECmd, hives → RegRipper. Built from the files actually produced, so a run that collected less says less. |
+| `paste.txt` | The whole run in under 60 lines, to paste into a ticket or a chat with *"is this normal?"*. |
+| `allowlist.suggested.json` | This host's findings as an allowlist **draft**, in the format `-Allowlist` already reads. |
+
+**`paste.txt` is deliberately stable.** Durations, counters and process ids are
+left out, and the findings are sorted by severity, category and message rather
+than by discovery order. Two lines differ between runs and say so. A diff of two
+paste logs therefore shows what changed on the *host*, not what the clock did —
+the property that kept HijackThis logs useful for a decade. Verified by running
+twice in a row: exactly the two declared lines differ.
+
+**The allowlist draft is a draft.** It lists every path this host's findings
+named, with nothing judged. Take it from a build you trust, delete what you
+cannot vouch for, and then run the fleet against it so only the differences
+show. A baseline taken from a host nobody checked will suppress exactly the
+compromise you were looking for, which is why the file says so in its own
+first field.
+
+**The artifact dictionary is gated.** It is a hand-maintained list of names, and
+this repository has shipped five stale ones. So `ARTIFACTS.md` ends with a
+machine-checkable `Uncatalogued: N`, and CI fails on anything but `0`: a module
+that starts writing a file nobody described breaks the build rather than
+quietly shipping an unexplained artifact.
+
+---
+
 ## Output
 
 ```
@@ -853,6 +887,39 @@ finding-ийг — allowlist тэр замыг аль хэдийн «мэдэг�
 `C:\Temp\X.EXE` ба `c:\temp\x.exe` бол нэг файл тул заавал хамаарах ёстой;
 `/tmp/x` ба `/Tmp/X` бол өөр файл тул хамаарч болохгүй. Хоёулангийнх нь тохиолдол
 хоёр платформ дээр шалгагдсан.
+
+---
+
+## Цуглууллаа — одоо яах вэ?
+
+Эхний шатны хариу үзүүлэгчийн хамгийн хэцүү асуулт нь *юу ажиллуулах вэ* биш,
+*хавтас гарлаа, одоо яах вэ* гэдэг. Гурван гаралт үүнд хариулна, аль нь ч
+цуглуулалтын талд ямар ч өртөг нэмэхгүй.
+
+| Файл | Юунд зориулагдсан |
+|---|---|
+| `ARTIFACTS.md` | Энэ ажиллагааны гаргасан файл бүр, тэр нь ямар асуултад хариулдаг, юугаар нээх вэ — `.evtx` → Hayabusa/Chainsaw, `.lnk` → LECmd, jump list → JLECmd, hive → RegRipper. Бодитоор гарсан файлуудаас барьдаг тул бага цуглуулсан ажиллагаа бага зүйл хэлнэ. |
+| `paste.txt` | Бүтэн ажиллагаа 60-аас цөөн мөрөөр — тикет, чатад наагаад *«энэ хэвийн үү?»* гэж асуухад зориулсан. |
+| `allowlist.suggested.json` | Энэ хостын finding-үүдээс гаргасан allowlist-ийн **ноорог**, `-Allowlist` уншдаг форматаар. |
+
+**`paste.txt` зориудаар тогтвортой.** Үргэлжлэх хугацаа, тоолуур, процессын id
+орохгүй; finding-үүд илрүүлсэн дарааллаар биш, severity → ангилал → мессежээр
+эрэмбэлэгдэнэ. Ажиллагаа бүрт хоёр мөр өөрчлөгдөх ба түүнийгээ өөрөө хэлнэ.
+Тиймээс хоёр paste лог-ийн diff нь **хост** дээр юу өөрчлөгдсөнийг харуулна,
+цаг юу хийснийг биш — HijackThis-ийн лог-ийг арван жил ашигтай байлгасан яг тэр
+шинж. Дараалан хоёр удаа ажиллуулж шалгасан: яг зарласан хоёр мөр л зөрсөн.
+
+**Allowlist-ийн ноорог бол ноорог.** Энэ хостын finding-үүдийн нэрлэсэн бүх
+замыг жагсаана, юуг ч шүүхгүй. Итгэдэг build-ээсээ аваад, батлан хэлж чадахгүй
+мөрүүдээ устгаад, дараа нь флотоо түүний эсрэг ажиллуулбал зөвхөн ялгаа л
+харагдана. Хэн ч шалгаагүй хостоос авсан baseline нь яг таны хайж байсан
+халдлагыг дарна — файл өөрөө эхний талбартаа үүнийг бичсэн шалтгаан нь тэр.
+
+**Артефактын толь бичиг gate-тэй.** Энэ бол гараар арчилдаг нэрсийн жагсаалт
+бөгөөд энэ репо аль хэдийн таван хуучирсан жагсаалт гаргасан. Тиймээс
+`ARTIFACTS.md` нь машинд шалгагдах `Uncatalogued: N` мөрөөр төгсөж, CI нь `0`-
+оос өөр утгад унана: хэн ч тайлбарлаагүй файл бичиж эхэлсэн модуль build-ийг
+унагаана, тайлбаргүй артефакт чимээгүй гаргахын оронд.
 
 ---
 
