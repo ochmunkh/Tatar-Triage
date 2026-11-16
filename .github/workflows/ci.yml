@@ -96,6 +96,11 @@ jobs:
       - name: CSV cell safety unit tests
         run: bash tests/test-csv-cell.sh
 
+      # A hosts line is host-supplied text quoted into a finding. These assert
+      # it cannot plant a path in paths[] and get the finding suppressed.
+      - name: Hosts entry unit tests
+        run: bash tests/test-hosts-entry.sh
+
       - name: Known-answer verification
         run: bash tests/test-known-answer.sh
 
@@ -240,6 +245,12 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Test-CsvCell.ps1
 
+      # A hosts line is host-supplied text quoted into a finding. These assert
+      # it cannot plant a path in paths[] and get the finding suppressed.
+      - name: Hosts entry unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-HostsEntry.ps1
+
       - name: Known-answer verification
         shell: pwsh
         run: pwsh -File tests/Test-KnownAnswer.ps1
@@ -369,6 +380,12 @@ jobs:
       - name: CSV cell safety unit tests
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-CsvCell.ps1
+
+      # A hosts line is host-supplied text quoted into a finding. These assert
+      # it cannot plant a path in paths[] and get the finding suppressed.
+      - name: Hosts entry unit tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-HostsEntry.ps1
 
       - name: Known-answer verification
         shell: powershell

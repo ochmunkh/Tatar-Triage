@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.5.1"
+VERSION="1.5.2"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -597,6 +597,29 @@ csv_cell() {
     printf '%s' "$(printf '%s' "$v" | sed 's/"/""/g')"
 }
 
+hosts_entry() {  # hosts_entry LINE -> "address -> name [name ...]"
+    # The line is text from the suspect host and lands in a finding's detail,
+    # which the path extractor, the allowlist and the IOC pass all read. A
+    # crafted line naming /usr/sbin/sshd would otherwise put a trusted binary
+    # into paths[] and let an allowlist rule suppress the finding that reports
+    # the tampering. Each field is reduced to the characters it can legally
+    # contain, so no slash, backslash, quote or control character survives.
+    # Same rule and same output as Format-HostsEntry in the Windows edition.
+    local line="${1%%#*}" addr rest s
+    line="${line%$'\r'}"
+    read -r addr rest <<EOF
+$line
+EOF
+    [ -n "$addr" ] || return 0
+    addr=$(printf '%s' "$addr" | LC_ALL=C tr -c '0-9A-Fa-f:.' '?')
+    rest=$(printf '%s' "$rest" | tr '\t' ' ' | tr -s ' ' | LC_ALL=C tr -c 'A-Za-z0-9._ -' '?')
+    [ -n "$rest" ] || rest="(no name)"
+    s="$addr -> $rest"
+    # A hosts line may carry hundreds of aliases; the report has the full file.
+    if [ "${#s}" -gt 100 ]; then s="${s:0:100}..."; fi
+    printf '%s' "$s"
+}
+
 # Boundary-aware IOC match. Plain substring matching used to let "127.0.0" match
 # 127.0.0.1 and "ocalhost" match localhost, raising false High findings. awk keeps
 # this portable: GNU grep -P is not available everywhere.
@@ -826,8 +849,21 @@ m_network() {
         [ -r "$f" ] && { echo "--- $f ---" >> "$REPORT"; cat "$f" >> "$REPORT" 2>/dev/null; }
     done
     if [ -r /etc/hosts ]; then
-        local hx; hx=$(grep -vE '^\s*#|^\s*$|127\.0\.0\.1|::1|127\.0\.1\.1' /etc/hosts 2>/dev/null | wc -l)
-        [ "${hx:-0}" -gt 0 ] && add_finding "Review" "network" "/etc/hosts has $hx custom entries" "Review /etc/hosts in report - static host overrides can redirect traffic (T1565.001)"
+        local hx hl hn=0 hsum=""
+        hx=$(grep -vE '^\s*#|^\s*$|127\.0\.0\.1|::1|127\.0\.1\.1' /etc/hosts 2>/dev/null | wc -l)
+        if [ "${hx:-0}" -gt 0 ]; then
+            # The count alone made the analyst open the report to learn
+            # anything. Name the first few overrides in the finding itself, so
+            # the address and the host name it captures are visible in the
+            # summary and reachable by the IOC pass.
+            while IFS= read -r hl; do
+                [ -n "$hl" ] || continue
+                hsum="${hsum:+$hsum ; }$(hosts_entry "$hl")"; hn=$((hn+1))
+            done <<EOF
+$(grep -vE '^\s*#|^\s*$|127\.0\.0\.1|::1|127\.0\.1\.1' /etc/hosts 2>/dev/null | head -n 5)
+EOF
+            add_finding "Review" "network" "/etc/hosts has $hx custom entries" "First $hn of $hx: $hsum | Review /etc/hosts in report - static host overrides can redirect traffic (T1565.001)"
+        fi
     fi
     report "Network artifacts saved."
     return $rc

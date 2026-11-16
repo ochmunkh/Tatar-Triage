@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.5.1'
+$script:ToolVersion = '1.5.2'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -912,6 +912,32 @@ function ConvertTo-SafeCsv {
     end { if ($rows.Count -gt 0) { $rows.ToArray() | ConvertTo-Csv -NoTypeInformation } }
 }
 
+function Format-HostsEntry {
+    # One hosts line -> "address -> name [name ...]", for a finding's detail.
+    #
+    # The line is text from the suspect host, and a finding's detail is read by
+    # the path extractor, the allowlist and the IOC pass. Left as written, a
+    # crafted line such as
+    #     1.2.3.4  C:\Windows\System32\svchost.exe
+    # would put a signed system binary into paths[], and a publisher or path
+    # rule could then suppress the very finding that reports the tampering.
+    # So each field is reduced to the characters it can legally contain: an
+    # address keeps hex digits, ':' and '.', a name keeps letters, digits,
+    # '.', '_' and '-'. No backslash, slash, quote or control character
+    # survives, which is what makes the result safe to quote.
+    param([string]$Line)
+    $t = ($Line -replace '#.*$', '').Trim()
+    if (-not $t) { return '' }
+    $parts = @($t -split '\s+')
+    $addr  = $parts[0] -replace '[^0-9A-Fa-f:.]', '?'
+    $names = @($parts | Select-Object -Skip 1 | ForEach-Object { $_ -replace '[^A-Za-z0-9._-]', '?' })
+    if ($names.Count -eq 0) { $names = @('(no name)') }
+    $s = '{0} -> {1}' -f $addr, ($names -join ' ')
+    # A hosts line may carry hundreds of aliases; the report has the full file.
+    if ($s.Length -gt 100) { $s = $s.Substring(0, 100) + '...' }
+    return $s
+}
+
 function Out-FileNoBom {
     <#
         Out-File -Encoding UTF8 writes a UTF-8 BOM on Windows PowerShell 5.1 and
@@ -1135,7 +1161,13 @@ function Collect-Network {
         $hx = @(Get-Content $hostsFile -ErrorAction SilentlyContinue |
                 Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' -and $_ -notmatch '^\s*(127\.0\.0\.1|::1|127\.0\.1\.1)(\s|$)' })
         if ($hx.Count -gt 0) {
-            Add-Finding -Severity 'Review' -Category 'network' -Message ("hosts file has {0} custom entries" -f $hx.Count) -Detail 'Review hosts.txt in the output folder - static host overrides can redirect traffic (T1565.001)'
+            # The count alone made the analyst open hosts.txt to learn anything.
+            # Name the first few overrides in the finding itself, so the address
+            # and the host name it captures are visible in the summary and
+            # reachable by the IOC pass. Format-HostsEntry is what keeps that
+            # host-supplied text from planting a path in paths[].
+            $hfirst = @($hx | Select-Object -First 5 | ForEach-Object { Format-HostsEntry $_ })
+            Add-Finding -Severity 'Review' -Category 'network' -Message ("hosts file has {0} custom entries" -f $hx.Count) -Detail ("First {0} of {1}: {2} | Review hosts.txt in the output folder - static host overrides can redirect traffic (T1565.001)" -f $hfirst.Count, $hx.Count, ($hfirst -join ' ; '))
         }
         Add-Report 'Network artifacts saved (arp/routes/dns_cache/ipconfig/hosts).'
     } catch { Add-Err "Network failed: $_" }

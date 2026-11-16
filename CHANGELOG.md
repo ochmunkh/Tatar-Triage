@@ -4,7 +4,44 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
-## [1.5.1] — 2026-11-16
+## [1.5.2] — 2026-11-16
+
+### Changed
+- **The hosts finding now names what was overridden.** It used to say only
+  *"hosts file has 3 custom entries"*, which told the analyst to go and open
+  another file before they knew whether to care. The detail now carries the
+  first five overrides as `address -> name`, on both editions, in the same
+  format:
+  `First 2 of 2: 10.0.0.5 -> intranet.local ; 203.0.113.9 -> login.example.com | Review ...`
+  Because the names are now in the finding, the IOC pass can match a domain or
+  address indicator against a hosts override, which it could not reach before.
+- The message is unchanged, so `artifactClass`, the technique and every
+  allowlist rule written against it keep working.
+
+### Security
+- **Hosts entries are reduced to their legal characters before they are
+  quoted.** A hosts line is text from the suspect host, and a finding's detail
+  is read by the path extractor and the allowlist. A crafted line such as
+  `1.2.3.4 C:\Windows\System32\svchost.exe` would otherwise have put a signed
+  system binary into `paths[]`, where a publisher or path rule could suppress
+  the finding that reports the tampering. `Format-HostsEntry` /
+  `hosts_entry` keep hex digits, `:` and `.` in the address and letters,
+  digits, `.`, `_`, `-` in a name; everything else becomes `?`. Entries are
+  capped at 100 characters. Pinned by `tests/Test-HostsEntry.ps1` and
+  `tests/test-hosts-entry.sh` over one shared case table, including the
+  assertion that a crafted line yields no path candidate.
+
+### Fixed
+- The `[1.5.1]` heading below was dated 2026-11-16; the tag was cut on
+  2026-11-15.
+
+### Known limitation
+- On Windows the hosts finding still has an empty `paths[]`: the hosts file has
+  no extension and the path extractor only takes names that have one. Widening
+  the extractor changes what every allowlist decision covers, so it is not a
+  patch-release change. The Linux edition names `/etc/hosts` as before.
+
+## [1.5.1] — 2026-11-15
 
 ### Fixed
 - **`findings.json` declared schemaVersion 1.4 while carrying 1.5 fields.**

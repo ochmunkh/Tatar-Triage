@@ -1,0 +1,20 @@
+# input	expect	note
+# Shared by tests/test-hosts-entry.sh and tests/Test-HostsEntry.ps1.
+# A hosts line is text from the suspect host that is quoted into a finding's
+# detail, which the path extractor, the allowlist and the IOC pass all read.
+# Each field must come out reduced to the characters it can legally contain.
+# NO COLUMN MAY BE EMPTY: bash read collapses consecutive TABs. Write "-".
+# Inputs here use spaces only; the TAB-separated case lives in each harness
+# because a literal TAB cannot sit inside a TAB-separated column.
+10.0.0.5 intranet.local	10.0.0.5 -> intranet.local	plain entry
+10.0.0.5    intranet.local   wiki.local	10.0.0.5 -> intranet.local wiki.local	runs of spaces collapse and aliases are kept
+10.0.0.5 intranet.local # added by IT	10.0.0.5 -> intranet.local	an inline comment is dropped
+fe80::1 router.lan	fe80::1 -> router.lan	IPv6 address
+0.0.0.0 ads.example.com	0.0.0.0 -> ads.example.com	blocklist-style entry
+10.0.0.5	10.0.0.5 -> (no name)	an address with no name is still reported
+1.2.3.4 C:\Windows\System32\svchost.exe	1.2.3.4 -> C??Windows?System32?svchost.exe	a drive path cannot survive, so it cannot reach paths[] or an allowlist rule
+1.2.3.4 /usr/sbin/sshd	1.2.3.4 -> ?usr?sbin?sshd	nor can a POSIX path
+C:\evil.exe host	C:?e???.e?e -> host	the address field is held to address characters
+1.2.3.4 =cmd|'/c calc'!A1	1.2.3.4 -> ?cmd???c calc??A1	shell and formula metacharacters are neutralised
+1.2.3.4 evil.com;id	1.2.3.4 -> evil.com?id	a separator cannot smuggle a second token
+1.2.3.4 "quoted name"	1.2.3.4 -> ?quoted name?	quotes do not survive
