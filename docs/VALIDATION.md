@@ -197,15 +197,15 @@ host as clean"); escape, bell, newline, tab and bidirectional characters inside 
 regex metacharacters (`$(...)`, backticks, `;`, `|`, `*`, `(`, `[`, a lone backslash, `%s%n`, `../..`,
 `--help`); wrong types (numbers, `null`, objects, nested lists, a string where a list belongs);
 hash entries of the wrong length or not hexadecimal; one indicator of 200,000 characters (Linux) or
-50,000 (Windows) with thousands of others; and, on Windows, a feed saved with a byte-order mark and a
-feed that is not JSON. Every run must exit 0 or 2, finish in time, leave valid `summary.json` and
+50,000 (Windows) with thousands of others; a feed saved with a byte-order mark; and feeds that cannot work at all (not JSON, empty, a list instead
+of an object, no indicator in any list). Every run must exit 0 or 2, finish in time, leave valid `summary.json` and
 `findings.json`, execute nothing, print no shell or interpreter error, write no raw control or
 bidirectional character into any output text, and still raise an IOC finding for the good indicator.
 
 | Edition | Result |
 |---|---|
-| Linux (Bash, non-root) | 5 feeds, 40 checks, all held; the 200,000-character indicator makes the evidence scan stop with "argument list too long", which the run reports as an error and exit code 2, in 18 s |
-| Windows (PowerShell 5.1, standard run) | 6 feeds and 1 unreadable feed, all held; a feed that is not JSON exits 2 with the failure in `tatar.log` |
+| Linux (Bash, non-root) | 6 feeds and 4 unusable feeds, 65 checks, all held after the fixes below; the 200,000-character indicator makes the evidence scan stop with "argument list too long", which the run reports as an error and exit code 2, in 18 s |
+| Windows (PowerShell 5.1, standard run) | 6 feeds and 4 unusable feeds, 50 checks, all held after the fixes below |
 
 The Windows test has not yet been run under PowerShell 7, which is what CI uses.
 
@@ -226,14 +226,19 @@ the collector once with and once without the feed.
 The first Linux control matched, and the cause was the lab itself: the indicators were in the text of
 the command that started the lab, and the process list quoted it. Controls now use random values.
 
-### What this found (not fixed)
+### What this found
 
-1. **Linux ignores a feed it cannot parse, without a word.** A feed saved with a byte-order mark (the
-   default of some Windows editors) or one that is not valid JSON gives exit code 0 and "IOC hits: 0".
-   The Windows edition reports it and exits 2. This is the worst of the list: it reads as "no match".
-2. **An empty feed file is accepted silently** by both editions.
-3. **The Linux "Findings: N lead(s)" line, and the matching line in `tatar.log`, do not count findings
-   raised from the feed**; `summary.json`, `findings.json` and `summary.txt` do.
+The first three were found by the first run of these tests and fixed straight afterwards (in the
+unreleased changes); the tests now check them.
+
+1. **Linux ignored a feed it could not parse, without a word.** A feed saved with a byte-order mark (the
+   default of some Windows editors) or one that is not valid JSON gave exit code 0 and "IOC hits: 0",
+   which reads as "no match". The Windows edition already reported it. Fixed: a byte-order mark is accepted,
+   and a feed that is not JSON, not an object or holds no indicator exits 2 with a line in `tatar.log`.
+   The same check now covers the allowlist.
+2. **An empty feed file, or one with no indicator, was accepted silently** by both editions. Fixed: exit 2.
+3. **The Linux "Findings: N lead(s)" line, and the matching line in `tatar.log`, did not count findings
+   raised from the feed**; `summary.json`, `findings.json` and `summary.txt` did. Fixed: the count is read from `findings.json`.
 4. **A hash only matches a file the run hashed or a finding names** (running and service binaries).
    This is documented in [MODULES.md](MODULES.md), and is why a hash of a dropped file that is not running will not hit.
 5. An indicator of hundreds of thousands of characters stops the Linux evidence scan (reported, exit 2).

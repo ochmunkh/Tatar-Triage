@@ -2524,6 +2524,12 @@ function Write-Summary {
             $ioc       = Get-Content $IOCFile -Raw | ConvertFrom-Json
             $iocHashes = @($ioc.hashes    | ForEach-Object { "$_".ToLower() } | Where-Object { $_ })
             $iocStr    = @(@($ioc.ips) + @($ioc.domains) + @($ioc.filenames) | Where-Object { $_ })
+            # A feed that parses but holds nothing to look for (an empty file, a list instead of an object,
+            # no indicator in any of the four lists) matched nothing without a word. Same silent no-op as an
+            # unreadable path, so it counts towards the exit code too.
+            if (-not $ioc -or ($iocHashes.Count + $iocStr.Count) -eq 0) {
+                Add-Err ('IOC file holds no usable indicator (hashes, ips, domains or filenames), so NO indicator was checked: {0}' -f $IOCFile)
+            }
             $iocSeen   = New-Object System.Collections.Generic.List[string]
             $iocHits   = 0
             # Pass A: annotate existing findings; a hit re-activates + escalates.

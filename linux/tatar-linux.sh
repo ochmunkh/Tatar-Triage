@@ -354,7 +354,7 @@ al_extract_items() {  # $1=json key -> newline-separated values from $ALLOWLIST
     if have python3; then
         python3 -c 'import json,sys
 try:
-    d=json.load(open(sys.argv[1]))
+    d=json.load(open(sys.argv[1],encoding="utf-8-sig"))  # utf-8-sig: a file saved with a BOM is still JSON
     for x in d.get(sys.argv[2],[]):
         print(x)
 except Exception:
@@ -398,12 +398,28 @@ EOF
     printf '%s' "$first"
 }
 
+feed_problem() {  # feed_problem FILE KIND -> a reason on stdout when the file cannot work, nothing when it can
+    have python3 || return 0
+    python3 -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1],encoding="utf-8-sig"))
+except Exception:
+    print("not valid JSON"); sys.exit()
+if not isinstance(d,dict):
+    print("the top level is not a JSON object"); sys.exit()
+if sys.argv[2]=="IOC file":
+    n=0
+    for k in ("hashes","ips","domains","filenames"):
+        v=d.get(k)
+        if isinstance(v,list): n+=sum(1 for x in v if isinstance(x,str) and x.strip())
+    if n==0: print("it holds no indicator in hashes, ips, domains or filenames")' "$1" "$2" 2>/dev/null
+}
 json_array_items() {  # $1=file $2=key -> newline-separated array values
     [ -n "$1" ] && [ -r "$1" ] || return 0
     if have python3; then
         python3 -c 'import json,sys
 try:
-    d=json.load(open(sys.argv[1]))
+    d=json.load(open(sys.argv[1],encoding="utf-8-sig"))  # utf-8-sig: a file saved with a BOM is still JSON
     for x in d.get(sys.argv[2],[]):
         print(x)
 except Exception:
@@ -1413,7 +1429,7 @@ write_summary() {
     AL_PKGOWN=1
     if [ -n "$ALLOWLIST" ] && [ -r "$ALLOWLIST" ] && have python3; then
         AL_PKGOWN="$(python3 -c 'import json,sys
-try: print(1 if json.load(open(sys.argv[1])).get("packageOwned",True) else 0)
+try: print(1 if json.load(open(sys.argv[1],encoding="utf-8-sig")).get("packageOwned",True) else 0)
 except Exception: print(1)' "$ALLOWLIST" 2>/dev/null || echo 1)"
     elif [ -n "$ALLOWLIST" ] && [ -r "$ALLOWLIST" ]; then
         # no python3: still honour an explicit "packageOwned": false
@@ -1974,7 +1990,10 @@ if [ "$DRYRUN" -eq 1 ]; then
     for _spec in "Allowlist:$ALLOWLIST" "IOC file:$IOCFILE"; do
         _name="${_spec%%:*}"; _path="${_spec#*:}"
         if [ -z "$_path" ]; then printf '  %-14s: (none supplied)\n' "$_name"
-        elif [ -r "$_path" ]; then printf '  %-14s: readable, WILL be applied: %s\n' "$_name" "$_path"
+        elif [ -r "$_path" ]; then
+            _why="$(feed_problem "$_path" "$_name")"
+            if [ -n "$_why" ]; then printf '  %-14s: readable but NOT USABLE (%s), would NOT be applied: %s\n' "$_name" "$_why" "$_path"
+            else printf '  %-14s: readable, WILL be applied: %s\n' "$_name" "$_path"; fi
         else printf '  %-14s: NOT READABLE, would NOT be applied: %s\n' "$_name" "$_path"; fi
     done
     for u in $UNKNOWN; do printf '  %-14s: unknown option, would be ignored: %s\n' "WARNING" "$u"; done
@@ -2040,13 +2059,23 @@ for _spec in "Allowlist:$ALLOWLIST" "IOC file:$IOCFILE"; do
     [ -n "$_path" ] || continue
     if [ -r "$_path" ]; then
         execlog "INFO" "$_name will be applied: $_path"
+        # A feed or allowlist that is readable but unusable (not JSON, not an object, or an
+        # IOC feed holding no indicator) used to apply nothing without a word: the same silent
+        # no-op as an unreadable path, most often a half-written file. Say so and count it
+        # towards the exit code.
+        _why="$(feed_problem "$_path" "$_name")"
+        if [ -n "$_why" ]; then
+            c_out "[!] $_name NOT USABLE: $_why: $_path"
+            c_out "    It will NOT be applied. Fix the file and re-run."
+            add_err "$_name is not usable ($_why), so it was NOT applied: $_path"
+        fi
     else
         c_out "[!] $_name NOT READABLE: $_path"
         c_out "    It will NOT be applied. Fix the path and re-run."
         add_err "$_name not readable, so it was NOT applied: $_path"
     fi
 done
-unset _spec _name _path
+unset _spec _name _path _why
 
 # Same class of quiet no-op: an unknown option was a console-only warning, which
 # --silent swallowed completely - a cron run with a misspelled flag looked
@@ -2169,7 +2198,10 @@ if [ "$COMPRESS" -eq 1 ]; then
 fi
 
 EXIT_CODE=0; [ "$ERROR_COUNT" -gt 0 ] && EXIT_CODE=2
-FCOUNT=$( [ -s "$FINDINGS_FILE" ] && wc -l < "$FINDINGS_FILE" || echo 0 )
+# Read back from findings.json: FINDINGS_FILE holds what the modules raised and misses what the
+# IOC feed and the correlation added afterwards.
+FCOUNT="$(sed -n 's/^  "findingsCount": \([0-9][0-9]*\),.*/\1/p' "$OUTDIR/findings.json" 2>/dev/null | head -n1)"
+[ -n "$FCOUNT" ] || FCOUNT=$( [ -s "$FINDINGS_FILE" ] && wc -l < "$FINDINGS_FILE" || echo 0 )
 execlog "INFO" "Run complete. Findings: $FCOUNT | Errors: $ERROR_COUNT | Exit code: $EXIT_CODE"
 
 rm -f "$FINDINGS_FILE" "$STATS_FILE" 2>/dev/null

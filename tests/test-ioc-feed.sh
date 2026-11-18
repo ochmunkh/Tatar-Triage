@@ -34,11 +34,16 @@ put("control", {"domains": ["evil\x1b[31m\u202eexe", "a\nb\rc", "tab\there", "\u
 put("meta",    {"domains": ["$(touch PWNED)", "`touch PWNED`", "; touch PWNED #", "a|b", "(", "[", "*", ".*", "\\", "'", "\"", "%s%n", hn],
                 "filenames": ["../../PWNED", "-rf", "--help"], "hashes": ["g" * 64, "ZZ", "A" * 64]})
 put("types",   {"domains": [1, None, {"a": 1}, ["x"], True, 3.14, hn], "ips": "1.2.3.4", "hashes": {"x": "y"}, "filenames": None})
+put("bom",     None, b"\xef\xbb\xbf" + json.dumps({"domains": [hn]}).encode("utf-8"))
+put("badjson", None, b"{not json")
+put("empty",   None, b"")
+put("list",    None, b"[]")
+put("noind",   {"domains": [], "hashes": [], "ips": [], "filenames": []})
 put("big",     {"domains": ["A" * 200000] + ["d%d.example" % i for i in range(5000)] + [hn]})
 PY
 
 BAD_TEXT='syntax error|command not found|unbound variable|Traceback|line [0-9]+: .*(error|unexpected)'
-for feed in inject control meta types big; do
+for feed in inject control meta types big bom; do
     out="$W/out-$feed"; start=$(date +%s)
     timeout 120 bash "$COLLECTOR" --modules sysinfo,network --silent --iocfile "$W/$feed.json" --output "$out" >"$W/$feed.log" 2>&1
     rc=$?; secs=$(( $(date +%s) - start ))
@@ -72,7 +77,25 @@ PY
     # The good indicator still works next to the hostile ones.
     hit="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); print(1 if any(f.get("iocMatch") is True for f in d.get("findings", [])) else 0)' "${run}findings.json" 2>/dev/null || echo 0)"
     check "$feed : this host's name in the same feed still produces an IOC finding" "$hit"
+    # The run's own count must agree with findings.json (it used to miss what the feed added).
+    logn="$(sed -n 's/.*Run complete\. Findings: \([0-9]*\) .*/\1/p' "${run}tatar.log" | tail -n1)"
+    jn="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["findingsCount"])' "${run}findings.json" 2>/dev/null)"
+    check "$feed : the finding count in tatar.log equals findingsCount in findings.json" "$([ -n "$logn" ] && [ "$logn" = "$jn" ] && echo 1 || echo 0)" "log=$logn json=$jn"
 done
+
+# A feed that cannot work must say so (exit 2 and a line in tatar.log), never match nothing in silence.
+for feed in badjson empty list noind; do
+    out="$W/out-$feed"
+    timeout 120 bash "$COLLECTOR" --modules sysinfo --silent --iocfile "$W/$feed.json" --output "$out" >"$W/$feed.log" 2>&1; rc=$?
+    run="$(ls -d "$out"/*/ 2>/dev/null | head -n1)"
+    echo "[$feed] exit=$rc"
+    check "$feed : an unusable feed exits 2" "$([ "$rc" = 2 ] && echo 1 || echo 0)" "got $rc"
+    check "$feed : tatar.log says the feed was not usable" "$(grep -q 'IOC file is not usable' "${run}tatar.log" 2>/dev/null && echo 1 || echo 0)"
+done
+# The same for an allowlist that is not JSON.
+printf '{broken' > "$W/al-bad.json"
+timeout 120 bash "$COLLECTOR" --modules sysinfo --silent --allowlist "$W/al-bad.json" --output "$W/out-albad" >/dev/null 2>&1; rc=$?
+check "allowlist that is not JSON : exits 2" "$([ "$rc" = 2 ] && echo 1 || echo 0)" "got $rc"
 
 # Known-bad beats known-good: a finding the allowlist suppresses comes back, High, when the
 # feed holds the SHA-256 of the file it names. The stand-in is a copy of a harmless binary.

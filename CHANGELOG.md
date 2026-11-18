@@ -6,7 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
-Documentation and analyst tools only; the collectors are unchanged.
+Collector fixes for IOC and allowlist feeds, plus analyst tools and documentation. The version number is raised when this is released.
+
+### Fixed
+- **Linux: a feed it could not use matched nothing without a word.** An IOC feed saved with a byte-order mark, one that is not valid JSON, not an object, or with no indicator in it now makes the run exit 2 and says so in `tatar.log`; a byte-order mark is accepted. An allowlist that is not valid JSON is reported the same way. (Found by the new hostile-feed tests.)
+- **Windows: an empty IOC feed, or one with no indicator,** now exits 2 instead of passing silently.
+- **Linux: the `Findings: N` count** in `tatar.log` and on the console now includes findings raised from the IOC feed.
 
 ### Added
 - **ATT&CK Navigator layer** (`tools/tatar-navigator.py`): one cell per technique id named by a finding, scored by severity, with the finding count and categories in the comment; `--reviews` aware. Tests in `tests/test-navigator.py`.

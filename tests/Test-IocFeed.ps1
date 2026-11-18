@@ -6,13 +6,11 @@
     matches. This runs the real collector with feeds built to cause trouble and
     checks that nothing breaks, nothing executes, and nothing hostile reaches the
     output unneutralised, while a good indicator in the same feed still matches.
-    A feed that cannot be read at all must fail loudly (exit 2), never silently.
+    A feed that cannot work (not JSON, empty, no indicator) must fail loudly (exit 2), never silently.
 
     Run from the repo root:
         powershell -NoProfile -File tests\Test-IocFeed.ps1
         pwsh       -NoProfile -File tests/Test-IocFeed.ps1
-
-    Known gap, not tested here: an EMPTY feed file is accepted without a word.
 
     Exit code: 0 = all checks passed, 1 = at least one failed.
 #>
@@ -51,6 +49,9 @@ $feeds['big']     = Put 'big'     (J @{ domains = $bigList })
 $feeds['bom']     = Put 'bom'     (J @{ domains = @($hn) }) $true
 $broken = [ordered]@{}
 $broken['badjson'] = Put 'badjson' '{not json'
+$broken['empty']   = Put 'empty'   ''
+$broken['list']    = Put 'list'    '[]'
+$broken['noind']   = Put 'noind'   '{"domains":[],"hashes":[],"ips":[],"filenames":[]}'
 
 $badChars = '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u202A-\u202E\u2066-\u2069]'
 function Invoke-Feed { param([string]$Name, [string]$Feed)
