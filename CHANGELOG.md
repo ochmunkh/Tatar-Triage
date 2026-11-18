@@ -4,6 +4,45 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.8.0] — 2026-11-18
+
+### Added
+- **Security and robustness tests for both editions.** `tests/test-security.sh`
+  (Linux, 65 checks) and `tests/Test-Security.ps1` (Windows, 55 checks) throw
+  hostile arguments, output paths, allowlist and IOC feeds, host file names and
+  process command lines at the collector. They check that evidence is private,
+  that tampering with a file or the manifest is detected, that the host is left
+  unchanged and nothing goes online, that no temp files remain, that a run needs
+  no privilege, that output is strict UTF-8, that two runs agree, and that a
+  full run stays inside its time and memory budget.
+- **`docs/SECURITY-TESTING.md`** maps those tests to OWASP ASVS 4.0 / Top 10 2021
+  and NIST SP 800-86 / 800-218, lists the defects found, and says what is not
+  covered. It is a test map, not a compliance claim.
+- Both test suites run in CI (Linux with `strace`; both Windows jobs with `-Quick`).
+
+### Security
+- **Evidence is private.** Linux: `umask 077` and a final `chmod -R go-rwx` on
+  the evidence folder (also when a run is interrupted). Windows: the evidence
+  folder gets a protected ACL (SYSTEM, Administrators, the current user).
+- **No writing through links.** A symlink (Linux) or junction (Windows) as the
+  output path is refused, and so is reusing an existing evidence folder (exit 1).
+- **Terminal-safe reports.** Control, escape and bidi characters from host file
+  names and command lines are replaced before they reach any generated text
+  (U+FFFD on Windows, `<U+XXXX>` and stripped controls on Linux).
+- **Temp files.** Linux keeps every temporary file in one private directory that
+  is removed on exit, SIGINT, SIGTERM and SIGHUP.
+
+### Changed
+- **Behaviour change (Linux):** evidence collected as root is no longer readable
+  by other users. Read it with `sudo`, or `chown` it deliberately.
+- AV-07 now states its one exception: the collector may take access *away* from
+  its own evidence folder; any other `chmod` / `Set-Acl` still fails the build.
+
+### Verified
+- Windows contract 233/233, Windows unit suites all green, PSScriptAnalyzer 0
+  errors; Windows security 55/55 (full `-All` run 127 s, collector peak 417 MB).
+- Linux security 65/65; every CI gate green.
+
 ## [1.7.0] — 2026-11-18
 
 ### Added

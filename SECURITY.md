@@ -11,6 +11,8 @@ Only the most recent release is supported.
 | Latest release | Yes |
 | Anything older | No — update first |
 
+How the collector itself is tested against hostile input: [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md).
+
 TATAR is a single file per platform with nothing to install, so updating means
 replacing `Tatar.ps1` or `linux/tatar-linux.sh` with the current release. There
 are no long-lived branches and no backports: a fix ships in the next release.
@@ -93,6 +95,8 @@ vulnerabilities:
 |---|---|
 | Хамгийн сүүлийн release | Тийм |
 | Түүнээс хуучин бүх хувилбар | Үгүй — эхлээд шинэчил |
+
+Collector өөрийгөө хорлонтой оролтоор хэрхэн шалгадаг: [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md).
 
 TATAR нь платформ тус бүрт нэг файл, суулгах шаардлагагүй. Тиймээс шинэчлэх
 гэдэг нь `Tatar.ps1` эсвэл `linux/tatar-linux.sh`-ыг одоогийн release-ээр дарж

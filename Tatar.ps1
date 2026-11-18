@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.7.0'
+$script:ToolVersion = '1.8.0'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -570,9 +570,17 @@ function Get-ArtifactClass {
     }
 }
 
+function Remove-ControlChar {
+    # C0 controls (except tab), DEL, bidi override/isolate characters become U+FFFD; CR/LF/TAB collapse to a space.
+    param([string]$s)
+    if ([string]::IsNullOrEmpty($s)) { return $s }
+    return [regex]::Replace($s, '[\x00-\x1F\x7F\u202A-\u202E\u2066-\u2069]', { param($m) if ($m.Value -match '[\t\r\n]') { ' ' } else { [string][char]0xFFFD } })
+}
 function Add-Finding {
     # P3: aggregated suspicious findings. LEADS for analyst review, NOT verdicts.
     param([string]$Severity = 'Review', [string]$Category, [string]$Message, [string]$Detail = '', [string[]]$Technique, [string]$ArtifactClass)
+    # Host-supplied text (file names, command lines) can carry terminal escapes or bidi controls; neutralise before it reaches any report.
+    $Message = Remove-ControlChar $Message; $Detail = Remove-ControlChar $Detail
     if (-not $Technique -or $Technique.Count -eq 0) { $Technique = Get-Technique -Category $Category -Message $Message }
     if (-not $ArtifactClass) { $ArtifactClass = Get-ArtifactClass -Category $Category -Message $Message -Detail $Detail }
     # Closed vocabulary, checked at the call site for the same reason an unknown
@@ -1007,9 +1015,11 @@ function Out-FileNoBom {
     end {
         if (-not $FilePath) { return }
         $enc = New-Object System.Text.UTF8Encoding $false
+        # Every text this collector writes is read in a terminal: control, escape and bidi characters that host data carried in become U+FFFD.
+        $txt = [regex]::Replace($sb.ToString(), '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u202A-\u202E\u2066-\u2069]', [string][char]0xFFFD)
         try {
-            if ($Append) { [System.IO.File]::AppendAllText($FilePath, $sb.ToString(), $enc) }
-            else         { [System.IO.File]::WriteAllText($FilePath, $sb.ToString(), $enc) }
+            if ($Append) { [System.IO.File]::AppendAllText($FilePath, $txt, $enc) }
+            else         { [System.IO.File]::WriteAllText($FilePath, $txt, $enc) }
         } catch {
             # Never let an output-encoding problem take a collection down.
             [Console]::Error.WriteLine("[!] write failed: $FilePath - $_")
@@ -3158,7 +3168,18 @@ if ($DryRun) {
 }
 
 try {
+    # Refuse to write evidence through a reparse point (junction/symlink).
+    $op = Split-Path -Parent $script:OutDir
+    if ($op -and (Test-Path -LiteralPath $op) -and ((Get-Item -LiteralPath $op -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'output path is a reparse point (junction/symlink); refusing' }
+    if (Test-Path -LiteralPath $script:OutDir) { throw 'evidence directory already exists; refusing to reuse' }
     New-Item -ItemType Directory -Force -Path $script:OutDir -ErrorAction Stop | Out-Null
+    # Evidence is private: no inherited ACEs; SYSTEM, Administrators and the current user only.
+    try {
+        $acl = New-Object System.Security.AccessControl.DirectorySecurity
+        $acl.SetAccessRuleProtection($true, $false)
+        foreach ($sid in @('S-1-5-18', 'S-1-5-32-544', [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)) { $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)), 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))) }
+        Set-Acl -LiteralPath $script:OutDir -AclObject $acl
+    } catch { }
 } catch {
     if (-not $Silent) { Write-Host "[x] FATAL: cannot create output directory ${script:OutDir}: $_" -ForegroundColor Red }
     exit 1
@@ -3298,6 +3319,19 @@ try {
     Write-PasteLog -Findings $script:Findings.ToArray() -IsAdmin $isAdmin
     Write-SuggestedAllowlist -Findings $script:Findings.ToArray()
     Write-ArtifactIndex
+
+    # Generated text is read in terminals: neutralise control, escape and bidi characters that host-supplied names
+    # and command lines may have carried into it. Verbatim evidence copies are NOT touched.
+    try {
+        foreach ($gf in @(Get-ChildItem -LiteralPath $script:OutDir -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -in @('summary.txt','paste.txt','ARTIFACTS.md','timeline.csv','chain_of_custody.txt') -or $_.Name -like 'TATAR_Report_*' })) {
+            try {
+                $raw = [IO.File]::ReadAllText($gf.FullName, [Text.Encoding]::UTF8)
+            $clean = [regex]::Replace($raw, '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u202A-\u202E\u2066-\u2069]', [string][char]0xFFFD)
+            $clean = [regex]::Replace($clean, '\r(?!\n)', ' ')
+            if ($clean -cne $raw) { [IO.File]::WriteAllText($gf.FullName, $clean, (New-Object Text.UTF8Encoding($false))) }
+            } catch { Add-Err "control-character pass failed for $($gf.Name): $_" }
+        }
+    } catch { Add-Err "control-character pass failed: $_" }
 
     # Written BEFORE the walk. Appending to the report after the manifest has
     # hashed it is exactly the trailer bug this file already carries a warning

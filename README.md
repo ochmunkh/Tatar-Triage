@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.7-blue" alt="v1.7">
+  <img src="https://img.shields.io/badge/version-1.8-blue" alt="v1.8">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows 10/11">
   <img src="https://img.shields.io/badge/modules-33-5eead4" alt="33 modules">
@@ -442,6 +442,8 @@ powershell -NoProfile -File tests\Test-KnownAnswer.ps1
 bash tests/test-known-answer.sh
 ```
 
+Security and robustness tests: `bash tests/test-security.sh` (Linux) and `tests\Test-Security.ps1` (Windows). What they cover, how they map to OWASP and NIST, and what they do not cover: [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md).
+
 Publishing `SHA256SUMS.txt` proves the file you hold is the file that was
 released. It does not tell an operator whether **this build, on this machine,
 behaves correctly**. This does: a recorded finding set replayed through the
@@ -558,7 +560,12 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.7.0 — read the findings without trusting them (current)
+### v1.8.0 — tested against hostile input (current)
+
+- **Security and robustness tests for both editions.** `tests/test-security.sh` (65 checks) and `tests/Test-Security.ps1` throw hostile arguments, paths, feed files, file names and command lines at the collector, and check that evidence is private, tampering is detected, the host is left unchanged, nothing goes online, no temp files remain and a run stays inside its time and memory budget. They are mapped to OWASP ASVS / Top 10 and NIST SP 800-86 / 800-218 in [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md) — a test map, not a compliance claim.
+- **Fixed, all found by those tests:** evidence was created readable by other users (now private: `umask 077`, protected ACL on Windows); a symlink or junction as output path was followed (now refused), as was reuse of an existing evidence folder; terminal escapes and bidi controls from host file names and command lines reached the reports (now replaced by U+FFFD); temp files could survive an interrupted Linux run (now cleaned on exit and on signals). Behaviour change: Linux evidence collected as root is no longer readable by other users.
+
+### v1.7.0 — read the findings without trusting them
 
 - **`tools/viewer.html`.** A static page that opens `summary.json` / `findings.json` on your own machine, with confidence by name, validated ATT&CK links, and a next step for each of the 46 `artifactClass` values. No network, text-only rendering, a sealed Content-Security-Policy checked in CI. The collector gains no lines. It ships as a release asset and is covered by `SHA256SUMS.txt`.
 
@@ -1099,6 +1106,8 @@ finding гаргасан бөгөөд бүгд нь Microsoft Office эсвэл 
 powershell -NoProfile -File tests\Test-KnownAnswer.ps1
 bash tests/test-known-answer.sh
 ```
+
+Аюулгүй байдал ба тэсвэрлэлтийн тест: `bash tests/test-security.sh` (Linux), `tests\Test-Security.ps1` (Windows). Юуг хамарч, OWASP/NIST-тэй хэрхэн харгалзаж, юуг хамаардаггүйг [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md)-ээс үз.
 
 `SHA256SUMS.txt` нийтлэх нь таны гар дээрх файл нь гаргасан файл мөн гэдгийг
 нотолно. Гэхдээ **энэ build, энэ машин дээр зөв ажиллаж байна уу** гэдгийг

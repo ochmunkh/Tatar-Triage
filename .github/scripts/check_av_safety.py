@@ -283,7 +283,9 @@ def check_rm_targets(errors, sh, raw_sh):
     such variable has to be assigned from mktemp somewhere in the script. A
     literal path -- or a variable that points at collected evidence -- fails.
     """
-    scratch = set(re.findall(r"(\w+)=\"?\$\(mktemp\)", raw_sh))
+    # mktmp is the collector's own wrapper: mktemp inside its private TATAR_TMP
+    # directory (created with mktemp -d), so a variable it fills is scratch too.
+    scratch = set(re.findall(r"(\w+)=\"?\$\((?:mktemp|mktmp)\b[^)]*\)", raw_sh))
     raw_lines = raw_sh.splitlines()
     for line_no, _ in hits(sh, r"(^|[;&|(\s])rm\s"):
         line = raw_lines[line_no - 1] if line_no <= len(raw_lines) else ""
@@ -310,10 +312,21 @@ def claim_av07(errors, ps, sh, ps_s, sh_s, raw_ps, raw_sh, root):
            r"\b(Remove-Item|Remove-ItemProperty|Set-ItemProperty|"
            r"New-ItemProperty|Clear-EventLog|Stop-Process|Stop-Service|"
            r"Set-Service|Restart-Service|Set-ExecutionPolicy|"
-           r"Set-Acl|Rename-Item)\b", PS)
+           r"Set-Acl(?! -LiteralPath \$script:OutDir -AclObject)|"
+           r"Rename-Item)\b", PS)
     forbid(errors, "AV-07", "host modification", sh,
-           r"(^|[;&|(\s])(rmdir|unlink|shred|chmod|chown|chattr|"
+           r"(^|[;&|(\s])(rmdir|unlink|shred|chown|chattr|"
            r"kill|pkill|killall|truncate|dd)\s+-?[\w/.$-]", SH)
+    # chmod only to take access AWAY from the collector's own evidence folder
+    raw_lines = raw_sh.splitlines()
+    for line_no, _ in hits(sh, r"(^|[;&|(\s])chmod\s"):
+        line = raw_lines[line_no - 1] if line_no <= len(raw_lines) else ""
+        for call in re.findall(r"(?:^|[;&|(\s])chmod\s+([^;&|)]*)", line):
+            if call.strip() != '-R go-rwx "$OUTDIR" 2>/dev/null' and \
+               call.strip() != '-R go-rwx "$OUTDIR"':
+                errors.append("AV-07: host modification -- %s:%d runs chmod %s; "
+                              "only chmod -R go-rwx on the evidence folder is allowed"
+                              % (SH, line_no, call.strip()))
     check_rm_targets(errors, sh, raw_sh)
     forbid(errors, "AV-07", "host modification", sh,
            r"systemctl\s+(start|stop|restart|enable|disable|mask)\b", SH)

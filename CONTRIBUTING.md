@@ -87,6 +87,11 @@ and read-only on a host that may already be compromised.
     `suppressReason` or a flipped `iocMatch`. If you add an array-valued field,
     it goes in a column with `0x1D`, and escaping stays in the one place.
     `tests/test-gs-array.sh` pins this.
+    The same holds for terminals: control, escape and bidi characters taken from
+    the host are replaced before they reach a report, evidence is created private
+    (`umask 077` / protected ACL), and a symlink or junction output path is
+    refused. `tests/test-security.sh` and `tests/Test-Security.ps1` pin this; see
+    `docs/SECURITY-TESTING.md`.
 12. **Mongolian is a first-class output language**, not a translation pasted
     onto an English tool. The two halves of `README.md`, `linux/README.md` and
     `docs/MITRE_ATTACK.md` are parity-checked in CI. Technical terms (finding,

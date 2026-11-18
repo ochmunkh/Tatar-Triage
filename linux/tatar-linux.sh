@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.7.0"
+VERSION="1.8.0"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -130,9 +130,63 @@ FINDINGS_FILE=""      # FSEP-separated; see add_finding for the column list
 LIMITS_FILE=""        # FSEP-separated: module | limitation (see add_note)
 STATS_FILE=""         # key \t value
 
+# ---------------------------------------------------------------------------
+# Evidence is private; text from the host is data
+# ---------------------------------------------------------------------------
+# The evidence set holds process command lines, shell histories and key
+# metadata. With the default umask it was world-readable (755 / 644), so any
+# other account on the machine could read what the collector had gathered.
+# Everything this run creates is owner-only; a folder the tool creates is 700.
+umask 077
+
+# A terminal acts on control characters: an ESC sequence in a file name can
+# clear the screen or rewrite a line of summary.txt while an analyst reads it,
+# and a bidirectional override reorders what they see. Anything this tool
+# GENERATES has them replaced - '?' inside a finding, the visible form \xNN or
+# <U+202E> in the report and the other generated text files. Verbatim copies of
+# host files (hosts.txt, histories, configs) are evidence and stay as collected.
+san_into() {  # san_into VAR VALUE
+    local LC_ALL=C v="$2"
+    v=${v//[[:cntrl:]]/?}
+    v=${v//$'\xe2\x80\xaa'/?}; v=${v//$'\xe2\x80\xab'/?}; v=${v//$'\xe2\x80\xac'/?}
+    v=${v//$'\xe2\x80\xad'/?}; v=${v//$'\xe2\x80\xae'/?}
+    v=${v//$'\xe2\x81\xa6'/?}; v=${v//$'\xe2\x81\xa7'/?}; v=${v//$'\xe2\x81\xa8'/?}; v=${v//$'\xe2\x81\xa9'/?}
+    printf -v "$1" '%s' "$v"
+}
+SAN_SED=""
+for _c in 01 02 03 04 05 06 07 08 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 7f; do
+    SAN_SED="${SAN_SED}s/\\x${_c}/\\\\x${_c}/g;"
+done
+for _c in 80,aa,202A 80,ab,202B 80,ac,202C 80,ad,202D 80,ae,202E 81,a6,2066 81,a7,2067 81,a8,2068 81,a9,2069; do
+    _b1="${_c%%,*}"; _rest="${_c#*,}"; _b2="${_rest%%,*}"; _cp="${_rest#*,}"
+    SAN_SED="${SAN_SED}s/\\xe2\\x${_b1}\\x${_b2}/<U+${_cp}>/g;"
+done
+unset _c _b1 _b2 _rest _cp
+sanitize_stream() { LC_ALL=C tr -d '\000' | LC_ALL=C sed -e "$SAN_SED"; }
+sanitize_file() {  # sanitize_file PATH : in place, keeps the file's mode
+    local f="$1" t
+    [ -f "$f" ] || return 0
+    t="$(mktmp)"
+    if sanitize_stream < "$f" > "$t" 2>/dev/null; then cat "$t" > "$f"; fi
+    rm -f "$t"
+}
+
+# Every temporary file lives in ONE private directory that is removed on exit
+# and on SIGINT / SIGTERM / SIGHUP. Before this, a run left a temp file behind
+# in /tmp every time and an interrupted run left all of them.
+TATAR_TMP=""
+mktmp() { mktemp "${TATAR_TMP:-${TMPDIR:-/tmp}}/t.XXXXXX"; }
+cleanup_tmp() {
+    [ -n "${TATAR_TMP:-}" ] && rm -rf "$TATAR_TMP" 2>/dev/null
+    # an interrupted run still leaves partial evidence: keep it private
+    [ -n "${OUTDIR:-}" ] && [ -d "$OUTDIR" ] && chmod -R go-rwx "$OUTDIR" 2>/dev/null
+    return 0
+}
+
 c_out() {   # console output, suppressed by --silent
     [ "$SILENT" -eq 1 ] && return 0
-    printf '%s\n' "$1"
+    local _m; san_into _m "$1"
+    printf '%s\n' "$_m"
 }
 
 now() { date '+%Y-%m-%d %H:%M:%S'; }
@@ -141,7 +195,8 @@ iso() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 
 execlog() {  # execlog LEVEL MESSAGE
     [ -z "$EXECLOG" ] && return 0
-    printf '[%s] [%-6s] %s\n' "$(now_ms)" "$1" "$2" >> "$EXECLOG"
+    local _lm; san_into _lm "$2"
+    printf '[%s] [%-6s] %s\n' "$(now_ms)" "$1" "$_lm" >> "$EXECLOG"
 }
 
 report() { printf '%s\n' "$1" >> "$REPORT"; }
@@ -155,7 +210,7 @@ section() { printf '\n===== %s =====\n\n' "$1" >> "$REPORT"; }
 # finding because it describes a MODULE, not a finding; this is that field at
 # the level it belongs to.
 add_note() {  # add_note MESSAGE
-    local msg="$1"
+    local msg; san_into msg "$1"
     execlog "WARN" "$msg"
     # A note raised before any module starts - "not running as root" is the
     # big one - used to be filed under an EMPTY module name. It then grouped
@@ -167,8 +222,9 @@ add_note() {  # add_note MESSAGE
 
 add_err() {  # add_err MESSAGE
     ERROR_COUNT=$((ERROR_COUNT+1))
-    printf '[%s] ERROR: %s\n' "$(now)" "$1" >> "$REPORT"
-    execlog "ERROR" "$1"
+    local _em; san_into _em "$1"
+    printf '[%s] ERROR: %s\n' "$(now)" "$_em" >> "$REPORT"
+    execlog "ERROR" "$_em"
 }
 
 add_stat() { printf '%s\t%s\n' "$1" "$2" >> "$STATS_FILE"; }
@@ -225,6 +281,8 @@ add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
     # column or an array element to the record.
     msg=$(printf '%s' "$msg" | tr '\t\n\035\037' '    ')
     det=$(printf '%s' "$det" | tr '\t\n\035\037' '    ')
+    # control and bidirectional characters from the host: see san_into
+    san_into msg "$msg"; san_into det "$det"
     [ -z "$tech" ] && tech="$(map_technique "$cat" "$msg")"
     local id conf
     # An unknown severity used to become confidence 0.3 in silence - a value no
@@ -350,7 +408,7 @@ except Exception:
 correlate_findings() {
     local f2="$1" count=0
     if [ -s "$f2" ]; then
-        local CORR_HIT; CORR_HIT="$(mktemp)"
+        local CORR_HIT; CORR_HIT="$(mktmp)"
         awk -F"$FSEP" -v GS="$GSEP" -v RULES="$CORRELATION_RULES" -v OFS="$FSEP" '
             {
                 if ($8 == "true" || $10 == "true") next
@@ -392,7 +450,7 @@ correlate_findings() {
             }
         ' "$f2" > "$CORR_HIT"
         if [ -s "$CORR_HIT" ]; then
-            local F2d CORR_DONE; F2d="$(mktemp)"; CORR_DONE="$(mktemp)"
+            local F2d CORR_DONE; F2d="$(mktmp)"; CORR_DONE="$(mktmp)"
             awk -F"$FSEP" -v OFS="$FSEP" -v DONE="$CORR_DONE" '
                 NR == FNR {
                     if (!($1 in seen)) {
@@ -526,7 +584,7 @@ write_suggested_allowlist() {  # $1 = F2
 # rather than the tool in general. The last line is machine-checkable on purpose.
 write_artifact_index() {
     local idx="$OUTDIR/ARTIFACTS.md" rel cls q nx line hit uncat=0 n
-    local tmp; tmp="$(mktemp)"
+    local tmp; tmp="$(mktmp)"
     {
         printf '# Artifacts in this folder\n\n'
         printf 'Host: %s  |  Collected: %s  |  TATAR %s\n\n' "$(hostname 2>/dev/null)" "$(iso)" "$VERSION"
@@ -1267,7 +1325,7 @@ write_summary() {
 
     # ---- Apply allowlist suppression -> augmented findings file F2 ----------
     # F2 columns: id \t sev \t cat \t msg \t det \t tech \t conf \t suppressed \t reason
-    local F2; F2="$(mktemp)"
+    local F2; F2="$(mktmp)"
     local sup_count=0
     local AL_PATHS AL_HASHES AL_PKGOWN
     AL_PATHS="$(al_extract_items paths)"
@@ -1363,7 +1421,7 @@ EOF
         IOC_STR="$( { printf '%s\n' "$IOC_IPS"; printf '%s\n' "$IOC_DOMS"; printf '%s\n' "$IOC_FILES"; } | grep -E '.' )"
 
         # Pass A: annotate/override existing findings
-        local F2b IOC_HIT; F2b="$(mktemp)"; IOC_HIT="$(mktemp)"
+        local F2b IOC_HIT; F2b="$(mktmp)"; IOC_HIT="$(mktmp)"
         local xid xs xc xm xd xt xconf xsup xreason xioc xmod xts xpaths xcr xind
         local hit path h ind
         while IFS="$FSEP" read -r xid xs xc xm xd xt xconf xsup xreason xioc xmod xts xpaths xcr xind xacls; do
@@ -1412,7 +1470,7 @@ EOF
         # skip for unreadable feeds; the same rule has to hold here. Stderr from
         # the scan is therefore captured, and any of it forces the error exit.
         local val ln bmsg bdet bpaths SCAN_ERR SCAN_BAD
-        SCAN_ERR="$(mktemp)"; SCAN_BAD="$(mktemp)"; : > "$SCAN_BAD"
+        SCAN_ERR="$(mktmp)"; SCAN_BAD="$(mktmp)"; : > "$SCAN_BAD"
         # Scope parity with the Windows edition: scan every text artifact in the
         # output folder, not just the consolidated report (summary.txt excluded -
         # it is written later and would echo our own findings back).
@@ -1786,13 +1844,34 @@ if [ "$DRYRUN" -eq 1 ]; then
     exit 0
 fi
 
-if ! mkdir -p "$OUTDIR" 2>/dev/null; then
-    [ "$SILENT" -eq 0 ] && echo "[x] FATAL: cannot create output dir $OUTDIR"
+# The evidence is written where it is told to, and nowhere else. A symlink at the
+# output base would send a root run's evidence wherever the link points (the
+# default base is under the world-writable /tmp, where another account can plant
+# one), and mkdir -p silently accepts a symlink at the evidence folder's own
+# predictable name. Refuse the first, and create the folder with a plain mkdir
+# so an existing name - a link included - is an error.
+if [ -L "$OUTPUT_BASE" ]; then
+    printf '%s\n' "[x] FATAL: output base $OUTPUT_BASE is a symbolic link; evidence is not written through links. Pass the real path." >&2
+    exit 1
+fi
+if [ ! -e "$OUTPUT_BASE" ]; then
+    mkdir -p "$OUTPUT_BASE" 2>/dev/null || { printf '%s\n' "[x] FATAL: cannot create output base $OUTPUT_BASE" >&2; exit 1; }
+elif [ "$OUTPUT_BASE" = "/tmp/forensic" ] && [ "$(stat -c %u "$OUTPUT_BASE" 2>/dev/null)" != "$(id -u)" ]; then
+    printf '%s\n' "[x] FATAL: $OUTPUT_BASE exists and is owned by another account; refusing to write evidence there. Use --output." >&2
+    exit 1
+fi
+TATAR_TMP="$(mktemp -d 2>/dev/null)" || { printf '%s\n' "[x] FATAL: cannot create a temporary directory" >&2; exit 1; }
+trap cleanup_tmp EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+if ! mkdir "$OUTDIR" 2>/dev/null; then
+    printf '%s\n' "[x] FATAL: cannot create output dir $OUTDIR (it may already exist)" >&2
     exit 1
 fi
 REPORT="$OUTDIR/TATAR_Report_${HOSTN}_${STAMP}.txt"
 EXECLOG="$OUTDIR/tatar.log"
-FINDINGS_FILE="$(mktemp)"; STATS_FILE="$(mktemp)"; LIMITS_FILE="$(mktemp)"
+FINDINGS_FILE="$(mktmp)"; STATS_FILE="$(mktmp)"; LIMITS_FILE="$(mktmp)"
 
 execlog "INFO" "$TOOL_DISPLAY v$VERSION starting on $HOSTN as $(id -un) (root=$IS_ROOT, silent=$SILENT)"
 execlog "INFO" "CaseId='$CASE_ID' Examiner='$EXAMINER' OutDir=$OUTDIR"
@@ -1911,6 +1990,14 @@ printf '\n=== Collection finished: %s ===\n' "$END_ISO" >> "$REPORT"
 
 # Before the manifest, so ARTIFACTS.md is itself hashed.
 write_artifact_index
+
+# Text the tool generated is made safe to read in a terminal, and the whole set
+# is made private, BEFORE the manifest hashes it. Verbatim host files stay as is.
+for _f in "$REPORT" "$OUTDIR/summary.txt" "$OUTDIR/paste.txt" "$OUTDIR/ARTIFACTS.md" "$OUTDIR/timeline.csv" "$OUTDIR/chain_of_custody.txt"; do
+    sanitize_file "$_f"
+done
+unset _f
+chmod -R go-rwx "$OUTDIR" 2>/dev/null
 
 MANIFEST="$OUTDIR/manifest_sha256.txt"
 ( cd "$OUTDIR" && find . -type f ! -name 'manifest_sha256.txt' ! -name 'tatar.log' -exec sha256sum {} \; ) > "$MANIFEST" 2>/dev/null

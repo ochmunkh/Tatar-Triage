@@ -125,6 +125,11 @@ jobs:
       - name: Contract tests
         run: bash tests/run-tests.sh
 
+      - name: Security and robustness tests (OWASP / NIST map in docs/SECURITY-TESTING.md)
+        run: |
+          sudo apt-get install -y strace
+          bash tests/test-security.sh
+
   windows:
     name: Windows (parse / PSScriptAnalyzer / run)
     runs-on: windows-latest
@@ -282,6 +287,10 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Invoke-Tests.ps1
 
+      - name: Security and robustness tests
+        shell: pwsh
+        run: pwsh -File tests/Test-Security.ps1 -Quick
+
   # Windows PowerShell 5.1 is what `#Requires -Version 5.1` declares and what
   # ships preinstalled on every Windows 10/11 host, which makes it the edition
   # most responders actually run this with. Every step in the job above uses
@@ -415,6 +424,10 @@ jobs:
       - name: Contract tests
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-Tests.ps1
+
+      - name: Security and robustness tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-Security.ps1 -Quick
 
   docs-parity:
     name: Docs parity (badges / bilingual module lists / ATT&CK coverage)

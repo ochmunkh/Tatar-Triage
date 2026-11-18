@@ -182,6 +182,15 @@ Also verify the gated operations do nothing unless asked:
 4. Confirm the collector does not write inside the directory it is collecting
    *from* when `-OutputPath` is on the system drive.
 
+## Automated security and robustness checks
+
+`tests\Test-Security.ps1` automates the hostile-input, evidence-privacy,
+tamper-detection, containment, temp-hygiene, unprivileged-run, encoding,
+determinism and time/memory checks (W1-W12, N1-N2) described in
+[docs/SECURITY-TESTING.md](../docs/SECURITY-TESTING.md). Run it on the lab VM
+as a standard user and again elevated: W10 is skipped when elevated. `-Quick`
+skips the full `-All` timing run.
+
 ---
 
 ## Reporting
