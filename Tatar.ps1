@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.5.2'
+$script:ToolVersion = '1.5.3'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -938,6 +938,50 @@ function Format-HostsEntry {
     return $s
 }
 
+function Test-HostsDefault {
+    # Is this hosts line a stock entry the operating system ships, rather than
+    # an override somebody added?
+    #
+    # A line is stock only if its ADDRESS is one of the well-known ones AND
+    # every name on it is a name that address ships with. Anchoring on the
+    # address alone would hide `127.0.0.1 update.vendor.example` - a sinkhole
+    # that stops a machine reaching its own update server - and testing for the
+    # address anywhere on the line would hide `203.0.113.9 login.bank.example
+    # 127.0.0.1`, where the loopback is merely an alias. Both are exactly what
+    # an attacker would write, so neither shortcut is acceptable.
+    #
+    # Names for 127.0.1.1 are matched against THIS host's own name, with no
+    # lookup: asking for the fully qualified name would send a DNS query from
+    # the machine under examination.
+    param([string]$Line, [string]$HostName = '')
+    $t = ($Line -replace '#.*$', '').Trim()
+    if (-not $t) { return $true }
+    $parts = @($t -split '\s+')
+    $addr  = $parts[0].ToLowerInvariant()
+    $names = @($parts | Select-Object -Skip 1 | ForEach-Object { $_.ToLowerInvariant() })
+    if ($names.Count -eq 0) { return $false }
+    $own = $HostName.ToLowerInvariant()
+    if ($addr -eq '127.0.1.1') {
+        if (-not $own) { return $false }
+        foreach ($n in $names) { if ($n -ne $own -and -not $n.StartsWith($own + '.')) { return $false } }
+        return $true
+    }
+    $stock = @{
+        '127.0.0.1' = @('localhost', 'localhost.localdomain', 'localhost4', 'localhost4.localdomain4')
+        '::1'       = @('localhost', 'localhost.localdomain', 'localhost6', 'localhost6.localdomain6', 'ip6-localhost', 'ip6-loopback')
+        'fe00::0'   = @('ip6-localnet')
+        'fe00::'    = @('ip6-localnet')
+        'ff00::0'   = @('ip6-mcastprefix')
+        'ff00::'    = @('ip6-mcastprefix')
+        'ff02::1'   = @('ip6-allnodes')
+        'ff02::2'   = @('ip6-allrouters')
+        'ff02::3'   = @('ip6-allhosts')
+    }
+    if (-not $stock.ContainsKey($addr)) { return $false }
+    foreach ($n in $names) { if ($stock[$addr] -notcontains $n) { return $false } }
+    return $true
+}
+
 function Out-FileNoBom {
     <#
         Out-File -Encoding UTF8 writes a UTF-8 BOM on Windows PowerShell 5.1 and
@@ -1156,10 +1200,11 @@ function Collect-Network {
         # static host override that silently redirects traffic is one of the
         # cheapest, highest-signal triage checks there is. Windows collected the
         # file and never looked at it, while docs/MITRE_ATTACK.md advertised the
-        # check. (Counted like the Linux side: comments, blanks and the loopback
-        # defaults do not count as custom entries.)
+        # check. (Counted like the Linux side: comments, blanks and the stock
+        # loopback / IPv6 lines do not count as custom entries - see
+        # Test-HostsDefault for what "stock" means and why it is that strict.)
         $hx = @(Get-Content $hostsFile -ErrorAction SilentlyContinue |
-                Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' -and $_ -notmatch '^\s*(127\.0\.0\.1|::1|127\.0\.1\.1)(\s|$)' })
+                Where-Object { -not (Test-HostsDefault $_ $env:COMPUTERNAME) })
         if ($hx.Count -gt 0) {
             # The count alone made the analyst open hosts.txt to learn anything.
             # Name the first few overrides in the finding itself, so the address

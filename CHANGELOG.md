@@ -4,6 +4,36 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.5.3] — 2026-11-18
+
+### Fixed
+- **The hosts check was wrong in both directions on Linux.** It excluded any
+  line containing `127.0.0.1`, `::1` or `127.0.1.1` *anywhere*. Measured against
+  two sample files: a clean Debian / Ubuntu `/etc/hosts` was reported as **4**
+  custom entries (the `ip6-localnet`, `ip6-mcastprefix`, `ip6-allnodes`,
+  `ip6-allrouters` and `ip6-allhosts` lines are stock, and `::1` appears in
+  none of the ones it excluded), so every clean Linux host raised a Review
+  finding; and a file with four real overrides was reported as **1**, because
+  `203.0.113.9 login.bank.example 127.0.0.1` and `fe80::1 attacker-router.example`
+  merely *contain* the strings it was looking for. Either is a way to hide a
+  redirect in plain sight.
+- **A line is now stock only if its address and every name on it are ones the
+  system ships.** Same table and same rule on both editions
+  (`hosts_is_default` / `Test-HostsDefault`), pinned by 25 shared cases plus
+  harness-specific ones in `tests/test-hosts-default.sh` and
+  `tests/Test-HostsDefault.ps1`.
+- On Windows the check anchored on the address only, so `127.0.0.1
+  update.vendor.example` — a sinkhole that stops a machine reaching its own
+  update server — was counted as stock. It is now reported.
+- `127.0.1.1` is matched against the host's own name without any lookup:
+  `hostname -f` can send a DNS query from the machine being examined.
+
+### Changed
+- A host that maps names to a loopback address (an ad-blocking hosts file, for
+  instance) now raises the Review finding, because that is exactly what a
+  sinkhole looks like. It is a lead, not a verdict, and a lab's own entries are
+  an allowlist entry.
+
 ## [1.5.2] — 2026-11-16
 
 ### Changed

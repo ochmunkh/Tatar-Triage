@@ -101,6 +101,11 @@ jobs:
       - name: Hosts entry unit tests
         run: bash tests/test-hosts-entry.sh
 
+      # What counts as a custom hosts line: stock entries must not be reported,
+      # and a line that merely CONTAINS a loopback address must not be hidden.
+      - name: Hosts stock-line unit tests
+        run: bash tests/test-hosts-default.sh
+
       - name: Known-answer verification
         run: bash tests/test-known-answer.sh
 
@@ -251,6 +256,12 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Test-HostsEntry.ps1
 
+      # What counts as a custom hosts line: stock entries must not be reported,
+      # and a line that merely CONTAINS a loopback address must not be hidden.
+      - name: Hosts stock-line unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-HostsDefault.ps1
+
       - name: Known-answer verification
         shell: pwsh
         run: pwsh -File tests/Test-KnownAnswer.ps1
@@ -386,6 +397,12 @@ jobs:
       - name: Hosts entry unit tests
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-HostsEntry.ps1
+
+      # What counts as a custom hosts line: stock entries must not be reported,
+      # and a line that merely CONTAINS a loopback address must not be hidden.
+      - name: Hosts stock-line unit tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-HostsDefault.ps1
 
       - name: Known-answer verification
         shell: powershell

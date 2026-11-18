@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.5.2"
+VERSION="1.5.3"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -620,6 +620,56 @@ EOF
     printf '%s' "$s"
 }
 
+hosts_is_default() {  # hosts_is_default LINE OWNNAME -> exit 0 if LINE is a stock entry
+    # A line is stock only if its ADDRESS is one of the well-known ones AND
+    # every name on it is a name that address ships with. The previous test was
+    # a grep for the loopback addresses ANYWHERE on the line, which counted a
+    # clean Debian/Ubuntu file as four custom entries (the ip6-* lines) and, in
+    # the other direction, hid `203.0.113.9 login.bank.example 127.0.0.1` and
+    # `fe80::1 attacker-router.example` because they merely CONTAIN "127.0.0.1"
+    # and "::1". Anchoring on the address alone would still hide
+    # `127.0.0.1 update.vendor.example` - a sinkhole that stops a machine
+    # reaching its own update server - so the names are checked as well.
+    #
+    # Names for 127.0.1.1 are matched against THIS host's own name with no
+    # lookup: `hostname -f` can send a DNS query from the machine under
+    # examination. Same rule, same table, as Test-HostsDefault on Windows.
+    local line="${1%%#*}" own="${2:-}" addr rest n allowed
+    local -a names=()
+    line="${line%$'\r'}"
+    read -r addr rest <<EOF
+$line
+EOF
+    [ -n "$addr" ] || return 0
+    addr=$(printf '%s' "$addr" | tr 'A-Z' 'a-z')
+    own=$(printf '%s' "$own" | tr 'A-Z' 'a-z')
+    read -r -a names <<EOF
+$(printf '%s' "$rest" | tr 'A-Z' 'a-z')
+EOF
+    [ "${#names[@]}" -gt 0 ] || return 1
+    if [ "$addr" = "127.0.1.1" ]; then
+        [ -n "$own" ] || return 1
+        for n in "${names[@]}"; do
+            case "$n" in "$own"|"$own".*) : ;; *) return 1 ;; esac
+        done
+        return 0
+    fi
+    case "$addr" in
+        127.0.0.1)    allowed=" localhost localhost.localdomain localhost4 localhost4.localdomain4 " ;;
+        ::1)          allowed=" localhost localhost.localdomain localhost6 localhost6.localdomain6 ip6-localhost ip6-loopback " ;;
+        fe00::0|fe00::) allowed=" ip6-localnet " ;;
+        ff00::0|ff00::) allowed=" ip6-mcastprefix " ;;
+        ff02::1)      allowed=" ip6-allnodes " ;;
+        ff02::2)      allowed=" ip6-allrouters " ;;
+        ff02::3)      allowed=" ip6-allhosts " ;;
+        *)            return 1 ;;
+    esac
+    for n in "${names[@]}"; do
+        case "$allowed" in *" $n "*) : ;; *) return 1 ;; esac
+    done
+    return 0
+}
+
 # Boundary-aware IOC match. Plain substring matching used to let "127.0.0" match
 # 127.0.0.1 and "ocalhost" match localhost, raising false High findings. awk keeps
 # this portable: GNU grep -P is not available everywhere.
@@ -849,19 +899,18 @@ m_network() {
         [ -r "$f" ] && { echo "--- $f ---" >> "$REPORT"; cat "$f" >> "$REPORT" 2>/dev/null; }
     done
     if [ -r /etc/hosts ]; then
-        local hx hl hn=0 hsum=""
-        hx=$(grep -vE '^\s*#|^\s*$|127\.0\.0\.1|::1|127\.0\.1\.1' /etc/hosts 2>/dev/null | wc -l)
-        if [ "${hx:-0}" -gt 0 ]; then
-            # The count alone made the analyst open the report to learn
-            # anything. Name the first few overrides in the finding itself, so
-            # the address and the host name it captures are visible in the
-            # summary and reachable by the IOC pass.
-            while IFS= read -r hl; do
-                [ -n "$hl" ] || continue
-                hsum="${hsum:+$hsum ; }$(hosts_entry "$hl")"; hn=$((hn+1))
-            done <<EOF
-$(grep -vE '^\s*#|^\s*$|127\.0\.0\.1|::1|127\.0\.1\.1' /etc/hosts 2>/dev/null | head -n 5)
-EOF
+        local hx=0 hl hn=0 hsum="" hown
+        hown="$(hostname 2>/dev/null)"
+        # The count alone made the analyst open the report to learn anything.
+        # Name the first few overrides in the finding itself, so the address and
+        # the host name it captures are visible in the summary and reachable by
+        # the IOC pass. What counts as "custom" is decided by hosts_is_default.
+        while IFS= read -r hl || [ -n "$hl" ]; do
+            hosts_is_default "$hl" "$hown" && continue
+            hx=$((hx+1))
+            if [ "$hn" -lt 5 ]; then hsum="${hsum:+$hsum ; }$(hosts_entry "$hl")"; hn=$((hn+1)); fi
+        done < /etc/hosts
+        if [ "$hx" -gt 0 ]; then
             add_finding "Review" "network" "/etc/hosts has $hx custom entries" "First $hn of $hx: $hsum | Review /etc/hosts in report - static host overrides can redirect traffic (T1565.001)"
         fi
     fi

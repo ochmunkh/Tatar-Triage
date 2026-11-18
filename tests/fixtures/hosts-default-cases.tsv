@@ -1,0 +1,33 @@
+# line	expect	note
+# Shared by tests/test-hosts-default.sh and tests/Test-HostsDefault.ps1.
+# "default" means the operating system ships this line; "custom" means someone
+# added it. The host name used for 127.0.1.1 is `myhost`.
+# A hosts line that is blank or only a comment is handled in each harness,
+# because a comment row cannot be written in a file whose own comments start
+# with #.
+# NO COLUMN MAY BE EMPTY: bash read collapses consecutive TABs. Write "-".
+127.0.0.1 localhost	default	the standard IPv4 loopback line
+127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4	default	the Red Hat / Fedora loopback line
+127.0.0.1 LOCALHOST	default	names are case-insensitive
+127.0.0.1 localhost # loopback	default	an inline comment is not part of the line
+::1 localhost ip6-localhost ip6-loopback	default	the Debian / Ubuntu IPv6 loopback line
+::1 localhost localhost.localdomain localhost6 localhost6.localdomain6	default	the Red Hat IPv6 loopback line
+fe00::0 ip6-localnet	default	Debian ships this
+fe00:: ip6-localnet	default	the short spelling of the same address
+ff00::0 ip6-mcastprefix	default	Debian ships this
+ff02::1 ip6-allnodes	default	Debian ships this
+ff02::2 ip6-allrouters	default	Debian ships this
+ff02::3 ip6-allhosts	default	Debian ships this
+127.0.1.1 myhost	default	Debian maps the host's own name to 127.0.1.1
+127.0.1.1 myhost.example.com myhost	default	the same with a fully qualified name
+127.0.0.1 update.vendor.example	custom	a loopback sinkhole: it stops the machine reaching its own update server
+127.0.0.1 localhost update.vendor.example	custom	a stock name does not excuse an extra one
+203.0.113.9 login.bank.example 127.0.0.1	custom	the loopback address as an ALIAS must not hide the line
+fe80::1 attacker-router.example	custom	contains ::1 as text but is not the loopback
+10.1.1.1 intranet.local	custom	an ordinary override
+0.0.0.0 ads.example.com	custom	a blocklist-style entry
+::1 evil.example	custom	the IPv6 loopback with a name it does not ship with
+ff02::1 ip6-allrouters	custom	a stock address with another stock address's name
+127.0.1.1 otherhost	custom	127.0.1.1 for a name that is not this host
+127.0.1.1 myhostile.example	custom	a name that merely STARTS WITH this host's name
+127.0.0.1	custom	an address with no name is not a stock line
