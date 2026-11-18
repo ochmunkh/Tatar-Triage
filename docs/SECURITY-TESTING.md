@@ -24,8 +24,8 @@ A test that cannot run is reported as `SKIP`, never as `PASS`.
 | Suite | Result |
 |---|---|
 | `tests/test-security.sh` (Linux) | 65 passed, 0 failed |
-| `tests/Test-Security.ps1` (Windows) | see CHANGELOG 1.8.0 for the recorded run |
-| Functional suites (`Invoke-Tests.ps1`, `run-tests.sh`, unit tests) | unchanged and green |
+| `tests/Test-Security.ps1` (Windows) | 55 passed, 0 failed (full `-All` run 127 s, collector peak 417 MB) |
+| Functional suites | Windows contract 233/233, Linux contract 45/45, all unit suites green |
 
 ## Requirement to test map
 
@@ -65,6 +65,7 @@ The Linux suite was written first and made to fail against v1.7.0 before the fix
 | B | A symlink or junction as output path, or an existing evidence folder, was followed or reused | Both refused with exit 1 |
 | C | Terminal escapes and bidi controls from host file names and command lines reached summary, report and paste files verbatim | Replaced by U+FFFD at the write path; lone CR removed |
 | D | Temporary files could survive an interrupted run (Linux) | Cleanup trap on EXIT, INT, TERM |
+| E | `podman ps` created its storage and lock files on a host that had never run a container (Linux; found by the strace test on a CI runner) | podman is queried only when the user's container storage already exists |
 
 Behaviour change to be aware of: on Linux an evidence folder collected as root
 is no longer readable by other users. Read it with `sudo`, or `chown` it
