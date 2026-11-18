@@ -69,7 +69,10 @@ except Exception as e:
     sys.exit(1)
 
 check("%s : summary.json parses" % label, True)
-check("%s : schemaVersion is 1.5" % label, s.get("schemaVersion") == "1.5", s.get("schemaVersion"))
+check("%s : schemaVersion is 1.6" % label, s.get("schemaVersion") == "1.6", s.get("schemaVersion"))
+ms = s.get("moduleStatus")
+check("%s : moduleStatus lists every module in modulesRun" % label, isinstance(ms, list) and set(s.get("modulesRun", [])) <= set(e.get("module") for e in ms), ms)
+check("%s : moduleStatus entries are well formed" % label, isinstance(ms, list) and all(e.get("status") in ("ok","warn","failed","skipped") and isinstance(e.get("seconds"), (int, float)) and isinstance(e.get("errors"), int) for e in ms), ms)
 import re
 check("%s : version is SemVer" % label, bool(re.match(r"^\d+\.\d+\.\d+$", str(s.get("version")))), s.get("version"))
 check("%s : platform is linux" % label, s.get("platform") == "linux", s.get("platform"))
@@ -322,6 +325,13 @@ if [ -s "$D1/manifest_sha256.txt" ] && command -v sha256sum >/dev/null 2>&1; the
     fi
 else
     check "T1 : the manifest verifies with sha256sum -c" 0 "manifest missing or sha256sum unavailable"
+fi
+# The manifest cannot hash itself, so its digest is written beside it in
+# sha256sum format and must verify the manifest.
+if [ -s "$D1/manifest_sha256.txt.sha256" ] && ( cd "$D1" && sha256sum -c manifest_sha256.txt.sha256 >/dev/null 2>&1 ); then
+    check "T1 : manifest_sha256.txt.sha256 verifies the manifest" 1
+else
+    check "T1 : manifest_sha256.txt.sha256 verifies the manifest" 0 "sidecar missing or wrong"
 fi
 
 # T2 - partial IOC tokens must NOT match:

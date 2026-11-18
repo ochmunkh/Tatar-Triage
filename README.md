@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.5-blue" alt="v1.5">
+  <img src="https://img.shields.io/badge/version-1.6-blue" alt="v1.6">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows 10/11">
   <img src="https://img.shields.io/badge/modules-33-5eead4" alt="33 modules">
@@ -75,7 +75,7 @@ The consolidated report flags suspicious activity as it goes, per module (sample
 
 ## Architecture
 
-TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.5`), so a SIEM/SOAR pipeline ingests either platform identically.
+TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.6`), so a SIEM/SOAR pipeline ingests either platform identically.
 
 ```
                     TATAR Triage
@@ -85,7 +85,7 @@ TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `li
      (PowerShell, 33 modules)      (Bash, 18 modules)
           └──────────────┬──────────────┘
                          ▼
-             Unified JSON schema  (summary.schema.json · v1.5)
+             Unified JSON schema  (summary.schema.json · v1.6)
                          ▼
         ┌────────────────┼────────────────┐
         ▼                ▼                ▼
@@ -239,7 +239,7 @@ Each run writes a timestamped execution log alongside the evidence:
 [2026-07-10 22:26:17.996] [WARN  ] module hives finished in 0.2s with 1 error(s)
 ```
 
-`tatar.log` is an *operational* log (it keeps growing after the manifest is hashed), so it is deliberately **excluded from `manifest_sha256.txt`**. Evidence files are all hashed as usual.
+`tatar.log` is an *operational* log (it keeps growing after the manifest is hashed), so it is deliberately **excluded from `manifest_sha256.txt`**. Evidence files are all hashed as usual. The manifest itself cannot hash itself, so its SHA-256 is printed at the end of the run and written beside it to `manifest_sha256.txt.sha256`.
 
 ---
 
@@ -486,6 +486,7 @@ C:\Forensic\<HOST>_<YYYY-MM-DD_HH-mm-ss>\
 ├─ tatar.log                         # execution log, and what was NOT collected
 ├─ chain_of_custody.txt              # case/examiner/times/script hash
 ├─ manifest_sha256.txt               # SHA-256 of every collected file, `sha256sum -c` format (tatar.log excluded)
+├─ manifest_sha256.txt.sha256        # SHA-256 of the manifest itself (`sha256sum -c manifest_sha256.txt.sha256`)
 ├─ timeline.csv                      # process / prefetch / recent / installs
 ├─ binary_hashes.txt                 # SHA-256 of running/service binaries (VT/IOC)
 ├─ recyclebin.csv
@@ -549,7 +550,12 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.5.0 — what the evidence is, and what to do with it (current)
+### v1.6.0 — did every module finish, and is the manifest the one we wrote (current)
+
+- **`summary.moduleStatus` (schema 1.6).** One entry per requested module: `ok`, `warn` (it finished but logged errors), `failed` (it crashed, or on Linux its primary artifact was not produced) or `skipped` (an unknown module name), with seconds and the error count. `modulesRun` says what was asked for and `moduleLimitations` says what a module could not do; this says whether it got to finish — an empty section from a `failed` module is missing evidence, not a clean host. Same shape on both editions.
+- **The manifest's own SHA-256.** `manifest_sha256.txt` cannot hash itself, so its digest is now printed at the end of the run, written to `tatar.log`, and saved beside it as `manifest_sha256.txt.sha256` in `sha256sum` format: `sha256sum -c manifest_sha256.txt.sha256` verifies the manifest, then `sha256sum -c manifest_sha256.txt` verifies the evidence. Copy the printed digest into the case notes and the chain of custody no longer rests on the folder alone.
+
+### v1.5.0 — what the evidence is, and what to do with it
 
 - **`artifactClass` on every finding (schema 1.5).** `category` says which module found it; this says what the evidence *is* — `run-key`, `ifeo`, `com-hijack`, `wmi-subscription`, `userassist` — so an allowlist or IOC rule can aim at one technique instead of a whole module. Closed vocabulary, 46 classes on Windows and 18 on Linux, gated across both.
 - **"Collected — now what?"** Every run now writes `ARTIFACTS.md` (what each file is and what opens it), `paste.txt` (the whole run in under 60 lines, stable enough to diff) and `allowlist.suggested.json` (this host as a baseline draft). None of them costs anything at collection time.
@@ -729,7 +735,7 @@ Triage гэдэг ойлголт эмнэлгээс гаралтай. Эмч ө�
 
 ## Архитектур
 
-TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 33 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.5`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
+TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 33 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.6`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
 
 ```
                     TATAR Triage
@@ -739,7 +745,7 @@ TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1`
      (PowerShell, 33 модуль)       (Bash, 18 модуль)
           └──────────────┬──────────────┘
                          ▼
-             Нэгдсэн JSON schema  (summary.schema.json · v1.5)
+             Нэгдсэн JSON schema  (summary.schema.json · v1.6)
                          ▼
         ┌────────────────┼────────────────┐
         ▼                ▼                ▼
@@ -878,7 +884,7 @@ Run бүр нотолгооны хажууд цаг тэмдэгтэй гүйц�
 [2026-07-10 22:26:17.996] [WARN  ] module hives finished in 0.2s with 1 error(s)
 ```
 
-`tatar.log` бол **ажиллагааны** лог — manifest хэшлэгдсэний дараа ч үргэлжлэн урсдаг тул `manifest_sha256.txt`-д **зориудаар оруулаагүй**. Нотолгооны файлууд бүгд ердийнхөөрөө хэшлэгдэнэ.
+`tatar.log` бол **ажиллагааны** лог — manifest хэшлэгдсэний дараа ч үргэлжлэн урсдаг тул `manifest_sha256.txt`-д **зориудаар оруулаагүй**. Нотолгооны файлууд бүгд ердийнхөөрөө хэшлэгдэнэ. Manifest өөрийгөө хэшлэж чадахгүй тул түүний SHA-256-г ажиллагааны төгсгөлд хэвлэж, хажууд нь `manifest_sha256.txt.sha256` болгон хадгална.
 
 ---
 
@@ -1127,6 +1133,7 @@ Prefetch, Shellbags, Mark-of-the-Web, UserAssist, shadow copy, registry hive
 ├─ tatar.log                         # гүйцэтгэлийн лог, мөн юуг цуглуулж ЧАДААГҮЙ нь
 ├─ chain_of_custody.txt              # case/examiner/цаг/скриптийн hash
 ├─ manifest_sha256.txt               # файл бүрийн SHA-256 (`sha256sum -c`-гээр шалгаж болно)
+├─ manifest_sha256.txt.sha256        # manifest өөрийнх нь SHA-256 (`sha256sum -c manifest_sha256.txt.sha256`)
 ├─ timeline.csv · binary_hashes.txt · ...
 └─ (optional) TATAR_<HOST>_<stamp>.zip (+ .sha256)
 ```

@@ -73,7 +73,13 @@ function Assert-Contract {
     Check "$Label : summary.json parses"            ($null -ne $S)
     if ($null -eq $S) { return }
 
-    Check "$Label : schemaVersion is 1.5"           ($S.schemaVersion -eq '1.5') "got '$($S.schemaVersion)'"
+    Check "$Label : schemaVersion is 1.6"           ($S.schemaVersion -eq '1.6') "got '$($S.schemaVersion)'"
+    # moduleStatus: one well-formed entry for every module that was asked for.
+    $msNames = @($S.moduleStatus | ForEach-Object { [string]$_.module })
+    $missingMs = @($S.modulesRun | Where-Object { $msNames -notcontains [string]$_ })
+    Check "$Label : moduleStatus lists every module in modulesRun" (($S.PSObject.Properties.Name -contains 'moduleStatus') -and $missingMs.Count -eq 0) "missing: $($missingMs -join ',')"
+    $badMs = @($S.moduleStatus | Where-Object { @('ok','warn','failed','skipped') -notcontains [string]$_.status -or $_.seconds -isnot [ValueType] -or $_.errors -isnot [ValueType] })
+    Check "$Label : moduleStatus entries are well formed" ($badMs.Count -eq 0) "bad: $(@($badMs | ForEach-Object { $_.module }) -join ',')"
     Check "$Label : version is SemVer"              ($S.version -match '^\d+\.\d+\.\d+$') "got '$($S.version)'"
     Check "$Label : platform is windows"            ($S.platform -eq 'windows')
 
@@ -320,6 +326,14 @@ if ($man1 -and (Test-Path $man1)) {
         if ((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLower() -ne $parts[0].ToLower()) { $bad += "changed after hashing: $rel" }
     }
     Check 'T1 : every manifest hash still matches its file' ($bad.Count -eq 0) ((@($bad) | Select-Object -First 2) -join '; ')
+    # The manifest cannot hash itself, so its digest is written beside it.
+    $side1 = Join-Path $t1.Dir 'manifest_sha256.txt.sha256'
+    $sideOk = $false; $sideGot = '(missing)'
+    if (Test-Path -LiteralPath $side1) {
+        $sideGot = ([IO.File]::ReadAllText($side1)).Trim()
+        $sideOk = ($sideGot -eq ("{0}  manifest_sha256.txt" -f (Get-FileHash -LiteralPath $man1 -Algorithm SHA256).Hash.ToLower()))
+    }
+    Check 'T1 : manifest_sha256.txt.sha256 holds the manifest digest in sha256sum format' $sideOk "got '$sideGot'"
 }
 
 # T2 - IOC feed of PARTIAL tokens that must NOT match (boundary test)

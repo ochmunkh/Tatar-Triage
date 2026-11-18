@@ -4,6 +4,33 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.6.0] — 2026-11-18
+
+### Added
+- **`moduleStatus[]` in `summary.json` (schema 1.6).** One entry per requested
+  module — `module`, `status` (`ok`, `warn`, `failed`, `skipped`), `seconds`,
+  `errors`. Until now a module that crashed, or on Linux did not produce its
+  primary artifact, was visible only in `tatar.log`; a pipeline reading
+  `summary.json` saw an empty section and could not tell it from a clean one.
+  Same shape on both editions; `modulesRun`, `modulesSkipped` and
+  `moduleLimitations` are unchanged.
+- **The manifest's own SHA-256.** `manifest_sha256.txt` cannot hash itself, so
+  its digest is printed at the end of the run, logged, and written to
+  `manifest_sha256.txt.sha256` in `sha256sum` format
+  (`sha256sum -c manifest_sha256.txt.sha256`). The sidecar is, like the
+  manifest, outside what the manifest covers, and the report says so.
+
+### Changed
+- `schemaVersion` is `1.6` in `summary.json` and `findings.json` on both
+  editions; both schemas accept it. A 1.5 consumer keeps working: only an
+  optional property was added.
+
+### Not changed, on purpose
+- The Windows hosts finding still has an empty `paths[]`. Naming
+  `...\drivers\etc\hosts` there would make the sample allowlist's
+  `C:\Windows\System32\*` rule suppress a hosts override silently, which is
+  worse than an empty list.
+
 ## [1.5.3] — 2026-11-18
 
 ### Fixed

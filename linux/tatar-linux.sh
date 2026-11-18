@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.5.3"
+VERSION="1.6.0"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -1536,7 +1536,7 @@ EOF
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
         printf '  "version": "%s",\n' "$VERSION"
-        printf '  "schemaVersion": "1.5",\n'
+        printf '  "schemaVersion": "1.6",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "os": "%s",\n' "$(json_escape "$os")"
@@ -1572,6 +1572,19 @@ EOF
         first=1
         for m in $skipped; do [ $first -eq 1 ] && first=0 || printf ', '; printf '"%s"' "$(json_escape "$m")"; done
         printf '],\n'
+        # How each requested module ended: ok, warn (it logged errors), failed
+        # (its primary artifact was not produced) or skipped (never ran).
+        printf '  "moduleStatus": ['
+        first=1
+        local ms_e ms_m ms_s ms_t ms_n
+        for ms_e in ${MODSTATUS:-}; do
+            IFS=: read -r ms_m ms_s ms_t ms_n <<EOMS
+$ms_e
+EOMS
+            [ $first -eq 1 ] && first=0 || printf ', '
+            printf '{"module":"%s","status":"%s","seconds":%s,"errors":%s}' "$(json_escape "$ms_m")" "$ms_s" "${ms_t:-0}" "${ms_n:-0}"
+        done
+        printf '],\n'
         printf '  "stats": {'
         if [ -s "$STATS_FILE" ]; then
             first=1
@@ -1606,7 +1619,7 @@ EOF
     {
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
-        printf '  "schemaVersion": "1.5",\n'
+        printf '  "schemaVersion": "1.6",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "caseId": "%s",\n' "$(json_escape "$CASE_ID")"
@@ -1831,13 +1844,14 @@ c_out ""; c_out "[i] Output: $OUTDIR"
 c_out "[i] Env: virt=$ENV_VIRT container=$ENV_CONTAINER runtime=$ENV_RUNTIME secmod=$ENV_SECMOD"
 c_out ""
 
-I=0; N=$(echo $TO_RUN | wc -w); RAN=0; SKIPPED=""
+I=0; N=$(echo $TO_RUN | wc -w); RAN=0; SKIPPED=""; MODSTATUS=""
 for m in $TO_RUN; do
     I=$((I+1))
     if ! echo " $MOD_NAMES " | grep -q " $m "; then
         # A misspelled module name must never read as "collected and empty".
         c_out "[!] Unknown module: $m"
         SKIPPED="$SKIPPED $m"
+        MODSTATUS="$MODSTATUS $m:skipped:0:0"
         add_err "Unknown module requested, nothing was collected for it: $m"
         continue
     fi
@@ -1860,6 +1874,12 @@ for m in $TO_RUN; do
     else
         execlog "OK" "module $m finished in ${secs}s"
     fi
+    # How the module ended, for summary.json moduleStatus. Entries are
+    # name:status:seconds:errors, space separated (module names have no colon).
+    mstat=ok
+    if [ "$rc" -ne 0 ] && [ "$rc" -ne 99 ]; then mstat=failed
+    elif [ "$ERROR_COUNT" -gt "$err_before" ]; then mstat=warn; fi
+    MODSTATUS="$MODSTATUS $m:$mstat:$secs:$((ERROR_COUNT-err_before))"
 done
 
 if [ "$RAN" -eq 0 ]; then c_out "[x] No valid modules were run."; execlog "FATAL" "No valid modules were run."; exit 1; fi
@@ -1895,6 +1915,17 @@ write_artifact_index
 MANIFEST="$OUTDIR/manifest_sha256.txt"
 ( cd "$OUTDIR" && find . -type f ! -name 'manifest_sha256.txt' ! -name 'tatar.log' -exec sha256sum {} \; ) > "$MANIFEST" 2>/dev/null
 execlog "INFO" "Manifest written: $MANIFEST"
+# The manifest cannot hash itself, so its own digest is the one number an
+# analyst has to carry out of band: print it, log it, and leave it beside the
+# manifest in sha256sum format (`sha256sum -c manifest_sha256.txt.sha256`).
+MH="$(sha256sum "$MANIFEST" 2>/dev/null | awk '{print $1}')"
+if [ -n "$MH" ]; then
+    printf '%s  manifest_sha256.txt\n' "$MH" > "$OUTDIR/manifest_sha256.txt.sha256"
+    execlog "INFO" "Manifest SHA-256: $MH"
+    c_out "[i] Manifest SHA-256: $MH"
+else
+    add_err "Could not hash manifest_sha256.txt"
+fi
 
 if [ "$COMPRESS" -eq 1 ]; then
     ARCHIVE="$OUTPUT_BASE/TATAR_${HOSTN}_${STAMP}.tar.gz"

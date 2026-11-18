@@ -8,7 +8,7 @@
   "properties": {
     "tool": { "type": "string", "description": "Human tool name, e.g. 'TATAR Triage Toolkit'." },
     "version": { "type": "string", "description": "Collector (tool) version, independent per platform." },
-    "schemaVersion": { "type": "string", "enum": ["1.1","1.2","1.3","1.4","1.5"], "description": "Version of THIS shared schema. Consumers key off this. 1.3 only ADDS optional finding properties, so a 1.2 consumer keeps working against a 1.3 document." },
+    "schemaVersion": { "type": "string", "enum": ["1.1","1.2","1.3","1.4","1.5","1.6"], "description": "Version of THIS shared schema. Consumers key off this. 1.3 only ADDS optional finding properties, so a 1.2 consumer keeps working against a 1.3 document." },
     "platform": { "type": "string", "enum": ["windows", "linux", "macos", "android"] },
     "host": { "type": "string" },
     "os": { "type": "string" },
@@ -36,6 +36,20 @@
       "type": "array",
       "description": "Modules that were requested but never ran (unknown module name). Empty on a clean run. A non-empty list means evidence is MISSING, not absent.",
       "items": { "type": "string" }
+    },
+    "moduleStatus": {
+      "type": "array",
+      "description": "One entry per requested module saying how it ended. status: ok; warn (it finished but logged errors); failed (it crashed, or on Linux its primary artifact was not produced); skipped (requested but never ran - unknown name). Added in 1.6. modulesRun says what was asked for, moduleLimitations says what a module could not do, this says whether it got to finish: an empty section from a 'failed' module is missing evidence, not a clean host. seconds is wall-clock time (one decimal on Windows, whole seconds on Linux).",
+      "items": {
+        "type": "object",
+        "required": ["module", "status", "seconds", "errors"],
+        "properties": {
+          "module": { "type": "string" },
+          "status": { "type": "string", "enum": ["ok", "warn", "failed", "skipped"] },
+          "seconds": { "type": "number", "minimum": 0 },
+          "errors": { "type": "integer", "minimum": 0, "description": "Errors logged while this module ran." }
+        }
+      }
     },
     "stats": {
       "type": "object",
@@ -119,7 +133,7 @@
     {
       "if": {
         "required": ["schemaVersion"],
-        "properties": { "schemaVersion": { "enum": ["1.4","1.5"] } }
+        "properties": { "schemaVersion": { "enum": ["1.4","1.5","1.6"] } }
       },
       "then": {
         "description": "From schemaVersion 1.4 onward every timestamp in this document is ISO 8601 UTC at second precision - YYYY-MM-DDTHH:MM:SSZ - on every platform. Earlier versions are not held to it: the Windows producer wrote local time with an offset while the Linux producer wrote Z, so output from the two editions could not be sorted together and a 1.3 document carried both shapes at once (collected_at in Z beside generated with an offset). Constrained here rather than only described, because 'ISO-8601 string' was what the 1.1 schema already said.",

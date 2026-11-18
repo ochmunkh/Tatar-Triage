@@ -14,7 +14,7 @@
       * -IOCFile <json>   - offline IOC feed (hashes/ips/domains/filenames); a hit
         overrides the allowlist and escalates to High / 0.95.
       * findings v2 fields (id, confidence, suppressed, suppressReason, iocMatch,
-        artifactClass), schemaVersion 1.5.
+        artifactClass), schemaVersion 1.6.
 
     v1.1 additions:
       * summary.txt / summary.json - analyst-first triage summary with an
@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.5.3'
+$script:ToolVersion = '1.6.0'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -177,6 +177,8 @@ $script:Stats      = [ordered]@{}
 # boilerplate. This is that field at the level it belongs to.
 $script:ModuleLimitations = New-Object System.Collections.Generic.List[object]
 $script:ModulesSkipped = New-Object System.Collections.Generic.List[string]
+# One entry per requested module: how it ended. Read with .ToArray(), never @(): see the 5.1 note at the summary writer.
+$script:ModuleStatus = New-Object System.Collections.Generic.List[object]
 $script:ObfHits       = New-Object System.Collections.Generic.List[object]
 
 # Evidence correlation rules. Deliberately FEW and NAMED: a generic
@@ -2366,7 +2368,7 @@ function Write-Summary {
     $jsonObj = [pscustomobject]@{
         tool            = 'TATAR Triage Toolkit'
         version         = $script:ToolVersion
-        schemaVersion   = '1.5'
+        schemaVersion   = '1.6'
         platform        = 'windows'
         host            = $hn
         os              = $osCap
@@ -2388,6 +2390,8 @@ function Write-Summary {
         moduleLimitations = $script:ModuleLimitations.ToArray()
         modulesRun      = @($ModulesRun)
         modulesSkipped  = @($script:ModulesSkipped)
+        # .ToArray() for the same 5.1 reason as moduleLimitations above.
+        moduleStatus    = $script:ModuleStatus.ToArray()
         stats           = [pscustomobject]$script:Stats
         findingsCount        = $sorted.Count
         activeFindingsCount  = $active.Count
@@ -2399,7 +2403,7 @@ function Write-Summary {
     # findings-only file for SOAR / SIEM ingestion
     $findObj = [pscustomobject]@{
         tool          = 'TATAR Triage Toolkit'
-        schemaVersion = '1.5'
+        schemaVersion = '1.6'
         platform      = 'windows'
         host          = $hn
         caseId        = $CaseId
@@ -3226,6 +3230,7 @@ foreach ($m in $toRun) {
         # A misspelled module name must never read as "collected and empty".
         Write-Console "[!] Unknown module: $m" 'Yellow'
         $script:ModulesSkipped.Add([string]$m)
+        $script:ModuleStatus.Add([pscustomobject]@{ module = [string]$m; status = 'skipped'; seconds = 0; errors = 0 })
         Add-Err ("Unknown module requested, nothing was collected for it: {0}" -f $m)
         continue
     }
@@ -3236,6 +3241,9 @@ foreach ($m in $toRun) {
     $mStart = Get-Date; $errBefore = $script:ErrorCount; $crashed = $false
     try { & $script:Collectors[$m]; $ran++ } catch { Add-Err "Module $m crashed: $_"; $crashed = $true }
     $secs = [math]::Round(((Get-Date) - $mStart).TotalSeconds, 1)
+    $mErrs = $script:ErrorCount - $errBefore
+    $mStat = if ($crashed) { 'failed' } elseif ($mErrs -gt 0) { 'warn' } else { 'ok' }
+    $script:ModuleStatus.Add([pscustomobject]@{ module = [string]$m; status = $mStat; seconds = $secs; errors = $mErrs })
     if ($crashed) { Write-ExecLog 'FAILED' ("module {0} crashed after {1}s - see ERROR above" -f $m, $secs) }
     elseif ($script:ErrorCount -gt $errBefore) { Write-ExecLog 'WARN' ("module {0} finished in {1}s with {2} error(s)" -f $m, $secs, ($script:ErrorCount - $errBefore)) }
     else { Write-ExecLog 'OK' ("module {0} finished in {1}s" -f $m, $secs) }
@@ -3295,7 +3303,7 @@ try {
     # hashed it is exactly the trailer bug this file already carries a warning
     # about, and it would leave one manifest entry permanently wrong.
     Add-Report ''
-    Add-Report 'Manifest coverage: every collected file is hashed in manifest_sha256.txt, including hidden and system files. Two are NOT covered, by construction: manifest_sha256.txt (cannot hash itself) and tatar.log (still being appended while the manifest is built).'
+    Add-Report 'Manifest coverage: every collected file is hashed in manifest_sha256.txt, including hidden and system files. Two are NOT covered, by construction: manifest_sha256.txt (cannot hash itself; its own SHA-256 is printed at the end of the run and written to manifest_sha256.txt.sha256) and tatar.log (still being appended while the manifest is built).'
     $manifest = Join-Path $script:OutDir 'manifest_sha256.txt'
     # Compared by NAME, not by full path: the relative names come from
     # Get-ChildItem -Name while these two were built with Join-Path, and the two
@@ -3323,6 +3331,13 @@ try {
     }
     [IO.File]::WriteAllText($manifest, (($mLines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
     Write-ExecLog 'INFO' "Manifest written: $manifest ($($mLines.Count) file(s))"
+    # The manifest cannot hash itself, so its own digest is the one number an
+    # analyst has to carry out of band. Print it, log it, and leave it beside the
+    # manifest in sha256sum format: `sha256sum -c manifest_sha256.txt.sha256`.
+    $mh = Get-FileHash -LiteralPath $manifest -Algorithm SHA256 -ErrorAction Stop
+    [IO.File]::WriteAllText((Join-Path $script:OutDir 'manifest_sha256.txt.sha256'), ("{0}  manifest_sha256.txt`n" -f $mh.Hash.ToLower()), (New-Object System.Text.UTF8Encoding($false)))
+    Write-ExecLog 'INFO' ("Manifest SHA-256: {0}" -f $mh.Hash.ToLower())
+    Write-Console ("[i] Manifest SHA-256: {0}" -f $mh.Hash.ToLower()) 'Green'
 } catch { Add-Err "Manifest failed: $_" }
 
 if ($Compress) {
