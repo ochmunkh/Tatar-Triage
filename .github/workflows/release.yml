@@ -21,9 +21,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp Tatar.ps1 linux/tatar-linux.sh allowlist.sample.json ioc.sample.json dist/
+          cp Tatar.ps1 linux/tatar-linux.sh allowlist.sample.json ioc.sample.json tools/viewer.html dist/
           cd dist
-          sha256sum Tatar.ps1 tatar-linux.sh allowlist.sample.json ioc.sample.json > SHA256SUMS.txt
+          sha256sum Tatar.ps1 tatar-linux.sh allowlist.sample.json ioc.sample.json viewer.html > SHA256SUMS.txt
           echo "--- SHA256SUMS.txt"
           cat SHA256SUMS.txt
 

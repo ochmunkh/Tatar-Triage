@@ -445,3 +445,10 @@ jobs:
       # undocumented check and an unenforced claim both fail here.
       - name: The AV-safety claims still hold
         run: python3 .github/scripts/check_av_safety.py .
+
+      # tools/viewer.html is the one file that renders text taken from an
+      # evidence folder. Its Content-Security-Policy hashes, the absence of any
+      # HTML-string sink or network call, the ASCII-only rule and the guidance
+      # coverage of the closed artifactClass set are checked, not trusted.
+      - name: The findings viewer is sealed and covers every class
+        run: python3 .github/scripts/check_viewer.py

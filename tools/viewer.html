@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Tyi++zgTcPLa13DWBPrJXSLxf4JMLu18JokSwkoVo/I='; style-src 'sha256-ax8vZy2HFTpoPMFtgUSaDLzsJf5v4SKVKZRReo5gem0='; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>TATAR findings viewer</title>
+<style>:root{--bg:#f6f7f9;--fg:#15191f;--mut:#5b6573;--card:#fff;--bd:#d5dae1;--ac:#0b6e6e;--hi:#b42318;--rv:#8a5a00;--ioc:#6b2fa0;--cor:#1b5fb4;--bgc:#eef1f5}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1318;--fg:#e6e9ee;--mut:#9aa5b4;--card:#171c23;--bd:#2b333d;--ac:#4fc3c3;--hi:#ff7b72;--rv:#e3b341;--ioc:#c9a0ff;--cor:#79b8ff;--bgc:#1d232b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.top,main,.foot{max-width:1100px;margin:0 auto;padding:12px 16px}
+h1{margin:8px 0 4px;font-size:22px}
+.note{margin:0;color:var(--mut);max-width:70ch}
+code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px}
+.muted{color:var(--mut)}
+.hidden{display:none}
+.drop{border:2px dashed var(--bd);border-radius:10px;padding:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.drop.over{border-color:var(--ac);background:var(--bgc)}
+.btn{background:var(--ac);color:var(--bg);padding:7px 14px;border-radius:6px;cursor:pointer;font-weight:600}
+.msg{flex-basis:100%;margin:0;min-height:1.4em}
+.msg.err{color:var(--hi)}
+.panel{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 14px;margin-top:12px}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 18px;margin:0}
+.kv div{min-width:0}
+.kv dt{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.kv dd{margin:0;overflow-wrap:anywhere}
+.warn{border-left:4px solid var(--rv);padding-left:10px;margin:10px 0 0}
+#controls{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center}
+#controls label{display:flex;gap:6px;align-items:center;font-size:13px}
+input[type=search],select{background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font:inherit;max-width:100%}
+details.f{background:var(--card);border:1px solid var(--bd);border-radius:10px;margin-top:10px}
+details.f.sup{opacity:.65}
+details.f>summary{cursor:pointer;padding:10px 12px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.chip{font-size:12px;font-weight:700;border:1px solid currentColor;border-radius:999px;padding:0 8px;white-space:nowrap}
+.sev-High{color:var(--hi)}.sev-Review{color:var(--rv)}
+.lv-IOC{color:var(--ioc)}.lv-Correlated{color:var(--cor)}.lv-High{color:var(--hi)}.lv-Review{color:var(--rv)}
+.cls{color:var(--mut);font-size:12px}
+.fmsg{flex:1 1 320px;overflow-wrap:anywhere}
+.body{padding:0 14px 14px}
+.detail{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bgc);border-radius:6px;padding:8px 10px;margin:6px 0}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 16px;margin:8px 0}
+.meta span{overflow-wrap:anywhere}
+.meta b{color:var(--mut);font-weight:600}
+.guide{border:1px solid var(--bd);border-left:4px solid var(--ac);border-radius:6px;padding:8px 12px;margin-top:10px}
+.guide h3{margin:0 0 4px;font-size:15px}
+.guide p{margin:4px 0}
+.guide b{color:var(--ac)}
+a{color:var(--ac)}
+ul.paths{margin:4px 0;padding-left:20px;overflow-wrap:anywhere}
+table{border-collapse:collapse;width:100%;margin-top:6px}
+th,td{border-bottom:1px solid var(--bd);padding:3px 8px;text-align:left;font-size:13px}
+.foot{font-size:13px}</style>
+</head>
+<body>
+<header class="top">
+  <h1>TATAR findings viewer</h1>
+  <p class="note">Open <code>summary.json</code> or <code>findings.json</code> from a collection. The file is read in this page only: this page has no network access (see the policy in its header) and nothing is uploaded. Findings are leads, not verdicts.</p>
+</header>
+<main>
+  <section id="drop" class="drop" tabindex="0">
+    <label for="file" class="btn">Choose a file</label>
+    <input id="file" type="file" accept=".json,application/json" class="hidden">
+    <span class="muted">or drop it here</span>
+    <p id="msg" class="msg" role="status"></p>
+  </section>
+  <section id="summary" class="panel hidden" aria-label="Run summary"></section>
+  <section id="controls" class="panel hidden" aria-label="Filters">
+    <label>Search <input id="q" type="search" autocomplete="off"></label>
+    <label>Severity <select id="fsev"></select></label>
+    <label>Confidence <select id="fconf"></select></label>
+    <label>Module <select id="fmod"></select></label>
+    <label>Class <select id="fcls"></select></label>
+    <label class="check"><input id="fsup" type="checkbox"> show suppressed</label>
+    <span id="count" class="muted"></span>
+  </section>
+  <section id="list" aria-label="Findings"></section>
+</main>
+<footer class="foot muted">Guidance is a starting question per artifact class, written for an analyst working on their own machine. It never replaces reading the evidence.</footer>
+<script type="application/json" id="guidance">{
+ "account": {
+  "title": "Local account",
+  "ask": "Was this account created or changed outside normal provisioning, and when?",
+  "look": "Users artifacts and the timeline around the finding. Windows: account events in the security log. Linux: /etc/passwd, /etc/shadow metadata and the auth log.",
+  "benign": "Service accounts created by installed software; help-desk or break-glass accounts.",
+  "escalate": "Compare creation or change time with the first suspicious activity, then check group membership and last logon."
+ },
+ "admin-group": {
+  "title": "Privileged group membership",
+  "ask": "Who is in this group, and who added them?",
+  "look": "Group membership in the users artifacts; group-change events in the security log (Windows) or sudoers and group files with the auth log (Linux).",
+  "benign": "IT administrators and deployment accounts that are documented.",
+  "escalate": "Any member nobody can name is a lead; find when it was added and by which session."
+ },
+ "alwaysinstallelevated": {
+  "title": "AlwaysInstallElevated policy",
+  "ask": "Is this policy set deliberately, and who set it?",
+  "look": "The policy values named in the finding, in both the machine and user hives, and the time they last changed.",
+  "benign": "Rare. Some packaging workflows set it; most estates never should.",
+  "escalate": "When both values are set, any user can install a package as SYSTEM. Treat as a privilege-escalation path and find what installed recently."
+ },
+ "bash-history": {
+  "title": "Shell history",
+  "ask": "What was run, by which user, and does the order tell a story?",
+  "look": "The collected history file for the named user; compare line order with the timeline and the auth log.",
+  "benign": "Administrators running routine maintenance; history is easy to edit or disable, so a short history is not reassuring.",
+  "escalate": "Look for downloads piped to a shell, new users, key changes, and cleanup commands. A missing or truncated history is itself a question."
+ },
+ "browser": {
+  "title": "Browser artifact",
+  "ask": "What did the user visit or download around the time of the incident?",
+  "look": "The browser metadata files in the output folder; match download times with the timeline and with mark-of-the-web entries.",
+  "benign": "Normal browsing. This class is reserved: read the finding text for what was actually seen.",
+  "escalate": "Pivot on the downloaded file name and time rather than on the browser data alone."
+ },
+ "com-hijack": {
+  "title": "COM object hijack",
+  "ask": "Does a per-user COM registration shadow a machine-wide one, and what does it load?",
+  "look": "The registry path and the DLL named in the finding; check whether that DLL exists, who wrote it and when.",
+  "benign": "Some applications register per-user COM servers legitimately.",
+  "escalate": "A user-level entry that overrides a system CLSID and points into a user-writable folder is a persistence lead. Hash the DLL and check its signature."
+ },
+ "cron": {
+  "title": "Scheduled job (cron)",
+  "ask": "Who owns this job, when was it added, and what does it execute?",
+  "look": "The crontab or cron.d file named in the finding; file times against the timeline; the script it calls.",
+  "benign": "Backups, log rotation, package updates and monitoring agents.",
+  "escalate": "Jobs that run from /tmp, /dev/shm or a user home, fetch from the network, or were added recently deserve the first look."
+ },
+ "deleted-binary": {
+  "title": "Running process, binary deleted",
+  "ask": "Why is a process still running from a file that no longer exists?",
+  "look": "The process entry in the process artifacts and its command line; compare with package manager logs for an update in progress.",
+  "benign": "A package update replaced the binary while the old process kept running.",
+  "escalate": "If no update explains it, the binary was removed after launch. Capture the process memory path via your acquisition procedure before it ends."
+ },
+ "dns-cache": {
+  "title": "DNS cache entry",
+  "ask": "Which names did this host resolve, and is any of them known to be bad?",
+  "look": "dns_cache.txt and the network artifacts; compare names with your own intelligence and with the timeline.",
+  "benign": "Update services, telemetry and CDNs fill most caches.",
+  "escalate": "Look for algorithm-like names, newly registered domains and names that match the finding's time window."
+ },
+ "event-log": {
+  "title": "Event log record",
+  "ask": "What does the record say, and what happened just before and after it?",
+  "look": "The event log preview and the exported log files; read neighbouring events, not the single record.",
+  "benign": "Many audit events are routine on their own.",
+  "escalate": "Clearing events, new services, account changes and logons close together are the pattern to look for."
+ },
+ "firewall": {
+  "title": "Firewall configuration",
+  "ask": "Which rule opens this host, who added it and when?",
+  "look": "firewall_rules.txt. This class is reserved: read the finding text for the rule that was seen.",
+  "benign": "Rules added by installed software and remote-management tools.",
+  "escalate": "Inbound allow rules for unusual ports or programs in user-writable folders are the leads."
+ },
+ "hosts-file": {
+  "title": "Hosts file override",
+  "ask": "Which names are redirected, and to where?",
+  "look": "hosts.txt in the output folder; the finding lists the first entries as address -> name.",
+  "benign": "Development machines and lab setups; security tooling that blocks domains by pointing them at a loopback address.",
+  "escalate": "A well-known service name pointing at an unfamiliar address, or a vendor update or security domain pointing at a loopback address, is a lead."
+ },
+ "ifeo": {
+  "title": "Image File Execution Options",
+  "ask": "Which program is being intercepted, and what is the replacement debugger?",
+  "look": "The registry key named in the finding and the program given as Debugger; its path, signature and file times.",
+  "benign": "Developers attaching debuggers; accessibility-tool debuggers are a classic abuse.",
+  "escalate": "A Debugger value on an accessibility or security program is a strong persistence or defence-evasion lead."
+ },
+ "ioc-match": {
+  "title": "Match against your own IOC feed",
+  "ask": "Which indicator matched, and in what context?",
+  "look": "The indicator is named in the finding detail; locate it in the collected artifact it came from and read the surrounding lines.",
+  "benign": "An overly broad indicator or a shared infrastructure address.",
+  "escalate": "Confidence is high because your feed said so. Establish when it first appeared and which process or connection owns it."
+ },
+ "jumplist": {
+  "title": "Jump list entry",
+  "ask": "Which files or locations did a program open recently?",
+  "look": "The jump list files under the filesystem artifacts; parse them on your own machine and compare with the timeline.",
+  "benign": "Recent-file history of normal work.",
+  "escalate": "Entries for files that no longer exist or that sit in unusual folders show activity that has since been cleaned up."
+ },
+ "logon-failure": {
+  "title": "Failed logons",
+  "ask": "Is this a guessing attempt, a stale credential or a service misconfiguration, and did a success follow?",
+  "look": "Logon events in the security log (Windows) or the auth log (Linux): source address, account, logon type and timing.",
+  "benign": "Expired passwords, mapped drives and scheduled tasks with old credentials.",
+  "escalate": "Many failures from one source followed by a success, or failures across many accounts, is the pattern to confirm."
+ },
+ "lsa-package": {
+  "title": "LSA package",
+  "ask": "Is this authentication or security package a known vendor component?",
+  "look": "The registry value named in the finding and the DLL it loads: path, signer, file times.",
+  "benign": "Smart-card and single-sign-on products load their own packages.",
+  "escalate": "An unsigned package, or one in a user-writable folder, can read credentials. Escalate immediately and treat credentials on the host as exposed."
+ },
+ "mark-of-the-web": {
+  "title": "Downloaded file marker",
+  "ask": "Where did this file come from, and was it run?",
+  "look": "The marker data in the finding (origin zone and referrer where present); the file's times; process and prefetch evidence of execution.",
+  "benign": "Installers and documents downloaded by the user.",
+  "escalate": "Executable or script content from the internet zone that was then run is the lead; there is no Linux equivalent, so do not expect this class there."
+ },
+ "muicache": {
+  "title": "MUI cache entry",
+  "ask": "Did this program ever run on the host?",
+  "look": "The entry names a program path; check whether the file still exists and compare with other execution evidence.",
+  "benign": "Almost every program a user has launched appears here.",
+  "escalate": "Presence shows it ran at some point. A missing file with an unfamiliar name is the lead."
+ },
+ "netsh-helper": {
+  "title": "Netsh helper DLL",
+  "ask": "Is this helper DLL a standard component?",
+  "look": "The registry value and the DLL named in the finding: path, signer, file times.",
+  "benign": "A small set of standard Windows helpers; some VPN software adds its own.",
+  "escalate": "An unrecognised DLL here is loaded every time netsh runs, so it is a persistence lead."
+ },
+ "network-connection": {
+  "title": "Network connection or listener",
+  "ask": "Which process owns it, and is the remote side expected?",
+  "look": "The network artifacts and the process list: match the owning process, its path and command line.",
+  "benign": "Browsers, update agents, management tools and cloud sync.",
+  "escalate": "A connection from a script host or an executable in a temp or user-writable folder, or an unexpected listener, is the lead. Pivot on the remote address."
+ },
+ "obfuscated-script": {
+  "title": "Obfuscated or encoded script",
+  "ask": "What does the decoded content do?",
+  "look": "The command line shown in the finding; decode it on your own analysis machine, never on the host.",
+  "benign": "Some installers and administration scripts encode their arguments.",
+  "escalate": "Decode first. A downloader, a credential tool or in-memory loading changes the severity completely."
+ },
+ "package": {
+  "title": "Installed package",
+  "ask": "Is this package expected on this host, and who installed it?",
+  "look": "The package inventory in the application artifacts; install time against the timeline.",
+  "benign": "Software from the standard repositories or your deployment tool.",
+  "escalate": "A package installed shortly before suspicious activity, or from an unusual source, is the lead."
+ },
+ "print-monitor": {
+  "title": "Print monitor",
+  "ask": "Is this print monitor DLL a vendor component?",
+  "look": "The registry key and DLL named in the finding: path, signer, file times.",
+  "benign": "Printer drivers from the printer vendor.",
+  "escalate": "An unrecognised monitor DLL loads into the spooler at boot, which is a persistence lead."
+ },
+ "process-commandline": {
+  "title": "Process command line",
+  "ask": "What launched this process, and with what arguments?",
+  "look": "The process list: parent process, path, user and the full command line; compare start time with the timeline.",
+  "benign": "Administration scripts and installers.",
+  "escalate": "Look at the parent chain. An office program or a web server spawning a shell is the classic lead."
+ },
+ "protocol-handler": {
+  "title": "Protocol handler",
+  "ask": "Which program does this URL scheme launch?",
+  "look": "The registry entry and program named in the finding: path, signer, file times.",
+  "benign": "Applications register their own schemes.",
+  "escalate": "A handler pointing at a script host or a user-writable folder is a lead."
+ },
+ "rdp": {
+  "title": "Remote desktop evidence",
+  "ask": "Who connected, from where and when?",
+  "look": "The RDP artifacts and the logon events in the security log: source address, account, session times. This class is reserved: read the finding text.",
+  "benign": "Administrators using remote desktop.",
+  "escalate": "Connections from unexpected sources, at odd hours, or followed by new accounts or tools are the leads."
+ },
+ "rmm-connection-log": {
+  "title": "Remote-management tool connection log",
+  "ask": "Who connected through this tool and when?",
+  "look": "The tool's log text named in the finding; compare connection times with other activity on the host.",
+  "benign": "IT support sessions that are on record.",
+  "escalate": "A session nobody can account for is a lead: find the remote identifier and the files transferred."
+ },
+ "rmm-product": {
+  "title": "Remote-management tool present",
+  "ask": "Is this product approved on this host?",
+  "look": "The executable named in the finding, its path, signer and install time; your asset or software inventory.",
+  "benign": "Approved support tooling.",
+  "escalate": "Unapproved remote-access software is common attacker persistence. Check install time and any unattended-access configuration."
+ },
+ "run-key": {
+  "title": "Autorun registry entry",
+  "ask": "What does this entry launch, and when was it added?",
+  "look": "The registry value named in the finding and the file it points to: path, signer, file times; compare with the timeline.",
+  "benign": "Update checkers, vendor tray tools.",
+  "escalate": "An entry that points into a temp or user-writable folder, a script host, or an unsigned file is the lead."
+ },
+ "runmru": {
+  "title": "Run dialog history",
+  "ask": "What did the user type into the Run dialog?",
+  "look": "The recent-command list in the user's registry hive; compare with other execution evidence.",
+  "benign": "Everyday administration commands.",
+  "escalate": "Typed paths to scripts, remote shares or encoded commands are the lead."
+ },
+ "scheduled-task": {
+  "title": "Scheduled task",
+  "ask": "Who created this task, when, and what does it run?",
+  "look": "The task definition and its action target; creation time against the timeline; the file it launches.",
+  "benign": "Updaters and maintenance tasks from installed software.",
+  "escalate": "A task that runs from a user-writable folder, a script host with an encoded command, or that was created recently, is the lead."
+ },
+ "service": {
+  "title": "Service",
+  "ask": "Is this service expected, and what binary does it run?",
+  "look": "The service entry and its executable: path, signer, file times, start type.",
+  "benign": "Vendor and operating-system services.",
+  "escalate": "A new service pointing at a user-writable path, or with an odd name and no description, is a persistence lead."
+ },
+ "service-path": {
+  "title": "Service path weakness",
+  "ask": "Can a lower-privileged user plant a file that this service will run?",
+  "look": "The service's image path as quoted in the finding; the folder permissions along it.",
+  "benign": "A configuration weakness that is common and not itself proof of compromise.",
+  "escalate": "Check whether a file already sits at the intercepting position; a planted file turns the weakness into a finding."
+ },
+ "shadow-copy": {
+  "title": "Shadow copy state",
+  "ask": "Were shadow copies removed or reduced, and by whom?",
+  "look": "Shadow copy listings and the related events. This class is reserved: read the finding text.",
+  "benign": "Storage clean-up and backup tooling.",
+  "escalate": "Removal shortly before other suspicious activity is a recovery-inhibition lead. An empty list alone proves nothing."
+ },
+ "share": {
+  "title": "Network share",
+  "ask": "Is this share expected, and who can reach it?",
+  "look": "The share list in the network artifacts. This class is reserved: read the finding text.",
+  "benign": "Administrative and file-server shares.",
+  "escalate": "A share created recently, or one that exposes a user-writable or system folder, is the lead."
+ },
+ "ssh-key": {
+  "title": "SSH authorized key",
+  "ask": "Whose key is this, and when was it added?",
+  "look": "The authorized_keys file named in the finding: key comment, options, file times; the auth log for logons using it.",
+  "benign": "Keys for administrators and automation that are on record.",
+  "escalate": "An unknown key, or one with a forced command, added recently, is a persistence lead. Find logons that used it."
+ },
+ "startup-folder": {
+  "title": "Startup folder item",
+  "ask": "What does this item run, and when did it appear?",
+  "look": "The startup folder listing and the target of the item: path, signer, file times.",
+  "benign": "Vendor tray tools.",
+  "escalate": "A script or executable placed there recently, or pointing at a temp folder, is the lead."
+ },
+ "suid": {
+  "title": "Setuid or setgid file",
+  "ask": "Is this file a standard setuid binary, and is it owned by a package?",
+  "look": "The file path in the finding: package ownership, hash and file times.",
+  "benign": "Standard system tools such as the password and mount utilities.",
+  "escalate": "A setuid file outside system directories, or one no package owns, is a privilege-escalation lead."
+ },
+ "temp-executable": {
+  "title": "Executable in a temp location",
+  "ask": "What is this file, who created it and was it run?",
+  "look": "The path in the finding; the hash and signer; process, prefetch and timeline evidence of execution.",
+  "benign": "Installers unpack here and updaters stage files here.",
+  "escalate": "A signed vendor installer is usually benign. An unsigned file, or one with a random name that was run, is the lead. Hash it on your own machine."
+ },
+ "unknown": {
+  "title": "Unclassified finding",
+  "ask": "What does the finding text say, and which artifact did it come from?",
+  "look": "The module and category shown on the finding, and the matching section of the full report.",
+  "benign": "Not classified; no assumption is made.",
+  "escalate": "Treat it as a lead and read the detail. A class is left unknown rather than guessed."
+ },
+ "usb": {
+  "title": "USB device history",
+  "ask": "Was a removable device connected around the incident?",
+  "look": "The device history in the registry artifacts and the related events. This class is reserved: read the finding text.",
+  "benign": "Normal use of removable media.",
+  "escalate": "A first-seen device shortly before suspicious file activity is the lead."
+ },
+ "userassist": {
+  "title": "UserAssist entry",
+  "ask": "Did this user run this program, how often and when last?",
+  "look": "The entry shows a decoded program path with run count and last-run time; compare with the timeline.",
+  "benign": "Regular use of everyday programs.",
+  "escalate": "Run counts and times for unfamiliar programs show execution that other evidence may have lost."
+ },
+ "winlogon": {
+  "title": "Winlogon or AppInit setting",
+  "ask": "Is this shell, userinit or loaded DLL the stock value?",
+  "look": "The registry values named in the finding and the files they point to: path, signer, file times.",
+  "benign": "Rarely changed legitimately.",
+  "escalate": "A changed shell or userinit value, or an extra DLL, runs at every logon and is a persistence lead."
+ },
+ "wmi-subscription": {
+  "title": "WMI event subscription",
+  "ask": "What triggers this subscription, and what does it run?",
+  "look": "The filter, consumer and binding named in the finding; the command or script the consumer runs.",
+  "benign": "Rare outside management products.",
+  "escalate": "A permanent subscription with a command or script consumer is a well-known persistence method. Capture the consumer content."
+ },
+ "writable-path": {
+  "title": "Executable in a user-writable path",
+  "ask": "What is this file, and what runs it?",
+  "look": "The path in the finding; hash, signer, file times; what process or entry points at it.",
+  "benign": "Per-user application installs.",
+  "escalate": "Combine with the owner of the process or autorun entry: system-level execution of a user-writable file is the lead."
+ }
+}</script>
+<script>(function () {
+  'use strict';
+  var MAX_FINDINGS = 5000, MAX_TEXT = 4000, MAX_BYTES = 100 * 1024 * 1024;
+  var GUIDE = JSON.parse(document.getElementById('guidance').textContent);
+  var GENERIC = { title: 'Unclassified finding', ask: 'What does the finding text say, and which artifact did it come from?', look: 'The module and category on the finding, and the matching section of the full report.', benign: 'Not classified; no assumption is made.', escalate: 'Treat it as a lead and read the detail.' };
+  var SEV_ORDER = { High: 0, Review: 1 };
+  var LV_ORDER = { IOC: 0, Correlated: 1, High: 2, Review: 3 };
+  var TECH_RE = /^T\d{4}(\.\d{3})?$/;
+  var state = { doc: null, items: [], truncated: 0 };
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) { e.className = cls; }
+    if (text !== undefined) { e.textContent = text; }
+    return e;
+  }
+  // Every value that reaches the page goes through here: coerced to a string,
+  // control and bidirectional-override characters replaced (they can reorder
+  // what an analyst reads), and capped so one huge field cannot freeze the tab.
+  function s(v, max) {
+    var t;
+    if (v === null || v === undefined) { return ''; }
+    if (typeof v === 'string') { t = v; }
+    else if (typeof v === 'number' || typeof v === 'boolean') { t = String(v); }
+    else { try { t = JSON.stringify(v); } catch (e) { t = ''; } if (t === undefined) { t = ''; } }
+    t = t.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g, '\uFFFD');
+    var m = max || MAX_TEXT;
+    if (t.length > m) { t = t.slice(0, m) + ' ... [' + (t.length - m) + ' more characters not shown]'; }
+    return t;
+  }
+  function level(f) {
+    if (f.iocMatch === true) { return 'IOC'; }
+    var c = Number(f.confidence);
+    if (c >= 0.95) { return 'IOC'; }
+    if (c >= 0.85) { return 'Correlated'; }
+    if (c >= 0.7) { return 'High'; }
+    return 'Review';
+  }
+  function setMsg(text, isErr) {
+    var m = $('msg');
+    m.textContent = text;
+    m.className = isErr ? 'msg err' : 'msg';
+  }
+  function kv(dl, key, val) {
+    var d = el('div');
+    d.appendChild(el('dt', '', key));
+    d.appendChild(el('dd', '', val));
+    dl.appendChild(d);
+  }
+
+  function renderSummary(doc) {
+    var p = $('summary');
+    p.textContent = '';
+    var dl = el('dl', 'kv');
+    kv(dl, 'Host', s(doc.host, 200) || '-');
+    kv(dl, 'Platform', s(doc.platform, 50) || '-');
+    kv(dl, 'OS', s(doc.os, 200) || '-');
+    kv(dl, 'Collected', s(doc.started || doc.generated, 60) || '-');
+    kv(dl, 'Case', s(doc.caseId, 100) || '-');
+    kv(dl, 'Tool', (s(doc.tool, 80) + ' ' + s(doc.version, 30)).trim() + (doc.schemaVersion ? ' (schema ' + s(doc.schemaVersion, 20) + ')' : ''));
+    if ('privileged' in doc) { kv(dl, 'Privileged run', s(doc.privileged, 10)); }
+    if ('errorsLogged' in doc) { kv(dl, 'Errors logged', s(doc.errorsLogged, 20)); }
+    kv(dl, 'Findings', s(doc.activeFindingsCount !== undefined ? doc.activeFindingsCount + ' active, ' + doc.suppressedCount + ' suppressed' : (Array.isArray(doc.findings) ? doc.findings.length : 0), 80));
+    p.appendChild(dl);
+
+    var skipped = Array.isArray(doc.modulesSkipped) ? doc.modulesSkipped : [];
+    if (skipped.length) {
+      p.appendChild(el('p', 'warn', 'Requested but never run (evidence is MISSING, not absent): ' + skipped.map(function (x) { return s(x, 60); }).join(', ')));
+    }
+    var ms = Array.isArray(doc.moduleStatus) ? doc.moduleStatus : [];
+    var bad = ms.filter(function (m) { return m && m.status && m.status !== 'ok'; });
+    if (bad.length) {
+      p.appendChild(el('p', 'warn', 'Modules that did not finish cleanly. An empty section from one of these is missing evidence, not a clean host.'));
+      var t = el('table');
+      var hr = el('tr');
+      ['Module', 'Status', 'Seconds', 'Errors'].forEach(function (h) { hr.appendChild(el('th', '', h)); });
+      t.appendChild(hr);
+      bad.forEach(function (m) {
+        var r = el('tr');
+        r.appendChild(el('td', '', s(m.module, 80)));
+        r.appendChild(el('td', '', s(m.status, 20)));
+        r.appendChild(el('td', '', s(m.seconds, 20)));
+        r.appendChild(el('td', '', s(m.errors, 20)));
+        t.appendChild(r);
+      });
+      p.appendChild(t);
+    }
+    var lim = Array.isArray(doc.moduleLimitations) ? doc.moduleLimitations : [];
+    if (lim.length) {
+      p.appendChild(el('p', 'warn', 'What the collector could not do on this run:'));
+      var ul = el('ul', 'paths');
+      lim.forEach(function (l) {
+        if (!l) { return; }
+        ul.appendChild(el('li', '', (l.module ? s(l.module, 60) + ': ' : '') + s(l.limitation, 500)));
+      });
+      p.appendChild(ul);
+    }
+    p.classList.remove('hidden');
+  }
+
+  function fillSelect(sel, label, values) {
+    sel.textContent = '';
+    var o = el('option', '', label);
+    o.value = '';
+    sel.appendChild(o);
+    values.forEach(function (v) {
+      var x = el('option', '', v);
+      x.value = v;
+      sel.appendChild(x);
+    });
+  }
+  function uniq(arr) {
+    var seen = {}, out = [];
+    arr.forEach(function (v) { if (!Object.prototype.hasOwnProperty.call(seen, v)) { seen[v] = 1; out.push(v); } });
+    return out.sort();
+  }
+
+  function guideFor(cls) {
+    return Object.prototype.hasOwnProperty.call(GUIDE, cls) ? GUIDE[cls] : GENERIC;
+  }
+
+  function card(it) {
+    var f = it.raw;
+    var d = el('details', 'f' + (it.sup ? ' sup' : ''));
+    var sm = el('summary');
+    sm.appendChild(el('span', 'chip sev-' + (it.sev === 'High' ? 'High' : 'Review'), it.sev || 'Review'));
+    sm.appendChild(el('span', 'chip lv-' + it.lv, it.lv));
+    sm.appendChild(el('span', 'cls', it.cls));
+    sm.appendChild(el('span', 'fmsg', it.msg));
+    d.appendChild(sm);
+    var b = el('div', 'body');
+    if (it.detail) { b.appendChild(el('div', 'detail', it.detail)); }
+    var meta = el('div', 'meta');
+    function m(k, v) { if (v) { var sp = el('span'); sp.appendChild(el('b', '', k + ': ')); sp.appendChild(document.createTextNode(v)); meta.appendChild(sp); } }
+    m('ID', s(f.id, 40));
+    m('Module', it.mod);
+    m('Category', s(f.category, 60));
+    m('Collected', s(f.collected_at, 40));
+    m('Confidence', s(f.confidence, 10));
+    m('Why this confidence', s(f.confidenceReason, 300));
+    if (it.sup) { m('Suppressed by allowlist', s(f.suppressReason, 300) || 'yes'); }
+    if (f.iocMatch === true) { m('IOC indicator', s(f.iocIndicator, 200)); }
+    b.appendChild(meta);
+    var paths = Array.isArray(f.paths) ? f.paths : [];
+    if (paths.length) {
+      b.appendChild(el('div', 'muted', 'Paths named by this finding'));
+      var ul = el('ul', 'paths');
+      paths.slice(0, 50).forEach(function (p) { ul.appendChild(el('li', '', s(p, 400))); });
+      b.appendChild(ul);
+    }
+    var techs = Array.isArray(f.technique) ? f.technique : [];
+    if (techs.length) {
+      var tp = el('p');
+      tp.appendChild(el('span', 'muted', 'ATT&CK: '));
+      var first = true;
+      techs.slice(0, 20).forEach(function (t) {
+        var id = typeof t === 'string' ? t : '';
+        if (!first) { tp.appendChild(document.createTextNode(', ')); }
+        first = false;
+        if (TECH_RE.test(id)) {
+          var a = el('a', '', id);
+          a.href = 'https://attack.mitre.org/techniques/' + id.replace('.', '/') + '/';
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          tp.appendChild(a);
+        } else {
+          tp.appendChild(document.createTextNode(s(t, 30)));
+        }
+      });
+      b.appendChild(tp);
+    }
+    var g = guideFor(it.cls);
+    var gd = el('div', 'guide');
+    gd.appendChild(el('h3', '', 'Next step - ' + g.title));
+    [['Ask', g.ask], ['Look at', g.look], ['Often benign', g.benign], ['Escalate when', g.escalate]].forEach(function (row) {
+      var pp = el('p');
+      pp.appendChild(el('b', '', row[0] + ': '));
+      pp.appendChild(document.createTextNode(row[1]));
+      gd.appendChild(pp);
+    });
+    b.appendChild(gd);
+    d.appendChild(b);
+    return d;
+  }
+
+  function apply() {
+    var q = $('q').value.toLowerCase();
+    var fs = $('fsev').value, fc = $('fconf').value, fm = $('fmod').value, fl = $('fcls').value, showSup = $('fsup').checked;
+    var list = $('list');
+    list.textContent = '';
+    var shown = 0, hiddenSup = 0;
+    state.items.forEach(function (it) {
+      if (it.sup && !showSup) { hiddenSup++; return; }
+      if (fs && it.sev !== fs) { return; }
+      if (fc && it.lv !== fc) { return; }
+      if (fm && it.mod !== fm) { return; }
+      if (fl && it.cls !== fl) { return; }
+      if (q && it.hay.indexOf(q) < 0) { return; }
+      list.appendChild(card(it));
+      shown++;
+    });
+    var c = shown + ' of ' + state.items.length + ' findings shown';
+    if (hiddenSup) { c += ' (' + hiddenSup + ' suppressed hidden)'; }
+    if (state.truncated) { c += '; ' + state.truncated + ' more not loaded'; }
+    $('count').textContent = c;
+  }
+
+  function load(doc) {
+    var arr = doc && Array.isArray(doc.findings) ? doc.findings : null;
+    if (!arr) { throw new Error('No "findings" array: this is not a TATAR summary.json or findings.json.'); }
+    state.doc = doc;
+    state.truncated = Math.max(0, arr.length - MAX_FINDINGS);
+    state.items = arr.slice(0, MAX_FINDINGS).filter(function (f) { return f && typeof f === 'object'; }).map(function (f) {
+      var it = {
+        raw: f,
+        sev: s(f.severity, 20),
+        lv: level(f),
+        mod: s(f.module, 60) || s(f.category, 60),
+        cls: s(f.artifactClass, 60) || 'unknown',
+        msg: s(f.message, 600),
+        detail: s(f.detail, MAX_TEXT),
+        sup: f.suppressed === true
+      };
+      it.hay = (it.msg + ' ' + it.detail + ' ' + it.cls + ' ' + it.mod + ' ' + s(f.id, 40) + ' ' + (Array.isArray(f.paths) ? f.paths.map(function (p) { return s(p, 400); }).join(' ') : '')).toLowerCase();
+      return it;
+    });
+    state.items.sort(function (a, b) {
+      var sa = SEV_ORDER[a.sev] === undefined ? 2 : SEV_ORDER[a.sev], sb = SEV_ORDER[b.sev] === undefined ? 2 : SEV_ORDER[b.sev];
+      if (a.sup !== b.sup) { return a.sup ? 1 : -1; }
+      if (sa !== sb) { return sa - sb; }
+      if (LV_ORDER[a.lv] !== LV_ORDER[b.lv]) { return LV_ORDER[a.lv] - LV_ORDER[b.lv]; }
+      return 0;
+    });
+    renderSummary(doc);
+    fillSelect($('fsev'), 'any', ['High', 'Review']);
+    fillSelect($('fconf'), 'any', ['IOC', 'Correlated', 'High', 'Review']);
+    fillSelect($('fmod'), 'any', uniq(state.items.map(function (i) { return i.mod; })));
+    fillSelect($('fcls'), 'any', uniq(state.items.map(function (i) { return i.cls; })));
+    $('q').value = '';
+    $('fsup').checked = false;
+    $('controls').classList.remove('hidden');
+    apply();
+  }
+
+  function readFile(file) {
+    if (!file) { return; }
+    if (file.size > MAX_BYTES) { setMsg('That file is larger than 100 MB; it was not opened.', true); return; }
+    file.text().then(function (text) {
+      var doc;
+      try { doc = JSON.parse(text); } catch (e) { throw new Error('Not valid JSON.'); }
+      load(doc);
+      setMsg('Loaded ' + s(file.name, 120) + '.', false);
+    }).catch(function (e) {
+      setMsg(s(e && e.message ? e.message : 'Could not open the file.', 200), true);
+    });
+  }
+
+  $('file').addEventListener('change', function (e) { readFile(e.target.files && e.target.files[0]); });
+  var drop = $('drop');
+  ['dragenter', 'dragover'].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function (e) { readFile(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]); });
+  ['q', 'fsev', 'fconf', 'fmod', 'fcls', 'fsup'].forEach(function (id) { $(id).addEventListener('input', apply); $(id).addEventListener('change', apply); });
+  // Test hook is deliberately absent: the page exposes nothing to its own scripts.
+})();</script>
+</body>
+</html>

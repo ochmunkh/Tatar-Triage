@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.6-blue" alt="v1.6">
+  <img src="https://img.shields.io/badge/version-1.7-blue" alt="v1.7">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows 10/11">
   <img src="https://img.shields.io/badge/modules-33-5eead4" alt="33 modules">
@@ -382,6 +382,14 @@ quietly shipping an unexplained artifact.
 
 ---
 
+## Viewing findings (`tools/viewer.html`)
+
+A single static page for reading `summary.json` or `findings.json` on **your own analysis machine**: open it in a browser and drop the file on it. It makes no network request (its Content-Security-Policy is `default-src 'none'`), renders every value as text, and adds nothing to the collector — the collector, its speed and its AV surface are unchanged.
+
+For each finding it shows the confidence by name (Review, High, Correlated, IOC) with the reason, ATT&CK links built only from validated technique IDs, the paths the finding names, and a short next step for its `artifactClass`: what to ask, where to look, what is often benign, when to escalate. The guidance covers all 46 classes, contains no link, and never asks you to run anything on the affected host. Above the findings it puts what the collector could **not** do — skipped modules, modules that did not finish (`moduleStatus`), limitations — because an empty list means nothing without them.
+
+`.github/scripts/check_viewer.py` is a CI gate: the policy hashes must match the file, the script may use no HTML-string sink, network call or storage, the file must be plain ASCII, and guidance must exist for exactly the closed `artifactClass` set. `tests/test-viewer.py` (needs Playwright) loads hostile `findings.json` files. After a deliberate edit of the viewer's script or style, `python .github/scripts/check_viewer.py --seal` refreshes the policy hashes.
+
 ## What the evidence IS: `artifactClass`
 
 `category` says which module raised a finding. `artifactClass` says what the
@@ -550,7 +558,11 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.6.0 — did every module finish, and is the manifest the one we wrote (current)
+### v1.7.0 — read the findings without trusting them (current)
+
+- **`tools/viewer.html`.** A static page that opens `summary.json` / `findings.json` on your own machine, with confidence by name, validated ATT&CK links, and a next step for each of the 46 `artifactClass` values. No network, text-only rendering, a sealed Content-Security-Policy checked in CI. The collector gains no lines. It ships as a release asset and is covered by `SHA256SUMS.txt`.
+
+### v1.6.0 — did every module finish, and is the manifest the one we wrote
 
 - **`summary.moduleStatus` (schema 1.6).** One entry per requested module: `ok`, `warn` (it finished but logged errors), `failed` (it crashed, or on Linux its primary artifact was not produced) or `skipped` (an unknown module name), with seconds and the error count. `modulesRun` says what was asked for and `moduleLimitations` says what a module could not do; this says whether it got to finish — an empty section from a `failed` module is missing evidence, not a clean host. Same shape on both editions.
 - **The manifest's own SHA-256.** `manifest_sha256.txt` cannot hash itself, so its digest is now printed at the end of the run, written to `tatar.log`, and saved beside it as `manifest_sha256.txt.sha256` in `sha256sum` format: `sha256sum -c manifest_sha256.txt.sha256` verifies the manifest, then `sha256sum -c manifest_sha256.txt` verifies the evidence. Copy the printed digest into the case notes and the chain of custody no longer rests on the folder alone.
@@ -1027,6 +1039,14 @@ finding-ийг — allowlist тэр замыг аль хэдийн «мэдэг�
 унагаана, тайлбаргүй артефакт чимээгүй гаргахын оронд.
 
 ---
+
+## Finding-ийг харах (`tools/viewer.html`)
+
+`summary.json` эсвэл `findings.json`-ийг **өөрийн шинжилгээний машин** дээр уншихад зориулсан ганц статик хуудас: browser-т нээгээд файлаа чирж оруулна. Сүлжээнд хандахгүй (Content-Security-Policy нь `default-src 'none'`), утга бүрийг текстээр л зурна, collector-т юу ч нэмэхгүй тул collector, түүний хурд, AV surface өөрчлөгдөхгүй.
+
+Finding бүрт confidence-ийг нэрээр нь (Review, High, Correlated, IOC) шалтгаантай нь, батлагдсан technique ID-аас үүссэн ATT&CK холбоос, finding-ийн нэрлэсэн path-ууд, мөн `artifactClass`-ийн дараагийн алхмыг үзүүлнэ: юу асуух, хаана харах, юу нь ихэвчлэн хэвийн, хэзээ escalate хийх. Guidance 46 ангилал бүрийг хамарсан, холбоос агуулаагүй, хохирсон host дээр юм ажиллуул гэж хэзээ ч хэлэхгүй. Finding-ийн дээр collector-ийн **хийж чадаагүй** зүйлийг — алгассан module, дуусаагүй module (`moduleStatus`), хязгаарлалт — гаргана, учир нь тэдгээргүйгээр хоосон жагсаалт юу ч хэлэхгүй.
+
+`.github/scripts/check_viewer.py` нь CI gate: policy-ийн hash файлтай таарах, script нь HTML-string sink, сүлжээний дуудлага, storage ашиглахгүй байх, файл цэвэр ASCII байх, guidance нь хаалттай `artifactClass` олонлогтой яг таарах ёстой. `tests/test-viewer.py` (Playwright хэрэгтэй) нь хортой `findings.json` файлуудыг ачаална. Viewer-ийн script эсвэл style-ийг зориуд өөрчилсний дараа `python .github/scripts/check_viewer.py --seal` нь policy hash-ийг шинэчилнэ.
 
 ## Нотлох баримт юу болох нь: `artifactClass`
 

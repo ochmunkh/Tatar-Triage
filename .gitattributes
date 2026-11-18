@@ -8,3 +8,4 @@
 *.json text eol=lf
 *.png  binary
 *.svg  text eol=lf
+*.html text eol=lf

@@ -4,6 +4,41 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.7.0] — 2026-11-18
+
+### Added
+- **`tools/viewer.html`** — one static file for reading `summary.json` or
+  `findings.json` on the analyst's own machine. Confidence is shown by name
+  (Review, High, Correlated, IOC) with its reason; ATT&CK links are built only
+  from technique IDs that match `T####` or `T####.###`; every finding carries a
+  short next step for its `artifactClass` (what to ask, where to look, what is
+  often benign, when to escalate) for all 46 classes, with no link and nothing
+  to run on the affected host. Skipped modules, modules that did not finish and
+  the run's limitations are shown above the findings.
+- The page is hardened rather than assumed safe: values are written with
+  `textContent` only, control and bidirectional-override characters are
+  replaced, field lengths and finding counts are capped, and the
+  Content-Security-Policy is `default-src 'none'` with the script and style
+  pinned by SHA-256.
+- **`.github/scripts/check_viewer.py`** (CI): policy hashes match the file, no
+  HTML-string sink, dynamic code, network call or storage in the script, no
+  inline handler, style attribute or URL in the markup, ASCII-only with LF
+  line endings, and guidance that matches the closed `artifactClass` set
+  exactly (46 Windows, 18 of them also Linux). `--seal` refreshes the hashes
+  after a deliberate edit.
+- `tests/test-viewer.py` (needs Playwright, not part of CI): loads an ordinary
+  document and a hostile one (markup in every field, a 2 MB string, a prototype
+  name as a class, bidirectional characters, malformed fields) and asserts that
+  no script runs, no element is injected, no request leaves the page and no
+  policy violation is logged.
+- The release attaches `viewer.html` and lists it in `SHA256SUMS.txt`.
+
+### Changed
+- `.gitattributes` pins `*.html` to LF: the policy hashes are computed over the
+  file's exact text, so a CRLF checkout would break the page on Windows.
+- Version `1.7.0` on both editions. The collectors are otherwise unchanged and
+  `schemaVersion` stays `1.6`.
+
 ## [1.6.0] — 2026-11-18
 
 ### Added
