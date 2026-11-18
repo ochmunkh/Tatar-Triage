@@ -10,8 +10,9 @@ section added on one side belongs on the other too.
 
 Compared: heading counts per level, table rows, fenced code blocks.
 
-Usage:  python3 .github/scripts/check_readme_parity.py [README.md]
-        python3 .github/scripts/check_readme_parity.py linux/README.md
+Usage:  python3 .github/scripts/check_readme_parity.py --pairs          every EN/MN file pair
+        python3 .github/scripts/check_readme_parity.py EN.md MN.md     one pair
+        python3 .github/scripts/check_readme_parity.py linux/README.md  a file with both halves
 Exit :  0 in sync, 1 drifted, 2 could not read the file / find the sections.
 
 The accepted asymmetry is PER FILE (see ACCEPTED_DELTA): README.md carries a
@@ -81,24 +82,6 @@ LABELS = {
 # an exact mirror (all zeros), so a new bilingual document starts with no
 # backlog instead of silently inheriting this one's.
 ACCEPTED_DELTA_BY_FILE = {
-    "README.md": {
-        # The English half carries a per-version changelog; the Mongolian half
-        # deliberately does not (it points at CHANGELOG.md instead), so every
-        # release adds one English-only heading here. 19 as of v1.9.0.
-        #
-        # This number is MEANT to be bumped by one per release and by nothing
-        # else. If a release moves it by more than one, a section was added to
-        # the English half and not mirrored -- which is the drift this gate
-        # exists to catch, so raise the Mongolian section rather than the number.
-        "headings": 19,      # EN 39 vs MN 25 -- the condensed changelog + Legal
-        "table_rows": 0,     # in sync
-        # -1: the Mongolian half is MORE complete here. Its "Ашиглах" section
-        # documents Windows AND Linux usage inline (a powershell block and a
-        # bash block), while the English "Usage" covers Windows only and defers
-        # Linux to linux/README.md. A negative entry is a Mongolian surplus and
-        # is allowed -- the check compares structure, not which language leads.
-        "code_blocks": -1,
-    },
     # Written 2026-09-30 as a full mirror: the Linux collector had no Mongolian
     # documentation at all, which docs/TRANSLATION_NEEDED.md called the largest
     # genuine gap in the repo -- a Mongolian-speaking responder on a Linux host
@@ -131,7 +114,58 @@ def measure(body: str) -> dict:
     return counts
 
 
+PAIRS = [
+    ("README.md", "README.mn.md"),
+    ("docs/ARCHITECTURE.md", "docs/ARCHITECTURE.mn.md"),
+    ("docs/USAGE.md", "docs/USAGE.mn.md"),
+    ("docs/MODULES.md", "docs/MODULES.mn.md"),
+    ("docs/OUTPUT.md", "docs/OUTPUT.mn.md"),
+    ("docs/ANALYSIS.md", "docs/ANALYSIS.mn.md"),
+    ("docs/EVIDENCE.md", "docs/EVIDENCE.mn.md"),
+    ("docs/OPERATIONS.md", "docs/OPERATIONS.mn.md"),
+]
+# Recorded English-only / Mongolian-only surplus per PAIR (EN minus MN). Zero is
+# an exact mirror, the default. The README was split by language and by topic
+# in 1.9.0; the figures below are the asymmetry that existed at the split, kept
+# as a baseline so it can only shrink or be a conscious decision.
+ACCEPTED_DELTA_BY_PAIR = {
+    # The Mongolian architecture page keeps the "Нууцлал" (privacy) section,
+    # written for a reader newer to DFIR; a negative entry is a Mongolian surplus.
+    "docs/ARCHITECTURE.md": {"headings": -1},
+}
+
+
+def pair_main(en_path, mn_path) -> int:
+    for q in (en_path, mn_path):
+        if not Path(q).is_file():
+            print("check-readme-parity: no such file: %s" % q, file=sys.stderr)
+            return 2
+    en = measure(Path(en_path).read_text(encoding="utf-8"))
+    mn = measure(Path(mn_path).read_text(encoding="utf-8"))
+    accepted = ACCEPTED_DELTA_BY_PAIR.get(en_path, NO_DELTA)
+    problems = []
+    for k in LABELS:
+        if en[k] - mn[k] != accepted.get(k, 0):
+            problems.append("  %-12s EN=%-4d MN=%-4d (recorded difference %d, found %d)"
+                            % (LABELS[k], en[k], mn[k], accepted.get(k, 0), en[k] - mn[k]))
+    if problems:
+        print("check-readme-parity: %s <-> %s moved apart from the recorded baseline" % (en_path, mn_path), file=sys.stderr)
+        print("\n".join(problems), file=sys.stderr)
+        print("\n  A section, table or code block added on one side belongs on the other.\n"
+              "  Write the Mongolian by hand; never machine-translate.", file=sys.stderr)
+        return 1
+    note = "exact mirror" if not any(accepted.values()) else "recorded difference " + str({k: v for k, v in accepted.items() if v})
+    print("check-readme-parity: %s <-> %s OK (%s)  EN %s  MN %s" % (
+        en_path, mn_path, note,
+        " ".join("%s=%d" % (k, en[k]) for k in LABELS), " ".join("%s=%d" % (k, mn[k]) for k in LABELS)))
+    return 0
+
+
 def main(argv) -> int:
+    if len(argv) == 3:
+        return pair_main(argv[1], argv[2])
+    if len(argv) == 2 and argv[1] == "--pairs":
+        return max(pair_main(a, b) for a, b in PAIRS)
     path = Path(argv[1] if len(argv) > 1 else "README.md")
     if not path.is_file():
         print("check-readme-parity: no such file: %s" % path, file=sys.stderr)

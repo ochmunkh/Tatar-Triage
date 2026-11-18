@@ -1,0 +1,101 @@
+<p align="center">
+  <img src="banner.png" alt="TATAR Triage Toolkit" width="880">
+</p>
+
+<p align="center">
+  <b>Windows (PowerShell) ба Linux (Bash)-д зориулсан хурдан, нэг файлтай DFIR triage цуглуулагч.</b>
+</p>
+<p align="center">
+  <b><a href="README.md">English</a> · Монгол</b>
+</p>
+
+<p align="center">
+  <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <img src="https://img.shields.io/badge/version-1.9-blue" alt="v1.9">
+  <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6" alt="Windows and Linux">
+  <img src="https://img.shields.io/badge/modules-33-5eead4" alt="33 modules">
+  <img src="https://img.shields.io/badge/read--only-first-14b8a6" alt="read-only first">
+  <img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT">
+</p>
+
+---
+
+Төгсгөлийн төхөөрөмж халдагдсан байж болзошгүй үед олон хэрэгсэл суулгалгүй нотолгоог *хурдан* хадгалах шаардлагатай болдог. TATAR нь чухал түр зуурын болон тогтвортой артефактуудыг volatility-ийн дарааллаар нэг хэшлэгдсэн хавтсанд цуглуулж, **review хийх сэжүүрүүдийн** (эцсийн дүгнэлт биш) нэг хуудас дүгнэлт бичнэ.
+
+> Хээрийн нөхцөлд, нэмэлт хамаарал багатай, triage логийг хурдан гаргах шаардлагатай эхний хариу арга хэмжээ авагч, шинжээчдэд зориулав.
+
+## Triage гэж юу вэ?
+
+Triage гэдэг ойлголт эмнэлгээс гаралтай: эмч өвчтөнд хамгийн эхний үнэлгээг хурдан хийж, юунд тэргүүн ээлжид анхаарахыг шийддэг. Энэ хэрэгсэл мөн адил системийн одоогийн төлөвийг хурдан үнэлж, хамгийн чухал мэдээлэл болон эрсдэлийг ялган харуулна. Sandbox-д malware шинжилдэггүй, Volatility шиг memory dump задлахгүй, Autopsy шиг full-disk forensic хийдэггүй.
+
+## Хурдан эхлэх
+
+**Windows** (PowerShell 5.1+, Administrator санал болгоно):
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+.\Tatar.ps1 -All -OutputPath E:\Evidence -CaseId IR-2026-014 -Examiner "Нэр" -Compress
+```
+
+**Linux** (Bash, root санал болгоно):
+
+```bash
+chmod +x linux/tatar-linux.sh
+sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-014
+```
+
+`-List` / `--list` модулиудыг харуулна, `-DryRun` / `--dry-run` юу ч бичихгүйгээр төлөвлөгөөг шалгана. Run бүр exit code (0 цэвэр, 2 асуудалтай дууссан)-той дуусч, [`viewer`](tools/viewer.html)-ээр offline нээж болох хавтас үлдээнэ.
+
+## Юу өгдөг вэ
+
+- **Windows 33 / Linux 18 модуль**, RFC 3227 order of volatility дарааллаар, нэг output contract (`schemaVersion 1.7`)-той.
+- **Read-only-first.** Хүнд/эвдрэлтэй үйлдлүүд (memory dump, hive save, бүтэн EVTX) анхдагчаар унтраалттай. Нууц үг задлахгүй, тайлахгүй.
+- **Энгийн хэрэглэгч, offline, AV-д аюулгүй.** Сүлжээний дуудлага, обфускаци, AV/AMSI bypass үгүй. [Амьд хост дээр юу хийдэг, юу хийдэггүй](docs/AV-SAFETY.md).
+- **Баталгаажуулж болох нотолгоо.** Файл бүрийн SHA-256 manifest, chain of custody, release attestation.
+- **Тогтвортой дугаартай finding.** Finding бүр тогтвортой `fingerprint`-тэй тул нэг хостын хоёр scan-ийг харьцуулж болно (доорх хэрэгслүүд).
+
+<p align="center">
+  <img src="docs/sample_summary.png" alt="Triage дүгнэлт" width="760">
+</p>
+
+## Шинжилгээний хэрэгслүүд
+
+Шинжээчийн машин дээр, зөвхөн стандарт сан, offline ажиллана ([дэлгэрэнгүй](docs/TOOLS.md)):
+
+| Хэрэгсэл | Хариулах асуулт |
+|---|---|
+| `tools/viewer.html` | Run-ийг хөтөч дээр offline уншина |
+| `tools/tatar-diff.py` | Baseline scan-ээс хойш юу өөрчлөгдсөн бэ? |
+| `tools/tatar-timeline.py` | Юу, ямар дарааллаар болсон бэ? (Timesketch CSV) |
+| `tools/tatar-aggregate.py` | Аль хост бусдаасаа ялгаатай вэ? |
+
+## Баримт бичиг
+
+| Унших | Юуны тулд |
+|---|---|
+| [Ашиглах](docs/USAGE.mn.md) | Шаардлага, бүх сонголт, exit code |
+| [Модуль ба ATT&CK](docs/MODULES.mn.md) | Модуль бүр юу цуглуулдаг, техникийн холбоос |
+| [Гаралт](docs/OUTPUT.mn.md) | Дүгнэлт, finding, гүйцэтгэлийн лог, хавтасны бүтэц |
+| [Нотлох баримтыг шинжлэх](docs/ANALYSIS.mn.md) | Хамаарал, Sigma руу шилжүүлэх, дараагийн алхам |
+| [Нотлох баримт юу болох нь](docs/EVIDENCE.mn.md) | `artifactClass`, платформын ялгаа, known-answer шалгалт |
+| [Архитектур](docs/ARCHITECTURE.mn.md) | Өгөгдлийн урсгал, finding загвар, allowlist ба IOC |
+| [Хэрэглээ ба хязгаарлалт](docs/OPERATIONS.mn.md) | Анхаарах зүйл, AV, мэдэгдэж буй хязгаарлалт |
+| [Linux хувилбар](linux/README.md) | Bash цуглуулагч тусдаа |
+| [Changelog](CHANGELOG.md) | Бүх release |
+| [Аюулгүй байдлын тест](docs/SECURITY-TESTING.md) · [Баталгаажуулалт](docs/VALIDATION.md) | Хэрхэн тестлэгддэг, лабораторийн үр дүн (англи хэлээр) |
+
+Баримт бүр англи хувьтай (`.md`).
+
+## Холбоо барих
+
+**Зохиогч:** Enkhbat.O, Security Analyst ·
+[Facebook](https://www.facebook.com/enkhbat.o/) · [GitHub](https://github.com/ochmunkh)
+
+Зөвхөн **зөвшөөрөлтэй** хэрэглээнд: өөрийн эзэмшлийн буюу бичгээр зөвшөөрөл авсан системд ашиглана уу.
+
+Хэрэгсэл дээр өөрөө аюулгүй байдлын асуудал олсон бол [`SECURITY.md`](SECURITY.md)-г үзээд хувиараа мэдэгдээрэй. Хувь нэмэр оруулахыг хүсвэл [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+## Лиценз
+
+MIT (`LICENSE`-г үзнэ үү).

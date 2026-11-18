@@ -93,8 +93,8 @@ and read-only on a host that may already be compromised.
     refused. `tests/test-security.sh` and `tests/Test-Security.ps1` pin this; see
     `docs/SECURITY-TESTING.md`.
 12. **Mongolian is a first-class output language**, not a translation pasted
-    onto an English tool. The two halves of `README.md`, `linux/README.md` and
-    `docs/MITRE_ATTACK.md` are parity-checked in CI. Technical terms (finding,
+    onto an English tool. `README.md` / `README.mn.md`, each `docs/*.md` / `docs/*.mn.md` pair,
+    `linux/README.md` and `docs/MITRE_ATTACK.md` are parity-checked in CI. Technical terms (finding,
     allowlist, IOC, contract, pattern match, suppressed) stay in English in both
     languages — translating them cuts the reader off from the JSON field names.
 
@@ -152,7 +152,7 @@ Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Documentation facts that are derivable from the code are checked, not proof-read: the `docs-parity`
   CI job asserts the module-count badges, the English/Mongolian module lists and the ATT&CK coverage
   in `docs/MITRE_ATTACK.md`. Run it locally with `python3 .github/scripts/check_docs_parity.py .`
-- Release: update `CHANGELOG.md` + the README changelog → commit → annotated tag `vX.Y.Z` →
+- Release: update `CHANGELOG.md` and the version badge in both READMEs → commit → annotated tag `vX.Y.Z` →
   push the branch, then push the tag. The `Release` workflow builds `SHA256SUMS.txt` and attaches
   both collectors and both sample JSONs to the release, taking its notes from the matching
   `CHANGELOG.md` section. If the tag has no release yet it creates a **draft** — review it and

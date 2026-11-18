@@ -411,7 +411,15 @@ def main(argv):
     root = argv[1] if len(argv) > 1 else "."
     ps1 = read(root, "Tatar.ps1")
     sh = read(root, "linux/tatar-linux.sh")
-    readme = read(root, "README.md")
+    readme_en = read(root, "README.md")
+    readme_mn = read(root, "README.mn.md")
+    mod_en = read(root, "docs/MODULES.md")
+    mod_mn = read(root, "docs/MODULES.mn.md")
+    # The README is split by language and by topic. Prose counts and the
+    # current-schema mentions live in several of these files, so they are
+    # checked over their concatenation; each pattern still has to match.
+    readme = "\n".join([readme_en, readme_mn, mod_en, mod_mn,
+                        read(root, "docs/ARCHITECTURE.md"), read(root, "docs/ARCHITECTURE.mn.md")])
     lreadme = read(root, "linux/README.md")
     mitre = read(root, "docs/MITRE_ATTACK.md")
 
@@ -423,13 +431,15 @@ def main(argv):
         fail("linux/tatar-linux.sh: could not parse MOD_NAMES")
 
     # 1. module-count badges
-    check_badge("README.md", readme, r"badge/modules-(\d+)-", len(win))
+    check_badge("README.md", readme_en, r"badge/modules-(\d+)-", len(win))
+    check_badge("README.mn.md", readme_mn, r"badge/modules-(\d+)-", len(win))
     check_badge("linux/README.md", lreadme, r"badge/modules-(\d+)-", len(lin))
 
     # 1b. version badges, against the one version constant per collector
     ver = tool_version(ps1, sh)
     if ver:
-        check_version_badge("README.md", readme, ver)
+        check_version_badge("README.md", readme_en, ver)
+        check_version_badge("README.mn.md", readme_mn, ver)
         check_version_badge("linux/README.md", lreadme, ver)
 
     # 1b-ii. module counts in prose and the diagram, and the schemaVersion the
@@ -466,12 +476,12 @@ def main(argv):
         check_single_version_literal("linux/tatar-linux.sh", sh, fullsh.group(1))
 
     # 2. bilingual module lists
-    en = slice_block(readme, "\n## Modules\n", "\n---")
-    mn = slice_block(readme, "\n## Модулиуд\n", "\n---")
+    en = slice_block(mod_en, "\n## Modules\n", "\n## ")
+    mn = slice_block(mod_mn, "\n## Модулиуд\n", "\n## ")
     if not en:
-        fail("README.md: the English '## Modules' section was not found")
+        fail("docs/MODULES.md: the English '## Modules' section was not found")
     if not mn:
-        fail("README.md: the Mongolian '## Модулиуд' section was not found")
+        fail("docs/MODULES.mn.md: the Mongolian '## Модулиуд' section was not found")
 
     def listed(section, label, where):
         for line in section.splitlines():
@@ -486,16 +496,16 @@ def main(argv):
             en_win = dotted_list(line.split(":", 1)[1] if ":" in line else line)
             break
     if en_win is None:
-        fail("README.md '## Modules': the Windows module list was not found")
-    en_lin = listed(en, "Linux (", "README.md '## Modules'")
-    mn_win = listed(mn, "Windows (", "README.md '## Модулиуд'")
-    mn_lin = listed(mn, "Linux (", "README.md '## Модулиуд'")
+        fail("docs/MODULES.md '## Modules': the Windows module list was not found")
+    en_lin = listed(en, "Linux (", "docs/MODULES.md '## Modules'")
+    mn_win = listed(mn, "Windows (", "docs/MODULES.mn.md '## Модулиуд'")
+    mn_lin = listed(mn, "Linux (", "docs/MODULES.mn.md '## Модулиуд'")
 
     for label, listed_mods, code_mods in (
-        ("README.md '## Modules' Windows", en_win, win),
-        ("README.md '## Modules' Linux", en_lin, lin),
-        ("README.md '## Модулиуд' Windows", mn_win, win),
-        ("README.md '## Модулиуд' Линукс", mn_lin, lin),
+        ("docs/MODULES.md '## Modules' Windows", en_win, win),
+        ("docs/MODULES.md '## Modules' Linux", en_lin, lin),
+        ("docs/MODULES.mn.md '## Модулиуд' Windows", mn_win, win),
+        ("docs/MODULES.mn.md '## Модулиуд' Линукс", mn_lin, lin),
         ("linux/README.md '## Modules'", first_list(
             slice_block(lreadme, "\n## Modules (order of volatility)\n", "\nCoverage"),
             "linux/README.md '## Modules (order of volatility)'"), lin),
@@ -514,15 +524,15 @@ def main(argv):
                  % (label, len(listed_mods), listed_mods, len(code_mods), code_mods))
 
     if en_win is not None and mn_win is not None and en_win != mn_win:
-        fail("README.md: the English and Mongolian Windows module lists differ")
+        fail("docs/MODULES: the English and Mongolian Windows module lists differ")
     if en_lin is not None and mn_lin is not None and en_lin != mn_lin:
-        fail("README.md: the English and Mongolian Linux module lists differ")
+        fail("docs/MODULES: the English and Mongolian Linux module lists differ")
 
     # the counts written into the Mongolian labels, e.g. "Windows (30):"
     for label, code_mods in (("Windows", win), ("Linux", lin)):
-        for m in re.finditer(r"\*\*%s \((\d+)\):\*\*" % label, readme):
+        for m in re.finditer(r"\*\*%s \((\d+)\):\*\*" % label, mod_en + mod_mn):
             if int(m.group(1)) != len(code_mods):
-                fail("README.md: '%s (%s)' but the code has %d modules"
+                fail("docs/MODULES: '%s (%s)' but the code has %d modules"
                      % (label, m.group(1), len(code_mods)))
 
     # 3. every emitted technique has a row in docs/MITRE_ATTACK.md

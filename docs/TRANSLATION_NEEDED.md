@@ -26,35 +26,14 @@ now in both languages.
 
 ## Medium — the recorded README backlog
 
-`README.md` carries a Mongolian half, but the two are **not** a mirror, and the
-asymmetry is recorded rather than hidden:
-`.github/scripts/check_readme_parity.py` holds an `ACCEPTED_DELTA` of
-
-| | English-only, was | English-only, now |
-|---|---:|---:|
-| sections | 18 | **10** |
-| table rows | 38 | **0** |
-| code blocks | 2 | **0** |
-
-Those numbers are a backlog, not a target. Writing any of it in Mongolian is
-welcome; when you do, **lower the matching number in `ACCEPTED_DELTA`**, or the
-check will keep discounting it and stop noticing future drift.
-
-**Written since this file was generated,** by hand and in the Mongolian half's
-own voice: `Demo`, the options table, the exit-code table, `Triage дүгнэлт ба
-finding`, `Гүйцэтгэлийн лог`, the full `MITRE ATT&CK тэмдэглэгээ` table, `AV-г
-тойрч гарахгүйгээр ажиллуулах`, and `Нэмэлт гадаад хэрэгсэл`. The two counts
-that reached **0** are the useful part: every table row and fenced block added
-to one half from here on is reported the run it appears, instead of being
-absorbed by a backlog that was never going to notice it.
-
-**What the remaining 10 sections are.** `## Changelog` and its ten release
-subsections, plus `## Legal`, whose text the Mongolian half already carries
-inside `## Холбоо барих` — twelve, less the two sections the Mongolian half has
-and the English one does not (`Triage гэж юу вэ?` and `Нууцлал`, both written
-for a reader newer to DFIR). They are last in the queue on purpose: the same
-reasoning that puts `CHANGELOG.md` under *Low* below applies to a condensed
-copy of it, and `linux/README.md` is worth more than both.
+~~`README.md` English-only backlog~~ **DONE — 1.9.0.** The README was split by
+language and by topic: `README.md` / `README.mn.md` are short front pages, and
+the reference material lives in `docs/` as seven pairs (`ARCHITECTURE`,
+`USAGE`, `MODULES`, `OUTPUT`, `ANALYSIS`, `EVIDENCE`, `OPERATIONS`, each with a
+`.mn.md` twin). Every pair is held to a structural mirror by
+`.github/scripts/check_readme_parity.py --pairs`; the only recorded difference
+is a Mongolian-only `Нууцлал` section in the architecture page. The per-version
+history is `CHANGELOG.md` alone (English).
 
 ## Low — contributor-facing
 
