@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 ## [Unreleased]
 
 ### Fixed
+- **Windows: the script and temp-executable scans were several times slower than they had to be.** `Get-ChildItem -Include` was replaced by one directory walk with the extension tested afterwards (`Get-FilesByExtension`, same results, unit-tested against `-Include`). On a developer workstation, as a standard user: `obfscan` 31 s -> 11 s, `indicators` 27 s -> 12 s.
+- **Windows: a standard-user run said "Initialization failure" for shadow copies.** Both sources need Administrator; the section now says so, names it in `moduleLimitations`, and does not query.
 - **Linux: the collector listed its own scratch directory in `timeline.csv`** (and in the executable-in-temp check). Found reading a Kali run, where three of the entries were the run's own temporary files.
 
 ### Changed

@@ -24,7 +24,7 @@ function Check {
 }
 $tokens = $null; $errs = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $Collector).Path, [ref]$tokens, [ref]$errs)
-foreach ($n in @('Read-TextAuto', 'Hide-UrlSecret', 'Remove-ExeToken', 'Test-WritableByUsers', 'Test-WmiDefaultBinding')) {
+foreach ($n in @('Read-TextAuto', 'Hide-UrlSecret', 'Remove-ExeToken', 'Test-WritableByUsers', 'Test-WmiDefaultBinding', 'Get-FilesByExtension')) {
     $def = $ast.Find({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true)
     if (-not $def) { Write-Host ('FAIL  ' + $n + ' not found'); exit 1 }
     . ([scriptblock]::Create($def.Extent.Text))
@@ -104,6 +104,18 @@ if ($live.Count -gt 0) {
     $scm = @($live | Where-Object { [string]$_.Filter.Name -eq 'SCM Event Log Filter' })
     if ($scm.Count -gt 0) { Check 'L5 : the real SCM binding on this machine is recognised' (Test-WmiDefaultBinding $scm[0] $lf) }
 } else { Write-Host '  SKIP  L5 : no WMI binding on this machine to read' -ForegroundColor Yellow }
+
+Write-Host "`nL6  Get-FilesByExtension"
+$tree = Join-Path $work 'tree'; New-Item -ItemType Directory -Path (Join-Path $tree 'a\b') -Force | Out-Null
+foreach ($n in 'x.ps1', 'a\y.PS1', 'a\b\z.js', 'a\b\w.exe', 'a\skip.txt', 'a\ps1.bak', 'a\b\k.js1', 'a\b\m.ps1x') { Set-Content -LiteralPath (Join-Path $tree $n) -Value 'x' }
+$old = Join-Path $tree 'a\old.ps1'; Set-Content -LiteralPath $old -Value 'x'; (Get-Item -LiteralPath $old).LastWriteTime = (Get-Date).AddDays(-90)
+$got = @(Get-FilesByExtension -Path $tree -Extension '.ps1', '.js' | ForEach-Object { $_.Name } | Sort-Object)
+$ref = @(Get-ChildItem -Path $tree -Recurse -Include *.ps1, *.js -File | ForEach-Object { $_.Name } | Sort-Object)
+Check 'L6 : same files as -Include (case-insensitive, no extension-prefix matches)' (($got -join ',') -eq ($ref -join ',')) (($got -join ',') + ' | ' + ($ref -join ','))
+Check 'L6 : .js1 and .ps1x are not matched' (-not ($got -contains 'k.js1' -or $got -contains 'm.ps1x'))
+$recent = @(Get-FilesByExtension -Path $tree -Extension '.ps1' -Since (Get-Date).AddDays(-30) | ForEach-Object { $_.Name })
+Check 'L6 : the date cutoff drops the old file' (-not ($recent -contains 'old.ps1') -and ($recent -contains 'x.ps1'))
+Check 'L6 : a missing folder gives nothing and no error' (@(Get-FilesByExtension -Path (Join-Path $work 'nope') -Extension '.ps1').Count -eq 0)
 
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''
