@@ -73,7 +73,7 @@ function Assert-Contract {
     Check "$Label : summary.json parses"            ($null -ne $S)
     if ($null -eq $S) { return }
 
-    Check "$Label : schemaVersion is 1.6"           ($S.schemaVersion -eq '1.6') "got '$($S.schemaVersion)'"
+    Check "$Label : schemaVersion is 1.7"           ($S.schemaVersion -eq '1.7') "got '$($S.schemaVersion)'"
     # moduleStatus: one well-formed entry for every module that was asked for.
     $msNames = @($S.moduleStatus | ForEach-Object { [string]$_.module })
     $missingMs = @($S.modulesRun | Where-Object { $msNames -notcontains [string]$_ })

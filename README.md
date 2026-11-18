@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.8-blue" alt="v1.8">
+  <img src="https://img.shields.io/badge/version-1.9-blue" alt="v1.9">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows 10/11">
   <img src="https://img.shields.io/badge/modules-33-5eead4" alt="33 modules">
@@ -75,7 +75,7 @@ The consolidated report flags suspicious activity as it goes, per module (sample
 
 ## Architecture
 
-TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.6`), so a SIEM/SOAR pipeline ingests either platform identically.
+TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.7`), so a SIEM/SOAR pipeline ingests either platform identically.
 
 ```
                     TATAR Triage
@@ -87,7 +87,7 @@ TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `li
                          ▼
       Private evidence folder · terminal-safe generated text
                          ▼
-             Unified JSON schema  (summary.schema.json · v1.6)
+             Unified JSON schema  (summary.schema.json · v1.7)
                          ▼
    ┌───────────────┬─────┴─────────┬───────────────────┐
    ▼               ▼               ▼                   ▼
@@ -564,7 +564,11 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.8.2 — fixes from the first lab round (current)
+### v1.9.0 — findings you can compare between scans (current)
+
+- **New (schema 1.7):** every finding carries a stable `fingerprint` (what it is: module, class, category, message with a PID and counts masked, the paths it names), a `contentHash` (what it says: severity, confidence, detail) and `evidence[]` (the report file and section it came from). Two scans of the same host give the same fingerprint for the same finding, so a baseline diff can tell new, gone and changed apart. Both editions use one canon, checked against shared golden vectors.
+
+### v1.8.2 — fixes from the first lab round
 
 - **Fixed:** the stock Windows WMI binding no longer raises a finding on every machine (recognised by structure, not by name); on Linux the systemd journal (auth, sudo, su, login, cron, warnings) is now collected, SUID / SGID takes one walk of the file system instead of two, and an unprivileged run names the files it could not read instead of saying "recorded".
 - **Also:** shell scripts are executable in a fresh clone, and `sudo` runs print the `chown` command for the private evidence folder.
@@ -769,7 +773,7 @@ Triage гэдэг ойлголт эмнэлгээс гаралтай. Эмч ө�
 
 ## Архитектур
 
-TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 33 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.6`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
+TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 33 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.7`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
 
 ```
                     TATAR Triage
@@ -781,7 +785,7 @@ TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1`
                          ▼
      Хувийн нотлох хавтас · terminal-д аюулгүй тайлан
                          ▼
-             Нэгдсэн JSON schema  (summary.schema.json · v1.6)
+             Нэгдсэн JSON schema  (summary.schema.json · v1.7)
                          ▼
    ┌───────────────┬─────┴─────────┬───────────────────┐
    ▼               ▼               ▼                   ▼

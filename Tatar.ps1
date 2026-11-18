@@ -14,7 +14,7 @@
       * -IOCFile <json>   - offline IOC feed (hashes/ips/domains/filenames); a hit
         overrides the allowlist and escalates to High / 0.95.
       * findings v2 fields (id, confidence, suppressed, suppressReason, iocMatch,
-        artifactClass), schemaVersion 1.6.
+        artifactClass), schemaVersion 1.7.
 
     v1.1 additions:
       * summary.txt / summary.json - analyst-first triage summary with an
@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.8.2'
+$script:ToolVersion = '1.9.0'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -647,6 +647,77 @@ function Remove-ExeToken {
     if ($c -match '^\s*"[^"]*"\s*(.*)$') { return $Matches[1] }
     if ($c -match '^\s*\S+\s*(.*)$') { return $Matches[1] }
     return $c
+}
+function Get-HashText {
+    # SHA-256 of a string (UTF-8), lowercase hex, first 16 characters. Short
+    # enough to read in a diff, long enough that two different findings do not
+    # collide in practice (64 bits over a few thousand findings).
+    param([string]$Text)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $b = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text)) } finally { $sha.Dispose() }
+    (($b | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 16)
+}
+function Get-FindingIdentity {
+    # Stable identity of a finding ACROSS runs, so two scans of the same host
+    # can be compared. fingerprint = what the finding IS (module, class,
+    # category, message with volatile numbers masked, the paths it names);
+    # contentHash = what it SAYS about it (severity, confidence, detail), so a
+    # finding that stays but changes is visible as changed. Masking is
+    # deliberately narrow: only a PID and a count followed by a counted noun.
+    # Over-masking would merge two different findings and hide a new one.
+    # The Linux edition implements the same canon; tests/fixtures/identity-vectors.tsv
+    # holds the shared golden vectors.
+    param([string]$Module, [string]$ArtifactClass, [string]$Category, [string]$Message, [string]$Detail, [string]$Severity, [string]$Confidence, [string[]]$Paths)
+    $m = [string]$Message
+    $m = [regex]::Replace($m, '(?i)\bPID[ =:]*[0-9]+', 'PID N')
+    $m = [regex]::Replace($m, '\b[0-9]+( (?:files?|entries|items|connections?|processes|accounts?|users?|rules?|tasks?|services?|hits?|matches|events?)\b)', 'N$1')
+    $pl = New-Object System.Collections.Generic.List[string]
+    foreach ($x in @($Paths)) { if ($x) { $pl.Add([string]$x) } }
+    $pl.Sort([StringComparer]::Ordinal)
+    $us = [string][char]0x1F; $rs = [string][char]0x1E
+    $fp = Get-HashText (($Module, $ArtifactClass, $Category, $m, ($pl -join $rs)) -join $us)
+    $ch = Get-HashText (($Severity, $Confidence, [string]$Detail) -join $us)
+    [pscustomobject]@{ fingerprint = $fp; contentHash = $ch }
+}
+function Get-EvidenceSection {
+    # The report section a module writes to; static, mirrors the registry order.
+    param([string]$Module)
+    $map = @{
+        memory = '01 Memory Image (winpmem)'; network = '02 Network (connections, ARP, routes, DNS)'
+        process = '03 Processes (+ suspicious LOLBAS patterns)'; sessions = '04 Logon sessions & recent logons (4624/4625)'
+        services = '05 Services (with binary path)'; sysinfo = '06 System information'; users = '07 User accounts & admins'
+        persistence = '08 Persistence (startup, Run keys, scheduled tasks)'; autoruns = '09 Autoruns (Sysinternals, optional)'
+        shares = '10 SMB shares'; firewall = '11 Firewall profiles & enabled rules'; drivers = '12 Running kernel drivers'
+        apps = '13 Installed applications'; prefetch = '14 Prefetch (last 60 days)'; usb = '15 USB device history'
+        pshistory = '16 PowerShell console history'; obfscan = '17 Obfuscated/suspicious script scan (Downloads/Desktop/Temp, 30d)'
+        rdp = '18 RDP activity (remote desktop)'; lateral = '19 Lateral movement artifacts'; privesc = '20 Privilege-escalation indicators'
+        browser = '21 Browser artifacts (metadata, all profiles, AV-safe)'; fsartifacts = '22 Filesystem artifacts (Recent, Amcache; USN/volumes)'
+        deleted = '23 Deleted files (Recycle Bin)'; shadow = '24 Volume Shadow Copies'; eventlogs = '25 Key event summary (+ optional EVTX export)'
+        hives = '26 Registry hives (optional; credential material)'; mft = '27 NTFS / MFT information'
+        indicators = '28 Suspicious indicators summary'; hashes = '29 Hash collection (running/startup/service binaries)'
+        timeline = '30 Timeline generation (super-timeline lite)'; rmm = '31 Remote monitoring & management (RMM) evidence'
+        useractivity = '32 User activity & download remnants (current user only)'
+        motw = '33 Mark-of-the-Web (Zone.Identifier) - where downloaded files came from'
+    }
+    if ($map.ContainsKey($Module)) { $map[$Module] } else { '' }
+}
+function Set-FindingIdentity {
+    # Final pass over the findings that will be written: adds fingerprint,
+    # contentHash and evidence[] (where in this run's report the finding came
+    # from). Done once, at the end, so a finding changed by an IOC match or by
+    # correlation is hashed in its final form.
+    param($Findings)
+    $rep = if ($script:ReportFile) { Split-Path -Leaf $script:ReportFile } else { '' }
+    foreach ($f in @($Findings)) {
+        $conf = [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0}', $f.confidence)
+        $id = Get-FindingIdentity -Module $f.module -ArtifactClass $f.artifactClass -Category $f.category -Message $f.message -Detail $f.detail -Severity $f.severity -Confidence $conf -Paths @($f.paths)
+        $sec = Get-EvidenceSection $f.module
+        $ev = @()
+        if ($rep -and $sec) { $ev = @([pscustomobject]@{ file = $rep; section = $sec }) }
+        $f | Add-Member -NotePropertyName fingerprint -NotePropertyValue $id.fingerprint -Force
+        $f | Add-Member -NotePropertyName contentHash -NotePropertyValue $id.contentHash -Force
+        $f | Add-Member -NotePropertyName evidence -NotePropertyValue $ev -Force
+    }
 }
 function Add-Finding {
     # P3: aggregated suspicious findings. LEADS for analyst review, NOT verdicts.
@@ -2473,6 +2544,7 @@ function Write-Summary {
         }
     } catch { Add-Err "Evidence correlation failed: $_" }
 
+    try { Set-FindingIdentity -Findings $sorted } catch { Add-Err "Finding identity failed: $_" }
     $active     = @($sorted | Where-Object { -not $_.suppressed })
     $suppressed = @($sorted | Where-Object { $_.suppressed })
     $L.Add(("---------- SUSPICIOUS FINDINGS: {0} active{1} (review leads, NOT verdicts) ----------" -f $active.Count, $(if ($suppressed.Count) { ", $($suppressed.Count) allowlisted" } else { '' })))
@@ -2508,7 +2580,7 @@ function Write-Summary {
     $jsonObj = [pscustomobject]@{
         tool            = 'TATAR Triage Toolkit'
         version         = $script:ToolVersion
-        schemaVersion   = '1.6'
+        schemaVersion   = '1.7'
         platform        = 'windows'
         host            = $hn
         os              = $osCap
@@ -2543,7 +2615,7 @@ function Write-Summary {
     # findings-only file for SOAR / SIEM ingestion
     $findObj = [pscustomobject]@{
         tool          = 'TATAR Triage Toolkit'
-        schemaVersion = '1.6'
+        schemaVersion = '1.7'
         platform      = 'windows'
         host          = $hn
         caseId        = $CaseId

@@ -133,6 +133,11 @@ jobs:
       - name: Linux fix tests (SUID walk, journal extracts, named limitations)
         run: bash tests/test-linux-fixes.sh
 
+      - name: Finding identity (golden vectors)
+        run: |
+          python3 tests/identity_ref.py
+          bash tests/test-identity.sh
+
       - name: Fuzz tests
         run: python3 tests/fuzz.py --iterations 1500 --feed-iterations 40
 
@@ -305,6 +310,10 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Test-LogFixes.ps1
 
+      - name: Finding identity (golden vectors)
+        shell: pwsh
+        run: pwsh -File tests/Test-Identity.ps1
+
       - name: Containment with Windows Firewall
         shell: pwsh
         run: pwsh -File tests/Test-Containment.ps1
@@ -454,6 +463,10 @@ jobs:
       - name: Log-driven fix tests
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-LogFixes.ps1
+
+      - name: Finding identity (golden vectors)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-Identity.ps1
 
   docs-parity:
     name: Docs parity (badges / bilingual module lists / ATT&CK coverage)

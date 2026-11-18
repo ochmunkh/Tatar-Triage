@@ -1,0 +1,11 @@
+# module	class	category	message	detail	severity	confidence	paths(;;)	[fingerprint	contentHash]
+process	process	Process	Suspicious process PID 4120 runs from a temp folder		High	0.7	C:\Users\a\AppData\Local\Temp\x.exe	70392e7bf2509650	e963290cf8883664
+process	process	Process	Suspicious process PID 9 runs from a temp folder		High	0.7	C:\Users\a\AppData\Local\Temp\x.exe	70392e7bf2509650	e963290cf8883664
+process	process	Process	Suspicious process pid=77 runs from a temp folder		High	0.7	C:\Users\a\AppData\Local\Temp\x.exe	70392e7bf2509650	e963290cf8883664
+persistence	run key	Persistence	12 entries in Run keys point to user-writable paths	detail A	Review	0.4	C:\a.exe;;C:\b.exe	0fbe0d2406d0bb00	65f0fb8de08976d7
+persistence	run key	Persistence	37 entries in Run keys point to user-writable paths	detail A	Review	0.4	C:\b.exe;;C:\a.exe	0fbe0d2406d0bb00	65f0fb8de08976d7
+persistence	run key	Persistence	37 entries in Run keys point to user-writable paths	detail B	High	0.85	C:\b.exe;;C:\a.exe	0fbe0d2406d0bb00	38924fd43ff91a64
+network	network	Network	Listener on port 4444 by 3 new services		Review	0.4		bf4720b5591f5563	378f121365287e84
+network	network	Network	Listener on port 4445 by 3 new services		Review	0.4		8ea87fc073cc4eac	378f121365287e84
+sshkeys	ssh	SSH	Key added for user mongol-ийн /home/Бат/.ssh/authorized_keys	line 3	High	0.7	/home/Бат/.ssh/authorized_keys	9c60d27362c77ef8	d55cbf1aafd61114
+logs	log	Logs	Name has 5 rules and 12abc items; also 100 files		Review	0.4	/var/log/auth.log	3e49ff191779e31a	378f121365287e84

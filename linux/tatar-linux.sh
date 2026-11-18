@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.8.2"
+VERSION="1.9.0"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -1649,7 +1649,7 @@ EOF
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
         printf '  "version": "%s",\n' "$VERSION"
-        printf '  "schemaVersion": "1.6",\n'
+        printf '  "schemaVersion": "1.7",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "os": "%s",\n' "$(json_escape "$os")"
@@ -1732,7 +1732,7 @@ EOMS
     {
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
-        printf '  "schemaVersion": "1.6",\n'
+        printf '  "schemaVersion": "1.7",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "caseId": "%s",\n' "$(json_escape "$CASE_ID")"
@@ -1752,10 +1752,63 @@ EOMS
     rm -f "$F2" 2>/dev/null
 }
 
+# ---------------------------------------------------------------------------
+# Finding identity (schema 1.7). Same canon as Get-FindingIdentity in
+# Tatar.ps1; tests/fixtures/identity-vectors.tsv holds the shared vectors.
+#   fingerprint = sha256(module US class US category US masked-message US
+#                        sorted-paths joined by RS), first 16 hex
+#   contentHash = sha256(severity US confidence US detail), first 16 hex
+# Masking is deliberately narrow (a PID, and a count before a counted noun):
+# over-masking would merge two different findings and hide a new one.
+# ---------------------------------------------------------------------------
+_hash16() { # stdin -> first 16 hex of SHA-256
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -c1-16
+    elif command -v shasum >/dev/null 2>&1; then shasum -a 256 | cut -c1-16
+    else printf '0000000000000000'; fi
+}
+mask_message() {
+    printf '%s' "$1" | sed -E \
+        -e 's/\b[Pp][Ii][Dd][ =:]*[0-9]+/PID N/g' \
+        -e 's/\b[0-9]+( (files?|entries|items|connections?|processes|accounts?|users?|rules?|tasks?|services?|hits?|matches|events?)\b)/N\1/g'
+}
+finding_fingerprint() { # module class category message paths(GSEP-separated)
+    local m pl
+    m="$(mask_message "$4")"
+    pl="$(printf '%s' "$5" | tr "$GSEP" '\n' | grep -v '^$' | LC_ALL=C sort | awk 'NR>1{printf "\036"} {printf "%s",$0}')"
+    printf '%s\037%s\037%s\037%s\037%s' "$1" "$2" "$3" "$m" "$pl" | _hash16
+}
+finding_contenthash() { # severity confidence detail
+    printf '%s\037%s\037%s' "$1" "$2" "$3" | _hash16
+}
+evidence_section() { # module -> report section title (static)
+    case "$1" in
+        sysinfo) echo "01 System information" ;;
+        network) echo "02 Network (connections, listening, routes, DNS)" ;;
+        process) echo "03 Processes (+ suspicious execution locations)" ;;
+        sessions) echo "04 Logins & sessions (who, last, failed)" ;;
+        users) echo "05 Users, groups, sudo" ;;
+        services) echo "06 Services / units" ;;
+        persistence) echo "07 Persistence (cron, systemd timers, rc, profiles)" ;;
+        apps) echo "08 Installed packages" ;;
+        suid) echo "09 SUID / SGID binaries" ;;
+        sshkeys) echo "10 SSH keys & config" ;;
+        bashhistory) echo "11 Shell history" ;;
+        kernelmods) echo "12 Kernel modules" ;;
+        indicators) echo "13 Suspicious indicators" ;;
+        hashes) echo "14 Hash collection (running binaries)" ;;
+        logs) echo "15 Key log copy" ;;
+        timeline) echo "16 Timeline (recent file changes, super-timeline lite)" ;;
+        containers) echo "17 Containers & cloud context" ;;
+        integrity) echo "18 Critical file integrity (SHA-256 baseline)" ;;
+        *) echo "" ;;
+    esac
+}
+
 # Emit the findings[] array items (schema 1.3) from an augmented findings file.
 _emit_findings_json() {  # $1 = F2 path
     local f2="$1" first=1 fid fs fc fm fd ft fconf fsup freason fioc techjson
-    local fmod fts fpaths fcr find_ facls pathsjson
+    local fmod fts fpaths fcr find_ facls pathsjson fpr fch evj evsec evfile
+    evfile="$(basename "$REPORT")"
     [ -s "$f2" ] || return 0
     while IFS="$FSEP" read -r fid fs fc fm fd ft fconf fsup freason fioc fmod fts fpaths fcr find_ facls; do
         [ $first -eq 1 ] && first=0 || printf ','
@@ -1779,11 +1832,17 @@ $(printf '%s' "$fpaths" | tr "$GSEP" '\n')
 EOF
             pathsjson="$pathsjson]"
         else pathsjson="[]"; fi
-        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"confidenceReason":"%s","suppressed":%s,"suppressReason":"%s","iocMatch":%s,"iocIndicator":"%s","module":"%s","artifactClass":"%s","collected_at":"%s","paths":%s}' \
+        fpr="$(finding_fingerprint "$fmod" "${facls:-unknown}" "$fc" "$fm" "$fpaths")"
+        fch="$(finding_contenthash "$fs" "$fconf" "$fd")"
+        evsec="$(evidence_section "$fmod")"
+        if [ -n "$evsec" ] && [ -n "$evfile" ]; then
+            evj="[{\"file\":\"$(json_escape "$evfile")\",\"section\":\"$(json_escape "$evsec")\"}]"
+        else evj="[]"; fi
+        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"confidenceReason":"%s","suppressed":%s,"suppressReason":"%s","iocMatch":%s,"iocIndicator":"%s","module":"%s","artifactClass":"%s","collected_at":"%s","paths":%s,"fingerprint":"%s","contentHash":"%s","evidence":%s}' \
             "$(json_escape "$fid")" "$(json_escape "$fs")" "$(json_escape "$fc")" "$techjson" \
             "$(json_escape "$fm")" "$(json_escape "$fd")" "$fconf" "$(json_escape "$fcr")" \
             "${fsup:-false}" "$(json_escape "$freason")" "$fioc" "$(json_escape "$find_")" \
-            "$(json_escape "$fmod")" "$(json_escape "${facls:-unknown}")" "$(json_escape "$fts")" "$pathsjson"
+            "$(json_escape "$fmod")" "$(json_escape "${facls:-unknown}")" "$(json_escape "$fts")" "$pathsjson" "$fpr" "$fch" "$evj"
     done < "$f2"
 }
 

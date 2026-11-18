@@ -5,7 +5,7 @@ fails=[]
 def check(n,c,d=''):
     print(('  PASS  ' if c else '  FAIL  ')+n+('' if c else '  '+str(d)))
     if not c: fails.append(n)
-good={"tool":"TATAR Triage Toolkit","version":"1.7.0","schemaVersion":"1.6","platform":"linux","host":"h1","os":"Ubuntu","started":"2026-11-18T01:00:00Z","privileged":False,"errorsLogged":2,"modulesRun":["network","process"],"modulesSkipped":["bogus"],
+good={"tool":"TATAR Triage Toolkit","version":"1.7.0","schemaVersion":"1.7","platform":"linux","host":"h1","os":"Ubuntu","started":"2026-11-18T01:00:00Z","privileged":False,"errorsLogged":2,"modulesRun":["network","process"],"modulesSkipped":["bogus"],
  "moduleStatus":[{"module":"network","status":"ok","seconds":1,"errors":0},{"module":"process","status":"failed","seconds":2,"errors":1}],
  "moduleLimitations":[{"module":"process","limitation":"not root"}],"activeFindingsCount":2,"suppressedCount":1,"findingsCount":3,
  "findings":[
