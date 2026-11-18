@@ -24,7 +24,7 @@ function Check {
 }
 $tokens = $null; $errs = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $Collector).Path, [ref]$tokens, [ref]$errs)
-foreach ($n in @('Read-TextAuto', 'Hide-UrlSecret', 'Remove-ExeToken', 'Test-WritableByUsers', 'Test-WmiDefaultBinding', 'Get-FilesByExtension')) {
+foreach ($n in @('Read-TextAuto', 'Hide-UrlSecret', 'Remove-ExeToken', 'Test-WritableByUsers', 'Test-WmiDefaultBinding', 'Get-FilesByExtension', 'Get-NoPasswordSeverity')) {
     $def = $ast.Find({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true)
     if (-not $def) { Write-Host ('FAIL  ' + $n + ' not found'); exit 1 }
     . ([scriptblock]::Create($def.Extent.Text))
@@ -116,6 +116,14 @@ Check 'L6 : .js1 and .ps1x are not matched' (-not ($got -contains 'k.js1' -or $g
 $recent = @(Get-FilesByExtension -Path $tree -Extension '.ps1' -Since (Get-Date).AddDays(-30) | ForEach-Object { $_.Name })
 Check 'L6 : the date cutoff drops the old file' (-not ($recent -contains 'old.ps1') -and ($recent -contains 'x.ps1'))
 Check 'L6 : a missing folder gives nothing and no error' (@(Get-FilesByExtension -Path (Join-Path $work 'nope') -Extension '.ps1').Count -eq 0)
+
+Write-Host "`nL7  Get-NoPasswordSeverity"
+Check 'L7 : a password date makes the flag a Review' ((Get-NoPasswordSeverity (Get-Date).AddDays(-30)) -eq 'Review')
+Check 'L7 : no date is the High case' ((Get-NoPasswordSeverity $null) -eq 'High')
+Check 'L7 : an empty string is High' ((Get-NoPasswordSeverity '') -eq 'High')
+Check 'L7 : a zero-ish date is High' ((Get-NoPasswordSeverity ([datetime]'1601-01-01')) -eq 'High')
+Check 'L7 : an unreadable date is High' ((Get-NoPasswordSeverity 'not a date') -eq 'High')
+Check 'L7 : an account missing from the list is High (unknown is not safe)' ((Get-NoPasswordSeverity (Get-Date) $false) -eq 'High')
 
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''

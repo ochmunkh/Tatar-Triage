@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.9.0'
+$script:ToolVersion = '1.9.1'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -660,6 +660,18 @@ function Remove-ExeToken {
     if ($c -match '^\s*"[^"]*"\s*(.*)$') { return $Matches[1] }
     if ($c -match '^\s*\S+\s*(.*)$') { return $Matches[1] }
     return $c
+}
+function Get-NoPasswordSeverity {
+    # "Password required: No" is a policy flag. It does not say whether the
+    # account HAS a password. PasswordLastSet does: an account that never had a
+    # password set carries no date. So the flag alone is a Review, and a flag
+    # plus no date (or a date we could not read) is the High case. Account
+    # metadata only; no password is read and no logon is attempted.
+    param($PasswordLastSet, [bool]$Known = $true)
+    if (-not $Known) { return 'High' }
+    if ($null -eq $PasswordLastSet -or [string]$PasswordLastSet -eq '') { return 'High' }
+    try { if ([datetime]$PasswordLastSet -le [datetime]'1980-01-01') { return 'High' } } catch { return 'High' }
+    return 'Review'
 }
 function Get-HashText {
     # SHA-256 of a string (UTF-8), lowercase hex, first 16 characters. Short
@@ -1530,7 +1542,16 @@ function Collect-Users {
             $noPwd = @(Get-CimInstance Win32_UserAccount -Filter "LocalAccount=True" -ErrorAction Stop |
                        Where-Object { -not $_.Disabled -and -not $_.PasswordRequired })
             foreach ($u in $noPwd) {
-                Add-Finding -Severity 'High' -Category 'users' -Message ("Enabled local account with NO password required: {0}" -f $u.Name) -Detail 'UNCONFIRMED: the account is enabled and PasswordRequired is false, which is a policy flag, not proof that the account has no password or that it can be logged into. Confirm against the host policy and the account owner - see report section 07'
+                $row = @($lu | Where-Object { $_.Name -eq $u.Name } | Select-Object -First 1)
+                $known = ($row.Count -eq 1)
+                $pls = if ($known) { $row[0].PasswordLastSet } else { $null }
+                $sev = Get-NoPasswordSeverity -PasswordLastSet $pls -Known $known
+                $det = if ($sev -eq 'High') {
+                    'PasswordLastSet is empty or unreadable, so a password has probably never been set. UNCONFIRMED: the account is enabled and PasswordRequired is false, which is a policy flag, not proof. Confirm against the host policy and the account owner - see report section 07'
+                } else {
+                    ('A password was set ({0}); PasswordRequired false is a policy setting that ALLOWS an empty password, not proof of one. Worth tightening (net user {1} /passwordreq:yes), not an emergency - see report section 07' -f ([datetime]$pls).ToString('yyyy-MM-dd'), $u.Name)
+                }
+                Add-Finding -Severity $sev -Category 'users' -Message ("Enabled local account with NO password required: {0}" -f $u.Name) -Detail $det
             }
         } catch { Add-Note "Win32_UserAccount query failed: $_" }
         try {

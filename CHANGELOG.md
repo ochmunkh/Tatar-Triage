@@ -4,9 +4,12 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.9.1] — 2026-11-18
+
+Found by the 1.9.0 lab round (Sandbox, Kali root and not root, a physical Windows 11 as a standard user).
 
 ### Fixed
+- **Windows: "no password required" is no longer High on its own.** `PasswordRequired = False` is a policy flag, not proof that an account has no password; it was reported as High on every account that carried it. The finding is now High only when `PasswordLastSet` is empty or unreadable (a password was probably never set), and Review, with the date of the last password change in the detail, when a password was set. Account metadata only: no password is read and no logon is attempted.
 - **Windows: the script and temp-executable scans were several times slower than they had to be.** `Get-ChildItem -Include` was replaced by one directory walk with the extension tested afterwards (`Get-FilesByExtension`, same results, unit-tested against `-Include`). On a developer workstation, as a standard user: `obfscan` 31 s -> 11 s, `indicators` 27 s -> 12 s.
 - **Windows: a standard-user run said "Initialization failure" for shadow copies.** Both sources need Administrator; the section now says so, names it in `moduleLimitations`, and does not query.
 - **Linux: the collector listed its own scratch directory in `timeline.csv`** (and in the executable-in-temp check). Found reading a Kali run, where three of the entries were the run's own temporary files.
