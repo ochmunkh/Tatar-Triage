@@ -9,6 +9,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 ### Added
 - **Finding identity (schema 1.7).** Every finding in `summary.json` and `findings.json` now has `fingerprint`, `contentHash` and `evidence[]`. The fingerprint is a SHA-256 (16 hex) over module, artifact class, category, the message with a PID and counts before a counted noun masked, and the sorted paths; the contentHash covers severity, confidence and detail. Masking is narrow on purpose: a port number or any other digit is kept, so two different findings are never merged and a new one is never hidden. `evidence[]` names the report file and the section the raising module writes to.
 - Both editions implement the same canon. `tests/fixtures/identity-vectors.tsv` holds golden vectors checked by `tests/Test-Identity.ps1`, `tests/test-identity.sh` and the reference `tests/identity_ref.py`.
+- **Analysis tools** (`tools/`, Python 3 standard library only, see `docs/TOOLS.md`): `tatar-diff.py` compares two scans by fingerprint (new / resolved / changed / unchanged, `--fail-on-new` for alerting); `tatar-timeline.py` merges `timeline.csv` and the findings into one UTC-ordered list in Timesketch CSV or JSONL; `tatar-aggregate.py` stacks findings across hosts, rarest first.
+
+### Changed
+- Windows `timeline.csv`: the `Time` column is now ISO 8601 UTC (`2026-11-18T10:31:09Z`) instead of a culture-dependent local string, so the file sorts and merges the same on every machine.
 
 ## [1.8.2] — 2026-11-18
 

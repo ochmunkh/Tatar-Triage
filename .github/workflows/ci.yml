@@ -138,6 +138,12 @@ jobs:
           python3 tests/identity_ref.py
           bash tests/test-identity.sh
 
+      - name: Analysis tools (diff, timeline, aggregate)
+        run: |
+          python3 tests/test-diff.py
+          python3 tests/test-timeline.py
+          python3 tests/test-aggregate.py
+
       - name: Fuzz tests
         run: python3 tests/fuzz.py --iterations 1500 --feed-iterations 40
 

@@ -2297,7 +2297,7 @@ function Collect-Timeline {
             }
         }
         if ($badDates -gt 0) { Add-Note ("{0} Uninstall entry/entries had an InstallDate that does not parse as a date and are not in timeline.csv." -f $badDates) }
-        $tl | Where-Object { $_.Time } | Sort-Object Time -Descending | ConvertTo-SafeCsv | Out-FileNoBom (Join-Path $script:OutDir 'timeline.csv')
+        $tl | Where-Object { $_.Time } | Sort-Object Time -Descending | Select-Object @{ N = 'Time'; E = { ([datetime]$_.Time).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') } }, Source, Detail | ConvertTo-SafeCsv | Out-FileNoBom (Join-Path $script:OutDir 'timeline.csv')
         $script:Stats['TimelineEntries'] = $tl.Count
         Add-Report ("Timeline entries: {0} -> timeline.csv" -f $tl.Count)
     } catch { Add-Err "Timeline failed: $_" }
