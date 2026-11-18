@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+### Fixed
+- **Linux: the collector listed its own scratch directory in `timeline.csv`** (and in the executable-in-temp check). Found reading a Kali run, where three of the entries were the run's own temporary files.
+
 ### Changed
 - **Documentation restructured.** `README.md` and `README.mn.md` are now short front pages (what it is, quick start, tools, a map of the documentation). The reference material moved to `docs/` as seven topic pages, each with a Mongolian twin: `ARCHITECTURE`, `USAGE`, `MODULES`, `OUTPUT`, `ANALYSIS`, `EVIDENCE`, `OPERATIONS`. No content was dropped. The English-only per-version history that sat in the README is removed; this file is the single history.
 - The bilingual parity gate now compares each English/Mongolian file pair for an exact structural mirror (one recorded exception) instead of two halves of one file with a recorded backlog.

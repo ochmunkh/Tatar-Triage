@@ -1197,7 +1197,7 @@ m_indicators() {
         [ -d "$d" ] || continue
         # one find per directory, not two: the report listing, the counter and
         # the finding detail all come from the same result set.
-        tl="$(find "$d" -xdev -type f -perm -111 ! -path "$OUTPUT_BASE/*" ! -path "$OUTDIR/*" 2>/dev/null)"
+        tl="$(find "$d" -xdev -type f -perm -111 ! -path "$OUTPUT_BASE/*" ! -path "$OUTDIR/*" ! -path "$TATAR_TMP/*" 2>/dev/null)"
         [ -n "$tl" ] || continue
         printf '%s\n' "$tl" >> "$REPORT"
         tc=$((tc + $(printf '%s\n' "$tl" | grep -c '^/')))
@@ -1282,7 +1282,7 @@ m_timeline() {
     section "16 Timeline (recent file changes, super-timeline lite)"
     local tf="$OUTDIR/timeline.csv"
     echo "MTime,Path,Source" > "$tf"
-    find /etc /root /home /usr/local/bin /tmp /var/tmp /dev/shm -xdev -type f -mtime -14 ! -path "$OUTPUT_BASE/*" 2>/dev/null | head -n 5000 | while read -r f; do
+    find /etc /root /home /usr/local/bin /tmp /var/tmp /dev/shm -xdev -type f -mtime -14 ! -path "$OUTPUT_BASE/*" ! -path "$TATAR_TMP/*" 2>/dev/null | head -n 5000 | while read -r f; do
         printf '"%s","%s","fs"\n' "$(csv_cell "$(stat -c '%y' "$f" 2>/dev/null)")" "$(csv_cell "$f")" >> "$tf"
     done
     local n; n=$(( $(wc -l < "$tf" 2>/dev/null) - 1 )); [ "$n" -lt 0 ] && n=0
