@@ -43,6 +43,8 @@ case "$FN" in
     *'correlate_findings()'*) : ;;
     *) echo "FAIL  correlate_findings not found in $COLLECTOR"; exit 1 ;;
 esac
+# the lifted function takes its scratch files from the collector's mktmp helper
+mktmp() { mktemp; }
 eval "$FN"
 CORRELATION_RULES="$(grep -m1 '^CORRELATION_RULES=' "$COLLECTOR" | sed 's/^CORRELATION_RULES="//; s/"$//')"
 [ -n "$CORRELATION_RULES" ] || { echo "FAIL  CORRELATION_RULES not found in $COLLECTOR"; exit 1; }

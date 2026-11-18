@@ -28,6 +28,8 @@ F2SRC="${2:-$HERE/fixtures/known-answer/findings-linux.f2}"
 
 FSEP="$(printf '\037')"; GSEP="$(printf '\035')"
 FN="$(awk '/^correlate_findings\(\) \{/ { g = 1 } g { print } g && /^\}/ { exit }' "$COLLECTOR")"
+# the lifted function takes its scratch files from the collector's mktmp helper
+mktmp() { mktemp; }
 case "$FN" in *'correlate_findings()'*) eval "$FN" ;; *) echo "FAIL  correlate_findings not found"; exit 1 ;; esac
 CORRELATION_RULES="$(grep -m1 '^CORRELATION_RULES=' "$COLLECTOR" | sed 's/^CORRELATION_RULES="//; s/"$//')"
 ARTIFACT_CLASSES="$(grep -m1 '^ARTIFACT_CLASSES=' "$COLLECTOR" | sed 's/^ARTIFACT_CLASSES="//; s/"$//')"
