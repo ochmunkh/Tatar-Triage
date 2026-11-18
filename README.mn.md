@@ -59,6 +59,17 @@ sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-01
   <img src="docs/sample_summary.png" alt="Triage дүгнэлт" width="760">
 </p>
 
+## Бусад хэрэгслээс юугаараа ялгаатай вэ
+
+Бусад үнэгүй цуглуулагч ихэвчлэн файл хуулдаг; Tatar Triage нь бас дүгнэдэг ([харьцуулалт](docs/COMPARISON.md), англи хэлээр):
+
+| | Ердийн файл цуглуулагч | Tatar Triage |
+|---|---|---|
+| Үр дүн | Өөр хэрэгслээр задлах файлууд | Нотолгоо, ATT&CK id, дараагийн алхамтай finding, мөн файлууд |
+| Эрх | Түгжигдсэн файл унших Administrator эсвэл root | Энгийн хэрэглэгч; эрх шаардах алхмыг зөвхөн та хүссэн үед |
+| Хост | Драйвер, executable эсвэл том архив бичиж болно | Зөвхөн унших, offline, юу ч суулгахгүй, SHA-256 manifest |
+| Гүн | Хуулсан файлдаа гүн | Өргөн, гүехэн: хост нарийвчлан шалгах үнэтэй эсэхийг хэлнэ |
+
 ## Шинжилгээний хэрэгслүүд
 
 Шинжээчийн машин дээр, зөвхөн стандарт сан, offline ажиллана ([дэлгэрэнгүй](docs/TOOLS.md)):
@@ -71,6 +82,7 @@ sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-01
 | `tools/tatar-aggregate.py` | Аль хост бусдаасаа ялгаатай вэ? |
 | `tools/tatar-review.py` | Finding дээр гаргасан шийдвэрээ тэмдэглэж, аль хэдийн шалгасан зүйлээ нууна |
 | `tools/tatar-siem.py` | Finding-уудыг SIEM рүү ECS хэлбэрийн NDJSON-оор илгээнэ |
+| `tools/tatar-navigator.py` | Finding-уудын ATT&CK technique-ийг ATT&CK Navigator-ийн layer болгоно |
 
 ## Баримт бичиг
 
@@ -86,6 +98,7 @@ sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-01
 | [Linux хувилбар](linux/README.md) | Bash цуглуулагч тусдаа |
 | [Changelog](CHANGELOG.md) | Бүх release |
 | [Аюулгүй байдлын тест](docs/SECURITY-TESTING.md) · [Баталгаажуулалт](docs/VALIDATION.md) | Хэрхэн тестлэгддэг, лабораторийн үр дүн (англи хэлээр) |
+| [Хамрах хүрээ](docs/COVERAGE.md) · [Цуглуулсны дараа](docs/AFTER-COLLECTION.md) · [Харьцуулалт](docs/COMPARISON.md) | Юу цуглуулдаг, юу цуглуулдаггүй, аль хэрэгсэл аль файлыг уншдаг, юугаараа ялгаатай (англи хэлээр) |
 
 Баримт бүр англи хувьтай (`.md`).
 

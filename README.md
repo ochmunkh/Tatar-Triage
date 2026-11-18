@@ -57,6 +57,17 @@ Not a sandbox, not a memory analyser, not full-disk forensics: it answers one qu
   <img src="docs/sample_summary.png" alt="Triage summary" width="760">
 </p>
 
+## How it differs
+
+Other free collectors mainly copy files; Tatar Triage also judges them ([comparison](docs/COMPARISON.md)):
+
+| | Typical file collector | Tatar Triage |
+|---|---|---|
+| Result | Files for a second tool to parse | Findings with evidence, ATT&CK ids and a next step, plus the files |
+| Privilege | Administrator or root, to read locked files | Standard user; privileged steps only when you ask |
+| Host | May write drivers, executables or a large archive | Read-only, offline, nothing installed, SHA-256 manifest |
+| Depth | Deep on the files it copies | Wide and shallow: it tells you whether the host is worth a deep look |
+
 ## Analysis tools
 
 Run on the analyst's machine, standard library only, offline ([details](docs/TOOLS.md)):
@@ -69,6 +80,7 @@ Run on the analyst's machine, standard library only, offline ([details](docs/TOO
 | `tools/tatar-aggregate.py` | Which host differs from the rest? |
 | `tools/tatar-review.py` | Record what you decided about a finding, and hide what you already cleared |
 | `tools/tatar-siem.py` | Send the findings to a SIEM as ECS-style NDJSON |
+| `tools/tatar-navigator.py` | Show the findings' ATT&CK techniques as an ATT&CK Navigator layer |
 
 ## Documentation
 
@@ -84,6 +96,7 @@ Run on the analyst's machine, standard library only, offline ([details](docs/TOO
 | [Linux edition](linux/README.md) | The Bash collector on its own |
 | [Changelog](CHANGELOG.md) | Every release |
 | [Security testing](docs/SECURITY-TESTING.md) · [Validation](docs/VALIDATION.md) | How it is tested, lab results |
+| [Coverage](docs/COVERAGE.md) · [After collection](docs/AFTER-COLLECTION.md) · [Comparison](docs/COMPARISON.md) | What is and is not collected, which tool reads which file, how it differs |
 
 Each document has a Mongolian twin (`.mn.md`).
 

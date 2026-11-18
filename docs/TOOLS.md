@@ -1,6 +1,6 @@
 # Analysis tools
 
-Five small command-line tools work on what the collectors write. They are
+Six small command-line tools work on what the collectors write. They are
 read-only, offline, use only the Python 3 standard library, and need nothing
 installed on the suspect host - run them on the analyst's machine.
 
@@ -11,6 +11,7 @@ installed on the suspect host - run them on the analyst's machine.
 | `tools/tatar-aggregate.py` | Which host differs from the rest? | many scans, schema 1.7 |
 | `tools/tatar-review.py` | What did I already decide about this finding? | a scan, schema 1.7, and a `reviewed.json` you keep |
 | `tools/tatar-siem.py` | How do I get the findings into a SIEM? | one or more scans |
+| `tools/tatar-navigator.py` | Which ATT&CK techniques do the findings point at? | one or more scans |
 
 ## Baseline diff
 
@@ -78,6 +79,19 @@ bulk format with the fingerprint and host as `_id`, so importing the same scan t
 does not duplicate it. The output is pure ASCII JSON: control and bidirectional
 characters from the host arrive escaped. Exit 2 means some findings were skipped.
 
+## ATT&CK Navigator layer
+
+    python3 tools/tatar-navigator.py PATH [PATH ...] [-o layer.json] [--name NAME] [--all] [--reviews reviewed.json]
+
+Writes a layer file for the MITRE ATT&CK Navigator (enterprise matrix): one cell for
+every technique id a finding names, scored 100 when any finding for it is High and 50
+when all are Review. The cell comment gives the number of findings and their categories.
+Allowlisted findings are left out (`--all` keeps them); with `--reviews`, findings you
+reviewed as good are left out and bad ones are noted in the comment. The layer shows
+what the scan points at, not what was proven. Ids that are not of the form `T1234` or
+`T1234.567` are ignored and counted on stderr. Exit 2 means an input could not be read.
+Open the file with the Navigator's "Open existing layer".
+
 ## Recommendation (schema 1.8)
 
 Every finding carries `recommendation`: one static next step chosen by category, for
@@ -86,3 +100,7 @@ with your allowlist before treating it as hostile." It is a pointer for the anal
 a verdict, and it never uses the content of the finding. Both editions carry the same
 text; `tests/fixtures/recommendations.tsv` is the shared reference the tests check.
 The viewer shows it as "Recommendation".
+
+## After the tools
+
+Which collected file feeds which analyst tool: [AFTER-COLLECTION.md](AFTER-COLLECTION.md).

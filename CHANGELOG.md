@@ -4,6 +4,17 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+Documentation and analyst tools only; the collectors are unchanged.
+
+### Added
+- **ATT&CK Navigator layer** (`tools/tatar-navigator.py`): one cell per technique id named by a finding, scored by severity, with the finding count and categories in the comment; `--reviews` aware. Tests in `tests/test-navigator.py`.
+- `docs/AFTER-COLLECTION.md`: which collected file feeds which analyst tool.
+- `docs/COVERAGE.md`: what Tatar Triage collects against the ForensicArtifacts triage groups, and which gaps are worth closing.
+- `docs/COMPARISON.md` and a "How it differs" section in both READMEs.
+- `docs/VALIDATION.md`: a technique-injection round (29 Windows and 14 Linux benign stand-ins) with what the collector reported, what it only listed and what it missed.
+
 ## [1.10.0] — 2026-11-18
 
 Ideas taken from commercial triage platforms, kept inside the toolkit's rules: offline, read-only, standard user, nothing sent anywhere.

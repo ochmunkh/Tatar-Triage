@@ -97,3 +97,87 @@ run; they are the evidence for the row.
 | 2026-11-18 | Kali Rolling 6.19, VirtualBox VM | Linux 1.9.0 | not root | 0 | 28 s | 0 findings | Journal extracts present; `btmp`, `/etc/shadow`, `/etc/sudoers` named as limitations in `summary.json`; manifest verifies; found: the run's own scratch directory appeared in `timeline.csv` (fixed, unreleased) |
 | 2026-11-18 | same host | Linux 1.9.0 | root | 0 | 27 s | 0 findings | Journal extracts present, SUID/SGID listed, 78 binaries hashed; SUID walk 18 s of 27 s (cold disk) |
 | 2026-11-18 | Windows 11 Pro 10.0.26300, physical developer workstation | Windows 1.9.0 | not elevated | 0 | 80 s | 34 findings: 18 `obfscan` (the collector's own tests, installer copies, third-party scripts: expected), 8 `useractivity` (own build scripts: expected; two MUICache entries for an `xmrig` miner `.bat` that is no longer on disk and one for a Nexpose service script: left to the owner to confirm), 2 `motw`, 2 `rmm` (AnyDesk from an earlier test), 1 hosts file (own anti-phishing entries), 1 `indicators` (29,202 executables under Temp from a .NET single-file app), 2 `users` (an account with no password-required flag; Administrators member) | 0 errors, all modules `ok`. Gaps named: prefetch, shadow copies, other users' activity. Slowest: `obfscan` 31 s, `indicators` 27 s (fixed after this run, unreleased) |
+
+## Technique-injection round (1.10.0)
+
+Every earlier lab round ran on clean hosts and found nothing to find. This round does the opposite: it plants benign stand-ins for common techniques and records what the collector says. A stand-in is a copy of a system binary, a registry value or a file with the shape of the technique; none of it is malware, and nothing in it reaches a network.
+
+| | Windows | Linux |
+|---|---|---|
+| Host | Windows Sandbox, clean Windows 11 Enterprise 10.0.26100, networking disabled, administrator | disposable container, root |
+| Edition | `Tatar.ps1 -All` 1.10.0 | `tatar-linux.sh --all` 1.10.0 |
+| Planted | 29 stand-ins | 14 stand-ins |
+| Finding | 20 | 7 |
+| Reported only (evidence collected, no finding) | 6 | 5 |
+| Not collected or not covered | 2 | 1 |
+| Not reproducible or not run | 1 | 1 |
+
+The injection scripts are not part of the repository. They change the system on purpose, they refuse to run outside a throwaway machine, and a security tool's repository should not carry something that looks like a dropper to an antivirus engine.
+
+### Windows
+
+| ID | Technique | Stand-in | Result |
+|---|---|---|---|
+| W01 | T1547.001 | HKCU Run key to a user-writable executable | Reported only |
+| W02 | T1547.001 | HKLM Run key to a user-writable executable | Reported only |
+| W03 | T1547.001 | Startup-folder script | Reported only |
+| W04 | T1053.005 | Scheduled task to a user-writable executable | Reported only |
+| W05 | T1543.003 | Service whose binary is in a user-writable folder | Finding (privesc, indicators) |
+| W06 | T1574.009 | Service with an unquoted path containing spaces | Finding (privesc) |
+| W07 | T1569.002 | Service named like PsExec's | Finding (privesc, indicators) |
+| W08 | T1546.003 | WMI event subscription (filter, consumer, binding) | Finding (lateral) |
+| W09 | T1136.001 | New local account added to Administrators, no password given | Finding (users: administrators). A blank password is not visible: the password date is set when the account is created |
+| W10 | T1136.001 | New local account with the password-not-required flag | Finding (users, Review, the 1.9.1 rule) |
+| W11 | T1565.001 | hosts file overrides | Finding (network) |
+| W12 | T1059.001 | Hidden, long-running powershell with -EncodedCommand | Finding (process) |
+| W13 | T1218 | Process command line naming mshta, regsvr32, certutil | Finding (process) |
+| W14 | T1059 | Office-named parent starting powershell | Finding (process, High) |
+| W15 | T1219 | Portable remote-access client in a user-writable folder, with a connection trace | Finding (rmm: High, plus connection history) |
+| W16 | T1036.007 | Double-extension executable written to the temp folder | Finding (indicators) |
+| W17 | T1027 | Script using FromBase64String and IEX | Finding (obfscan) |
+| W18 | T1204.002 | Document with Mark-of-the-Web | Reported only (a downloaded document is ordinary by design) |
+| W18b | T1204.002 | Executable with Mark-of-the-Web | Finding (motw) |
+| W19 | T1548.002 | AlwaysInstallElevated in HKLM and HKCU | Finding (privesc, High) |
+| W20 | T1021.001 | Remote Desktop enabled (fDenyTSConnections = 0) | Not collected: the setting is not read |
+| W21 | T1135 | Extra SMB share on a user-writable folder | Reported only |
+| W22 | T1070.001 | Security and System logs cleared | Finding (eventlogs, High, event 1102) |
+| W23 | T1110 | 25 failed logons | Not reproducible: the offline Sandbox cannot produce 4625 events |
+| W24 | T1059 | Hidden powershell typed into the Run dialog | Finding (useractivity) |
+| W25 | T1546.008 | Image File Execution Options debugger on sethc.exe | Finding (persistence, High) |
+| W26 | T1547.004 | Winlogon Userinit extended | Finding (persistence, High) |
+| W27 | T1546.010 | AppInit_DLLs set | Finding (persistence) |
+| W28 | T1562.001 | Defender exclusion for a user-writable path | Not collected: Defender state and exclusions are not read |
+
+### Linux
+
+| ID | Technique | Stand-in | Result |
+|---|---|---|---|
+| L01 | T1053.003 | /etc/cron.d entry running a binary from /tmp | Reported only (cron findings need curl, wget, nc, base64 and similar in the command) |
+| L02 | T1053.003 | Root crontab @reboot entry | Not run: the container has no crontab command |
+| L03 | T1543.002 | systemd unit running a binary from /tmp | Reported only (units are listed, not judged) |
+| L04 | T1098.004 | Extra authorized SSH key for root | Finding (sshkeys; raised for any root key, so it cannot tell this one from an expected one) |
+| L05 | T1565.001 | /etc/hosts override | Finding (network) |
+| L06 | T1136.001 | Second UID 0 account | Finding (users, High) |
+| L07 | T1548.001 | SUID copy outside the usual directories | Finding (suid) |
+| L08 | T1036 | Executables dropped in /tmp and /dev/shm | Finding (indicators, a count) |
+| L09 | T1620 | Running process whose binary was deleted | Finding (process, High) |
+| L10 | T1222.002 | World-writable script in /usr/local/bin | Not covered: the check walks /etc, /bin, /sbin, /usr/bin and /usr/sbin only |
+| L11 | T1552.003 | Bash history with a download-and-run, setuid and netcat commands | Finding (bashhistory) |
+| L12 | T1059 | Process command line naming nc -e and /dev/tcp | Reported only (the Linux process check judges deleted and volatile-path binaries, not command lines) |
+| L13 | T1110 | 30 failed SSH logons (synthetic auth.log lines) | Reported only (the failed lines are in the report; the finding counts `lastb` only) |
+| L14 | T1548.003 | sudoers drop-in with NOPASSWD | Reported only |
+
+The Linux host is a container, so the collector also raised its `context` finding, as it should.
+
+### What this found
+
+None of these is implemented yet; they are candidates, each with a cost.
+
+1. **Autostart entries that point into a user-writable folder** (Run keys, Startup folder, scheduled tasks; cron and systemd units on Linux) produce no finding. The Windows persistence module is narrow on purpose, after a module that raised 144 findings of which 142 were noise. A rule limited to targets under `C:\Users\Public`, `C:\ProgramData`, the temp folders and Downloads, and not `AppData`, where OneDrive, Teams and most updaters live, is the version that stays quiet on an ordinary workstation.
+2. **Windows reads neither Remote Desktop's state nor Defender's.** Real-time protection off and exclusions on user-writable paths are among the most common first moves of an intruder. Exclusions need Administrator to read; the collector would have to say so when it cannot.
+3. **Linux process command lines are not judged** (`nc -e`, `/dev/tcp`, `bash -i`, `curl | sh`), although the Windows edition does. **The failed-logon finding counts `lastb` entries only**; the failed lines of `auth.log` (or the journal) are copied into the report but not counted. **sudoers `NOPASSWD`** is collected but not flagged. The **world-writable check** skips `/usr/local`.
+4. By design and kept: a downloaded document with Mark-of-the-Web is not a finding (an executable is), an extra SMB share is listed but not flagged, and a blank password cannot be seen, because the collector never tries a logon.
+
+### Limits of this round
+
+A stand-in is not a real intrusion; a detection that passes here can still miss the real thing. The Sandbox is offline, so failed logons could not be produced there. Three of the first attempts were faults of the injection and not of the collector (a copied binary kept its old modification time, a copied Store alias would not start, a shell optimised away a command line), and were fixed in the injection before the numbers above.

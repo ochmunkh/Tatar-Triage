@@ -139,13 +139,14 @@ jobs:
           bash tests/test-identity.sh
           bash tests/test-recommendation.sh
 
-      - name: Analysis tools (diff, timeline, aggregate, review, siem)
+      - name: Analysis tools (diff, timeline, aggregate, review, siem, navigator)
         run: |
           python3 tests/test-diff.py
           python3 tests/test-timeline.py
           python3 tests/test-aggregate.py
           python3 tests/test-review.py
           python3 tests/test-siem.py
+          python3 tests/test-navigator.py
 
       - name: Fuzz tests
         run: python3 tests/fuzz.py --iterations 1500 --feed-iterations 40
