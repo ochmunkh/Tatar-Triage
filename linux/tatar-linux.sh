@@ -1263,7 +1263,15 @@ m_containers() {
     else
         report "Docker CLI not present / daemon not reachable."
     fi
-    if have podman; then echo "-- podman ps -a --" >> "$REPORT"; podman ps -a >> "$REPORT" 2>/dev/null; fi
+    if have podman; then
+        # podman creates its storage and lock files on first use. Asking a host that
+        # never ran a container would write to the host, so only query storage that exists.
+        if [ -d "${XDG_DATA_HOME:-$HOME/.local/share}/containers/storage" ] || { [ "$(id -u)" -eq 0 ] && [ -d /var/lib/containers/storage ]; }; then
+            echo "-- podman ps -a --" >> "$REPORT"; podman ps -a >> "$REPORT" 2>/dev/null
+        else
+            report "podman is installed but has no container storage for this user: not queried (querying would create it on the host)."
+        fi
+    fi
     # No docker/podman on the host is an expected condition, not a failure.
     return 0
 }

@@ -31,6 +31,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
   (U+FFFD on Windows, `<U+XXXX>` and stripped controls on Linux).
 - **Temp files.** Linux keeps every temporary file in one private directory that
   is removed on exit, SIGINT, SIGTERM and SIGHUP.
+- **No writes by the tools it runs.** `podman ps` creates its storage and lock files
+  on first use, so the containers module now asks podman only when this user's
+  container storage already exists (found by the strace test on a CI runner).
 
 ### Changed
 - **Behaviour change (Linux):** evidence collected as root is no longer readable
