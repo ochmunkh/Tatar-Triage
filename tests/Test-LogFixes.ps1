@@ -6,6 +6,7 @@
       L1  Read-TextAuto       UTF-16 (BOM, BE, BOM-less) and UTF-8 logs read as text
       L2  Hide-UrlSecret      signed-URL credentials are redacted, the rest is kept
       L3  Remove-ExeToken     a process is judged by its arguments, not its own name
+      L5  Test-WmiDefaultBinding  only Windows' own SCM binding is "stock"; judged by structure
       L4  Test-WritableByUsers a user-writable file is detected, a system file is not,
                               an unreadable ACL is "unknown" (never "safe")
 
@@ -23,7 +24,7 @@ function Check {
 }
 $tokens = $null; $errs = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $Collector).Path, [ref]$tokens, [ref]$errs)
-foreach ($n in @('Read-TextAuto', 'Hide-UrlSecret', 'Remove-ExeToken', 'Test-WritableByUsers')) {
+foreach ($n in @('Read-TextAuto', 'Hide-UrlSecret', 'Remove-ExeToken', 'Test-WritableByUsers', 'Test-WmiDefaultBinding')) {
     $def = $ast.Find({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true)
     if (-not $def) { Write-Host ('FAIL  ' + $n + ' not found'); exit 1 }
     . ([scriptblock]::Create($def.Extent.Text))
@@ -80,6 +81,29 @@ try {
     $acl.AddAccessRule($rule); Set-Acl -LiteralPath $open -AclObject $acl
     Check 'L4 : a folder that grants Users Modify is detected' ((Test-WritableByUsers $f) -eq $true)
 } catch { Write-Host ('  SKIP  L4 : could not change an ACL here (' + $_.Exception.Message + ')') -ForegroundColor Yellow }
+
+Write-Host "`nL5  Test-WmiDefaultBinding"
+function New-Bind { param([string]$CClass, [string]$CName, [string]$FName, [string]$Query)
+    [pscustomobject]@{
+        Consumer = [pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = $CClass }; Name = $CName }
+        Filter   = [pscustomobject]@{ Name = $FName; Query = $Query }
+    }
+}
+$stockQ = 'select * from MSFT_SCMEventLogEvent'
+Check 'L5 : the stock SCM binding is recognised' (Test-WmiDefaultBinding (New-Bind 'NTEventLogEventConsumer' 'SCM Event Log Consumer' 'SCM Event Log Filter' $stockQ) @())
+Check 'L5 : the query is also found through the filter list' (Test-WmiDefaultBinding (New-Bind 'NTEventLogEventConsumer' 'SCM Event Log Consumer' 'SCM Event Log Filter' '') @([pscustomobject]@{ Name = 'SCM Event Log Filter'; Query = $stockQ }))
+Check 'L5 : same names, a command-line consumer is NOT stock' (-not (Test-WmiDefaultBinding (New-Bind 'CommandLineEventConsumer' 'SCM Event Log Consumer' 'SCM Event Log Filter' $stockQ) @()))
+Check 'L5 : same names, a different query is NOT stock' (-not (Test-WmiDefaultBinding (New-Bind 'NTEventLogEventConsumer' 'SCM Event Log Consumer' 'SCM Event Log Filter' 'select * from __InstanceCreationEvent') @()))
+Check 'L5 : a different consumer name is NOT stock' (-not (Test-WmiDefaultBinding (New-Bind 'NTEventLogEventConsumer' 'Updater' 'SCM Event Log Filter' $stockQ) @()))
+Check 'L5 : a different filter name is NOT stock' (-not (Test-WmiDefaultBinding (New-Bind 'NTEventLogEventConsumer' 'SCM Event Log Consumer' 'X' $stockQ) @()))
+Check 'L5 : no query anywhere is NOT stock (unknown stays a lead)' (-not (Test-WmiDefaultBinding (New-Bind 'NTEventLogEventConsumer' 'SCM Event Log Consumer' 'SCM Event Log Filter' '') @()))
+Check 'L5 : null input is NOT stock' (-not (Test-WmiDefaultBinding $null @()))
+$live = @(Get-CimInstance -Namespace root\subscription -ClassName __FilterToConsumerBinding -ErrorAction SilentlyContinue)
+if ($live.Count -gt 0) {
+    $lf = @(Get-CimInstance -Namespace root\subscription -ClassName __EventFilter -ErrorAction SilentlyContinue)
+    $scm = @($live | Where-Object { [string]$_.Filter.Name -eq 'SCM Event Log Filter' })
+    if ($scm.Count -gt 0) { Check 'L5 : the real SCM binding on this machine is recognised' (Test-WmiDefaultBinding $scm[0] $lf) }
+} else { Write-Host '  SKIP  L5 : no WMI binding on this machine to read' -ForegroundColor Yellow }
 
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''

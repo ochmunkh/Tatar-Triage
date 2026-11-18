@@ -14,6 +14,7 @@ for a local collector are listed, and each is matched to a concrete test.
 |---|---|---|
 | Linux | `bash tests/test-security.sh` (needs `strace`; section S8 is SKIPPED without it) | about 2 min |
 | Windows | `powershell -NoProfile -File tests\Test-Security.ps1` (`-Quick` skips the full `-All` timing run) | about 4 min, 10 with `-All` |
+| Linux fixes | `bash tests/test-linux-fixes.sh` (SUID walk, journal extracts, named limitations) | seconds |
 | Fuzz (Linux) | `python3 tests/fuzz.py [--iterations N]` | under 1 min |
 | Fuzz (Windows) | `pwsh -File tests/Test-Fuzz.ps1` | under 1 min |
 | Containment (Windows) | `tests\Test-Containment.ps1` in an elevated session; SKIP otherwise | about 3 min |

@@ -88,4 +88,8 @@ run; they are the evidence for the row.
 
 | Date | Host (OS, build, physical/VM) | Edition, version | Privilege | Exit | Duration | Findings (true / expected / false positive / gap) | Notes |
 |---|---|---|---|---|---|---|---|
-| | | | | | | | |
+| 2026-11-18 | Windows 11 Pro 10.0.26300, physical workstation | Windows 1.8.0 | not elevated | 0 | 58 s | 39 findings: 0 true leads confirmed, 1 expected (`Admin` has no password requirement flag), most `obfscan` / `indicators` rows expected on a developer machine, 5 defects found | AnyDesk UTF-16 log unreadable; signed-URL credentials in MOTW finding; Defender services reported as user-writable; own tests flagged; bare powershell.exe flagged. All fixed in 1.8.1 |
+| 2026-11-18 | same host | Windows 1.8.0 | elevated | 0 | 41 s | 41 findings; same causes; failed logons were local lock-screen typing (type 2, 127.0.0.1) | Defender false positive reproduced with ACLs readable |
+| 2026-11-18 | Kali Rolling 6.19, VirtualBox VM | Linux 1.8.1 | root | 0 | 60 s | 0 findings, 0 WARN | No journal collected (gap); SUID walk 38 s of 60 s; "Network artifacts saved" untrue. Fixed in 1.8.2 |
+| 2026-11-18 | same host | Linux 1.8.1 | not root | 0 | 21 s | 0 findings, 1 generic WARN | `/etc/shadow`, `/etc/sudoers`, `btmp` skipped without saying so. Fixed in 1.8.2 |
+| 2026-11-18 | Windows Sandbox (clean Windows 11 Enterprise 10.0.26100, offline) x2 | Windows 1.8.1 | elevated (the Sandbox account is an administrator; a non-elevated run is not possible there) | 0 | 20-25 s | 2 findings on a clean system: the stock WMI SCM binding (defect, fixed in 1.8.2), and "1 local Administrators member" (policy, kept) | Reports `container=True` for the Sandbox |

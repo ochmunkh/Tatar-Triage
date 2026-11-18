@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.8.1'
+$script:ToolVersion = '1.8.2'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -1876,6 +1876,26 @@ function Collect-RDP {
     } catch { Add-Err "RDP failed: $_" }
 }
 
+function Test-WmiDefaultBinding {
+    # $true only for the binding Windows itself installs: the SCM Event Log
+    # Consumer (an NTEventLogEventConsumer - it writes to the event log and runs
+    # nothing) fed by the SCM Event Log Filter whose query is the stock one. A
+    # fresh Windows has exactly this, so reporting it made every machine raise the
+    # same lead. Judged by structure, never by the name alone: a consumer of any
+    # other class, or a filter with any other query, is NOT the default.
+    param($Binding, $Filters)
+    try {
+        $c = $Binding.Consumer; $f = $Binding.Filter
+        $cClass = ''
+        if ($c -and $c.CimClass) { $cClass = [string]$c.CimClass.CimClassName }
+        if ($cClass -ne 'NTEventLogEventConsumer') { return $false }
+        if ([string]$c.Name -ne 'SCM Event Log Consumer') { return $false }
+        if ([string]$f.Name -ne 'SCM Event Log Filter') { return $false }
+        $q = [string]$f.Query
+        if (-not $q) { foreach ($x in @($Filters)) { if ([string]$x.Name -eq 'SCM Event Log Filter') { $q = [string]$x.Query } } }
+        return [bool]($q -match '^\s*select\s+\*\s+from\s+MSFT_SCMEventLogEvent\s*$')
+    } catch { return $false }
+}
 function Collect-Lateral {
     Add-Section '19 Lateral movement artifacts'
     try {
@@ -1892,8 +1912,19 @@ function Collect-Lateral {
         }
         Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'PSEXESVC' } | Out-String | Out-FileNoBom $script:ReportFile -Append
         Add-Report '-- WMI persistence (root\subscription) --'
+        $wmiFilters = @()
         foreach ($cls in '__EventFilter','CommandLineEventConsumer','ActiveScriptEventConsumer','__FilterToConsumerBinding') {
             $r = Get-CimInstance -Namespace root\subscription -ClassName $cls -ErrorAction SilentlyContinue
+            if ($cls -eq '__EventFilter') { $wmiFilters = @($r) }
+            if ($r -and $cls -eq '__FilterToConsumerBinding') {
+                "[$cls]" | Out-FileNoBom $script:ReportFile -Append
+                $r | Format-List | Out-String | Out-FileNoBom $script:ReportFile -Append
+                $custom = @($r | Where-Object { -not (Test-WmiDefaultBinding $_ $wmiFilters) })
+                $stock = @($r).Count - $custom.Count
+                if ($stock -gt 0) { Add-Report ("(not flagged: {0} stock Windows binding(s) - SCM Event Log Consumer, an event-log writer that runs nothing)" -f $stock) }
+                if ($custom.Count -gt 0) { Add-Finding -Category 'lateral' -Message ("WMI event subscription consumer found: {0} ({1} entry/entries)" -f $cls, $custom.Count) -Detail 'Review report section 19 - WMI consumers are a known persistence technique (T1546.003)' }
+                continue
+            }
             if ($r) {
                 "[$cls]" | Out-FileNoBom $script:ReportFile -Append
                 $r | Format-List | Out-String | Out-FileNoBom $script:ReportFile -Append

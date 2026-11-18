@@ -130,6 +130,9 @@ jobs:
           sudo apt-get install -y strace
           bash tests/test-security.sh
 
+      - name: Linux fix tests (SUID walk, journal extracts, named limitations)
+        run: bash tests/test-linux-fixes.sh
+
       - name: Fuzz tests
         run: python3 tests/fuzz.py --iterations 1500 --feed-iterations 40
 

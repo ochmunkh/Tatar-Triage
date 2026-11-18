@@ -564,7 +564,12 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.8.1 — fixes from reading real scans (current)
+### v1.8.2 — fixes from the first lab round (current)
+
+- **Fixed:** the stock Windows WMI binding no longer raises a finding on every machine (recognised by structure, not by name); on Linux the systemd journal (auth, sudo, su, login, cron, warnings) is now collected, SUID / SGID takes one walk of the file system instead of two, and an unprivileged run names the files it could not read instead of saying "recorded".
+- **Also:** shell scripts are executable in a fresh clone, and `sudo` runs print the `chown` command for the private evidence folder.
+
+### v1.8.1 — fixes from reading real scans
 
 - **Fixed:** AnyDesk's UTF-16 connection history is now readable; credentials in a download URL's query string (`sig=`, `jwt=`, ...) are redacted in the Mark-of-the-Web finding; Defender's services under ProgramData are no longer reported as user-writable (the file's ACL decides); the collector's own tests no longer raise obfuscation findings and a bare `powershell.exe` is not a lead by name.
 - **Added:** fuzz tests for both editions, a Windows Firewall containment test, pinned Actions and signed build provenance for release assets (`gh attestation verify Tatar.ps1 --repo ochmunkh/Tatar-Triage`).

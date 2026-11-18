@@ -4,6 +4,22 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.8.2] — 2026-11-18
+
+Found by running the 1.8.1 release on a clean Windows Sandbox, a Kali VM (privileged and not) and a workstation. The lab protocol and its results are in `docs/VALIDATION.md`.
+
+### Fixed
+- **Windows: the stock WMI binding was reported on every machine.** A fresh Windows has the `SCM Event Log Consumer` binding (an event-log writer that runs nothing), and the lateral-movement module raised a finding for it. It is now recognised by structure - consumer class `NTEventLogEventConsumer`, the stock filter name and the stock filter query - and listed in the report as "not flagged". The same names with another class or another query, and every other binding, are still reported.
+- **Linux: the systemd journal was not collected.** Kali, current Debian, Ubuntu and Fedora installs log to the journal only, so `logs/` held `wtmp` and `btmp` and nothing about `sudo`, `su`, `login` or `cron`. The logs module now writes bounded, sanitised extracts into `logs/`: 14 days of auth events (sshd, sudo, su, login, logind, cron), 7 days of warnings, and the boot list. Nothing is written when the journal gives no entries.
+- **Linux: an unprivileged run said "recorded" while skipping files.** The integrity module hashed four of six files without saying that `/etc/shadow` and `/etc/sudoers` were unreadable. Integrity and logs now name every file they could not read, in the report and in `moduleLimitations`.
+- **Linux: SUID / SGID was two walks of the whole tree.** It is one walk now (about half the time on a small VM, more on a large host); the lists are identical to those of two separate walks (test K1).
+- **Linux: a false message.** The network module reported "Network artifacts saved" although nothing is saved separately; it now says where the data is.
+
+### Added
+- `tests/test-linux-fixes.sh` (K1-K3) and the L5 group in `tests/Test-LogFixes.ps1`.
+- Linux: when run with `sudo`, the console prints how to take ownership of the private evidence folder (`sudo chown -R <user> <path>`).
+- Shell scripts are stored as executable in the repository, so a fresh clone runs `./tatar-linux.sh` without `chmod`.
+
 ## [1.8.1] — 2026-11-18
 
 Found by reading the output of real scans of a workstation, not by a test suite.

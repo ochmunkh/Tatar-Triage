@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.8.1"
+VERSION="1.8.2"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -972,7 +972,7 @@ m_network() {
             add_finding "Review" "network" "/etc/hosts has $hx custom entries" "First $hn of $hx: $hsum | Review /etc/hosts in report - static host overrides can redirect traffic (T1565.001)"
         fi
     fi
-    report "Network artifacts saved."
+    report "Sockets, addresses, routes, neighbours, resolver and hosts are in this report (no separate files)."
     return $rc
 }
 
@@ -1122,11 +1122,21 @@ m_apps() {
 
 m_suid() {
     section "09 SUID / SGID binaries"
+    # ONE walk of the file system, not two: the walk is what takes the time, and a
+    # host with a large tree paid for it twice. Only the matching files are stat'ed.
+    local all mode path list="" sgid=""
+    all=$(find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec stat -c '%a %n' {} + 2>/dev/null)
+    while IFS=' ' read -r mode path; do
+        [ -n "$path" ] || continue
+        case "$mode" in *[!0-7]*) continue ;; esac
+        [ $(( 8#$mode & 8#4000 )) -ne 0 ] && list="${list}${path}"$'\n'
+        [ $(( 8#$mode & 8#2000 )) -ne 0 ] && sgid="${sgid}${path}"$'\n'
+    done <<< "$all"
+    list="${list%$'\n'}"; sgid="${sgid%$'\n'}"
     echo "-- SUID --" >> "$REPORT"
-    local list; list=$(find / -xdev -perm -4000 -type f 2>/dev/null)
     printf '%s\n' "$list" >> "$REPORT"
     echo "-- SGID --" >> "$REPORT"
-    find / -xdev -perm -2000 -type f 2>/dev/null >> "$REPORT"
+    printf '%s\n' "$sgid" >> "$REPORT"
     printf '%s\n' "$list" | grep -vE '^/(usr/bin|bin|usr/sbin|sbin|usr/lib|lib|usr/libexec)/' | grep -E '.' | while read -r s; do
         [ -n "$s" ] && add_finding "Review" "suid" "SUID binary outside standard paths: $s" "Unusual SUID location can indicate privilege-escalation backdoor (T1548.001)"
     done
@@ -1227,13 +1237,44 @@ m_hashes() {
     return 0
 }
 
+# journalctl, bounded in time: a damaged or huge journal must not stall a run.
+jc() { if have timeout; then timeout 40 journalctl "$@"; else journalctl "$@"; fi; }
+# jextract FILE ARGS... : the output of journalctl, made safe to read, written only
+# when it has content. Returns 1 when there was nothing to write.
+jextract() {
+    local dest="$1" body; shift
+    body=$(jc --no-pager "$@" 2>/dev/null)
+    [ -n "$body" ] || return 1
+    [ "$body" = "-- No entries --" ] && return 1
+    printf '%s\n' "$body" | sanitize_stream > "$dest"
+    return 0
+}
+
 m_logs() {
     section "15 Key log copy"
     local ld="$OUTDIR/logs"; mkdir -p "$ld" 2>/dev/null
+    local f skipped=""
     for f in /var/log/auth.log /var/log/secure /var/log/syslog /var/log/messages /var/log/wtmp /var/log/btmp /var/log/cron; do
-        [ -r "$f" ] && cp -p "$f" "$ld/" 2>/dev/null
+        if [ -r "$f" ]; then cp -p "$f" "$ld/" 2>/dev/null
+        elif [ -e "$f" ]; then skipped="${skipped:+$skipped }$f"; fi
     done
+    [ -n "$skipped" ] && add_note "logs: present but unreadable without root, NOT copied: $skipped"
     report "Copied available key logs to logs/."
+    # Distributions that log to the systemd journal only (Kali, current Debian,
+    # Ubuntu and Fedora installs) have no auth.log: without these extracts a run
+    # on them would hold no sudo, su, login or cron history at all.
+    if have journalctl; then
+        local jn=0
+        jextract "$ld/journal_auth.txt" -o short-iso --since "14 days ago" -n 5000 \
+            _COMM=sshd + _COMM=sudo + _COMM=su + _COMM=login + _COMM=systemd-logind + _COMM=cron + _COMM=CRON && jn=$((jn+1))
+        jextract "$ld/journal_warnings.txt" -o short-iso -p warning --since "7 days ago" -n 3000 && jn=$((jn+1))
+        jextract "$ld/journal_boots.txt" --list-boots && jn=$((jn+1))
+        if [ "$jn" -gt 0 ]; then
+            report "systemd journal extracts (14 days of auth, 7 days of warnings, boot list): $jn file(s) in logs/."
+        elif [ "$IS_ROOT" = false ]; then
+            add_note "logs: the systemd journal gave nothing for this user (needs root, or membership of systemd-journal or adm)"
+        fi
+    fi
     return 0
 }
 
@@ -1278,13 +1319,19 @@ m_containers() {
 
 m_integrity() {
     section "18 Critical file integrity (SHA-256 baseline)"
-    local f h
+    local f h skipped=""
     for f in /etc/passwd /etc/shadow /etc/group /etc/sudoers /etc/crontab /etc/ssh/sshd_config; do
         if [ -r "$f" ]; then
             h=$(sha256sum "$f" 2>/dev/null | awk '{print $1}')
             printf '%s  %s\n' "$h" "$f" >> "$REPORT"
+        elif [ -e "$f" ]; then
+            skipped="${skipped:+$skipped }$f"
         fi
     done
+    if [ -n "$skipped" ]; then
+        report "NOT hashed (unreadable without root): $skipped"
+        add_note "integrity: not hashed, unreadable without root: $skipped"
+    fi
     report "Critical-file hashes recorded (compare across runs to detect tampering)."
     return 0
 }
@@ -2020,6 +2067,10 @@ if [ -n "$MH" ]; then
     c_out "[i] Manifest SHA-256: $MH"
 else
     add_err "Could not hash manifest_sha256.txt"
+fi
+
+if [ "$IS_ROOT" = true ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    c_out "[i] The evidence folder is private to root. To read it as $SUDO_USER: sudo chown -R $SUDO_USER \"$OUTDIR\""
 fi
 
 if [ "$COMPRESS" -eq 1 ]; then
