@@ -97,6 +97,7 @@ The Linux suite was written first and made to fail against v1.7.0 before the fix
 | C | Terminal escapes and bidi controls from host file names and command lines reached summary, report and paste files verbatim | Replaced by U+FFFD at the write path; lone CR removed |
 | D | Temporary files could survive an interrupted run (Linux) | Cleanup trap on EXIT, INT, TERM |
 | E | `podman ps` created its storage and lock files on a host that had never run a container (Linux; found by the strace test on a CI runner) | podman is queried only when the user's container storage already exists |
+| F | A signed download URL's credentials were copied into the Mark-of-the-Web finding (Windows, found in a real scan, fixed in 1.8.1) | Query-string secrets are redacted |
 
 Behaviour change to be aware of: on Linux an evidence folder collected as root
 is no longer readable by other users. Read it with `sudo`, or `chown` it

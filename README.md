@@ -564,7 +564,13 @@ If present in a `tools\` subfolder they are used automatically; otherwise those 
 
 ## Changelog
 
-### v1.8.0 — tested against hostile input (current)
+### v1.8.1 — fixes from reading real scans (current)
+
+- **Fixed:** AnyDesk's UTF-16 connection history is now readable; credentials in a download URL's query string (`sig=`, `jwt=`, ...) are redacted in the Mark-of-the-Web finding; Defender's services under ProgramData are no longer reported as user-writable (the file's ACL decides); the collector's own tests no longer raise obfuscation findings and a bare `powershell.exe` is not a lead by name.
+- **Added:** fuzz tests for both editions, a Windows Firewall containment test, pinned Actions and signed build provenance for release assets (`gh attestation verify Tatar.ps1 --repo ochmunkh/Tatar-Triage`).
+
+### v1.8.0 — tested against hostile input
+
 
 - **Security and robustness tests for both editions.** `tests/test-security.sh` (65 checks) and `tests/Test-Security.ps1` throw hostile arguments, paths, feed files, file names and command lines at the collector, and check that evidence is private, tampering is detected, the host is left unchanged, nothing goes online, no temp files remain and a run stays inside its time and memory budget. They are mapped to OWASP ASVS / Top 10 and NIST SP 800-86 / 800-218 in [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md) — a test map, not a compliance claim.
 - **Fixed, all found by those tests:** evidence was created readable by other users (now private: `umask 077`, protected ACL on Windows); a symlink or junction as output path was followed (now refused), as was reuse of an existing evidence folder; terminal escapes and bidi controls from host file names and command lines reached the reports (now replaced by U+FFFD); temp files could survive an interrupted Linux run (now cleaned on exit and on signals). Behaviour change: Linux evidence collected as root is no longer readable by other users.

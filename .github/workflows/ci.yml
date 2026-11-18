@@ -298,6 +298,10 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Test-Fuzz.ps1 -Iterations 1000 -FeedIterations 4
 
+      - name: Log-driven fix tests
+        shell: pwsh
+        run: pwsh -File tests/Test-LogFixes.ps1
+
       - name: Containment with Windows Firewall
         shell: pwsh
         run: pwsh -File tests/Test-Containment.ps1
@@ -443,6 +447,10 @@ jobs:
       - name: Fuzz tests
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-Fuzz.ps1 -Iterations 1000 -FeedIterations 4
+
+      - name: Log-driven fix tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-LogFixes.ps1
 
   docs-parity:
     name: Docs parity (badges / bilingual module lists / ATT&CK coverage)

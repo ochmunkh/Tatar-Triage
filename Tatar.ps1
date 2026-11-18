@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.8.0'
+$script:ToolVersion = '1.8.1'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -575,6 +575,78 @@ function Remove-ControlChar {
     param([string]$s)
     if ([string]::IsNullOrEmpty($s)) { return $s }
     return [regex]::Replace($s, '[\x00-\x1F\x7F\u202A-\u202E\u2066-\u2069]', { param($m) if ($m.Value -match '[\t\r\n]') { ' ' } else { [string][char]0xFFFD } })
+}
+function Read-TextAuto {
+    # Lines of a small text file in whatever encoding it really has. Some tools
+    # (AnyDesk's connection_trace.txt is one) write UTF-16; read as bytes-per-
+    # character that is a NUL between every letter, which the sanitiser then
+    # turned into a U+FFFD between every letter. BOM first, then the NUL pattern
+    # of BOM-less UTF-16, else UTF-8. Bounded to 4 MB: these are log tails.
+    param([string]$Path)
+    $fs = [IO.File]::OpenRead($Path)
+    try {
+        $n = [int][Math]::Min($fs.Length, 4MB)
+        $b = New-Object byte[] $n
+        $r = $fs.Read($b, 0, $n)
+        if ($r -lt $n) { $b = $b[0..($r - 1)] }
+    } finally { $fs.Dispose() }
+    if ($b.Length -eq 0) { return @() }
+    $enc = $null; $skip = 0
+    if ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) { $enc = [Text.Encoding]::UTF8; $skip = 3 }
+    elseif ($b.Length -ge 2 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE) { $enc = [Text.Encoding]::Unicode; $skip = 2 }
+    elseif ($b.Length -ge 2 -and $b[0] -eq 0xFE -and $b[1] -eq 0xFF) { $enc = [Text.Encoding]::BigEndianUnicode; $skip = 2 }
+    else {
+        $odd = 0; $even = 0; $m = [Math]::Min($b.Length, 512)
+        for ($i = 0; $i -lt $m; $i++) { if ($b[$i] -eq 0) { if ($i % 2) { $odd++ } else { $even++ } } }
+        if ($odd -gt ($m / 8) -and $odd -gt (2 * $even)) { $enc = [Text.Encoding]::Unicode }
+        elseif ($even -gt ($m / 8) -and $even -gt (2 * $odd)) { $enc = [Text.Encoding]::BigEndianUnicode }
+        else { $enc = [Text.Encoding]::UTF8 }
+    }
+    $text = $enc.GetString($b, $skip, $b.Length - $skip)
+    return @($text -split "\r?\n")
+}
+function Hide-UrlSecret {
+    # A download URL can carry a bearer credential in its query string (a signed
+    # storage link has sig= and a token). Evidence is copied and shared, so the
+    # secret is replaced by a marker; host, path and every other parameter stay,
+    # which is what an analyst needs. Trailing control characters (the stream a
+    # URL is read from ends in NUL) are cut.
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $t = $Text -replace '[\x00-\x1F]+$', ''
+    return [regex]::Replace($t, '(?i)([?&;])(sig|signature|jwt|token|access_token|id_token|refresh_token|auth|authorization|key|apikey|api_key|code|password|pwd|secret|sas|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature)=([^&\s]*)', '$1$2=[redacted]')
+}
+function Test-WritableByUsers {
+    # $true  : a standard user could replace this file (the file, or its folder,
+    #          grants write to Everyone, Users, Authenticated Users or Interactive)
+    # $false : the ACL was read and grants them no write access
+    # $null  : the ACL could not be read - the caller must treat that as "unknown"
+    param([string]$Path)
+    $sids = @('S-1-1-0', 'S-1-5-32-545', 'S-1-5-11', 'S-1-5-4')
+    $mask = [long][Security.AccessControl.FileSystemRights]'WriteData, AppendData, Delete, ChangePermissions, TakeOwnership'
+    try {
+        foreach ($t in @($Path, (Split-Path -Parent $Path))) {
+            if (-not $t) { continue }
+            $acl = Get-Acl -LiteralPath $t -ErrorAction Stop
+            foreach ($ace in $acl.Access) {
+                if ($ace.AccessControlType -ne 'Allow') { continue }
+                if ($t -ne $Path -and ([int]$ace.PropagationFlags -band 2)) { continue }   # inherit-only: applies to children, not to the folder
+                $sid = $null
+                try { $sid = $ace.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { continue }
+                if ($sids -contains $sid -and (([long]$ace.FileSystemRights) -band $mask) -ne 0) { return $true }
+            }
+        }
+        return $false
+    } catch { return $null }
+}
+function Remove-ExeToken {
+    # The command line without the program that is running it, so a process is
+    # judged by what it was TOLD to do and not by the name of its own binary.
+    param([string]$CommandLine)
+    $c = [string]$CommandLine
+    if ($c -match '^\s*"[^"]*"\s*(.*)$') { return $Matches[1] }
+    if ($c -match '^\s*\S+\s*(.*)$') { return $Matches[1] }
+    return $c
 }
 function Add-Finding {
     # P3: aggregated suspicious findings. LEADS for analyst review, NOT verdicts.
@@ -1243,7 +1315,10 @@ function Collect-Process {
         foreach ($p in $procs) {
             if ($p.CommandLine) {
                 foreach ($s in $sus) {
-                    if ($p.CommandLine -imatch $s) {
+                    # A bare powershell.exe / cmd.exe is not a lead; what it was told to run is.
+                    $subject = [string]$p.CommandLine
+                    if ($s -eq 'powershell' -or $s -eq 'cmd\.exe') { $subject = Remove-ExeToken $subject }
+                    if ($subject -imatch $s) {
                         ("[!] PID {0} (parent {1}) {2}`n    Path: {3}`n    Cmd : {4}" -f $p.ProcessId,$p.ParentProcessId,$p.Name,$p.ExecutablePath,$p.CommandLine) | Out-FileNoBom $script:ReportFile -Append
                         $cl = [string]$p.CommandLine; if ($cl.Length -gt 200) { $cl = $cl.Substring(0,200) + '...' }
                         Add-Finding -Category 'process' -Message ("Suspicious command-line pattern '{0}' in {1} (PID {2})" -f $s, $p.Name, $p.ProcessId) -Detail $cl
@@ -1716,6 +1791,9 @@ function Collect-ObfScan {
         # metacharacters except the two that are escaped here.
         $patterns = @('IEX','Invoke-Expression','FromBase64String','ConvertFrom-Base64',$script:EncArgPattern,'DownloadString','DownloadFile','fromCharCode','eval\(','WScript\.Shell','-w\s+hidden')
         $cutoff = (Get-Date).AddDays(-30)
+        # The collector's own tests and tools match its own detection patterns by design.
+        # They stay in the report but raise no finding; the count is a Stat.
+        $selfRoot = ''; try { if ($PSCommandPath) { $selfRoot = Split-Path -Parent $PSCommandPath } } catch {}
         foreach ($base in $paths) {
             if (-not (Test-PathSafe $base)) { continue }
             $files = Get-ChildItem $base -Recurse -Include *.ps1,*.psm1,*.js,*.vbs,*.bat,*.hta -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $cutoff -and $_.FullName -ne $PSCommandPath } | Sort-Object LastWriteTime -Descending | Select-Object -First 100
@@ -1723,8 +1801,14 @@ function Collect-ObfScan {
                 $m = Select-String -Path $f.FullName -Pattern $patterns -List -ErrorAction SilentlyContinue
                 if ($m) {
                     $snip = $m.Line; if ($snip.Length -gt 160) { $snip = $snip.Substring(0,160)+'...' }
+                    $own = $false
                     # The REPORT still gets one line per file: nothing is lost.
-                    ("[!] {0} | line {1} | {2} | {3}" -f $f.FullName,$m.LineNumber,$m.Pattern,$snip) | Out-FileNoBom $script:ReportFile -Append
+                    if ($selfRoot -and $f.FullName.StartsWith($selfRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                        $rel = $f.FullName.Substring($selfRoot.Length + 1)
+                        if ($rel -imatch '^(tests|tools|linux|docs|release|schema|backup|presentation)\\' -or $rel -ieq 'Tatar.ps1') { $own = $true }
+                    }
+                    ("[!]{4} {0} | line {1} | {2} | {3}" -f $f.FullName,$m.LineNumber,$m.Pattern,$snip,$(if ($own) { ' [collector own file, no finding raised]' } else { '' })) | Out-FileNoBom $script:ReportFile -Append
+                    if ($own) { continue }
                     $script:ObfHits.Add([pscustomobject]@{
                         Pattern = [string]$m.Pattern
                         Dir     = [string](Split-Path $f.FullName -Parent)
@@ -1842,8 +1926,23 @@ function Collect-PrivEsc {
         Add-Report '-- Service binaries in user-writable locations --'
         # Same reason: match the binary, not an argument that merely mentions a
         # path under \Users\ (a log file destination is not a writable binary).
-        $wr = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object { (Get-ServiceImagePath $_.PathName) -imatch 'users\\|\\appdata\\|\\temp\\|\\programdata\\' } | Select-Object Name, PathName
+        # ProgramData is only writable by a standard user in parts of it. For a
+        # binary there, the file's own ACL decides (Defender's Platform folder is
+        # not writable by users); an unreadable ACL keeps the finding.
+        $wrSkipped = New-Object System.Collections.Generic.List[string]
+        $wr = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object {
+            $img = Get-ServiceImagePath $_.PathName
+            if (-not $img) { return $false }
+            if ($img -imatch 'users\\|\\appdata\\|\\temp\\') { return $true }
+            if ($img -imatch '\\programdata\\') {
+                $w = Test-WritableByUsers $img
+                if ($w -eq $false) { $wrSkipped.Add(("{0}  {1}" -f $_.Name, $img)); return $false }
+                return $true
+            }
+            return $false
+        } | Select-Object Name, PathName
         $wr | Out-String | Out-FileNoBom $script:ReportFile -Append
+        if ($wrSkipped.Count) { Add-Report ("(not flagged: under ProgramData but the ACL gives standard users no write access)"); foreach ($k in $wrSkipped) { Add-Report ("    " + $k) } }
         foreach ($w in @($wr)) { Add-Finding -Category 'privesc' -Message ("Service binary in user-writable location: {0}" -f $w.Name) -Detail $w.PathName }
         Add-Report '-- AlwaysInstallElevated --'
         # The escalation needs BOTH hives set to 1: the installer elevates only
@@ -2552,7 +2651,7 @@ function Collect-RMM {
             if (-not (Test-PathSafe $l.Path)) { continue }
             $anyLog = $true
             $lines = @()
-            try { $lines = @(Get-Content -LiteralPath $l.Path -ErrorAction SilentlyContinue) } catch {}
+            try { $lines = @(Read-TextAuto $l.Path) } catch {}
             $lines = @($lines | Where-Object { $_ -and $_.Trim() })
             Add-Report ("[{0}] {1}  ({2} line(s))" -f $l.Name, $l.Path, $lines.Count)
             # The whole file goes in the report; only a bounded tail goes in the
@@ -2938,6 +3037,8 @@ function Collect-MOTW {
                 $zoneId   = ([regex]::Match($zoneRaw, '(?im)^\s*ZoneId\s*=\s*(\d+)')).Groups[1].Value
                 $hostUrl  = ([regex]::Match($zoneRaw, '(?im)^\s*HostUrl\s*=\s*(\S.*)$')).Groups[1].Value.Trim()
                 $referrer = ([regex]::Match($zoneRaw, '(?im)^\s*ReferrerUrl\s*=\s*(\S.*)$')).Groups[1].Value.Trim()
+                $hostUrl  = Hide-UrlSecret $hostUrl
+                $referrer = Hide-UrlSecret $referrer
                 Add-Report ("    zone={0}  {1}" -f $(if ($zoneId) { $zoneId } else { '?' }), $f.FullName)
                 if ($hostUrl)  { Add-Report "        from: $hostUrl" }
                 if ($referrer) { Add-Report "        ref : $referrer" }
