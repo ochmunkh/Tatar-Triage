@@ -11,7 +11,7 @@ jobs:
     name: Linux (bash-n / shellcheck / run / schema)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Bash syntax check
         run: bash -n linux/tatar-linux.sh
@@ -140,7 +140,7 @@ jobs:
     name: Windows (parse / PSScriptAnalyzer / run)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The schema validator below is Python, and the hosted Windows image only
       # guarantees `python` / `py -3` - there is no `python3` on PATH there. Pin
@@ -328,7 +328,7 @@ jobs:
     name: Windows PowerShell 5.1 (run / schema / contract)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Confirm this really is Windows PowerShell 5.1
         shell: powershell
@@ -459,7 +459,7 @@ jobs:
     name: Docs parity (badges / bilingual module lists / ATT&CK coverage)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Every fact this checks is derivable from the collectors, and the git
       # history shows each one has already needed a dedicated repair commit.

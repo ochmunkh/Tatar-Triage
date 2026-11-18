@@ -14,7 +14,7 @@ jobs:
     name: Attach collectors + SHA256SUMS to the release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # .gitattributes forces .ps1 to CRLF and .sh/.json to LF in the working
       # tree on every platform, so the hashes built here match what a user
