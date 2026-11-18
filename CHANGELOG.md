@@ -4,6 +4,16 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Fuzz tests for both editions (`tests/fuzz.py`, `tests/Test-Fuzz.ps1`): random and mutated input for the JSON, CSV, hosts-line, path and control-character code, and mutated allowlist and IOC feeds. No new defect found.
+- Windows containment test with Windows Firewall (`tests/Test-Containment.ps1`): an outbound block rule for the collector host and the Windows Filtering Platform audit prove no connection is attempted. Skipped without elevation.
+- Build-provenance attestation for release assets (`gh attestation verify`).
+
+### Changed
+- GitHub Actions are pinned to commit SHAs; Dependabot keeps them current.
+
 ## [1.8.0] — 2026-11-18
 
 ### Added

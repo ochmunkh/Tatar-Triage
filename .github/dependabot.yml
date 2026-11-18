@@ -1,0 +1,8 @@
+# Keeps the commit-SHA pins in .github/workflows/ current: a pinned action does
+# not move on its own, so an update arrives as a reviewable pull request.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

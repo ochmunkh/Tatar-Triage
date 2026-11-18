@@ -6,13 +6,15 @@ on:
 
 permissions:
   contents: write
+  id-token: write      # sign the build provenance
+  attestations: write
 
 jobs:
   publish:
     name: Attach collectors + SHA256SUMS to the release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # .gitattributes forces .ps1 to CRLF and .sh/.json to LF in the working
       # tree on every platform, so the hashes built here match what a user
@@ -26,6 +28,14 @@ jobs:
           sha256sum Tatar.ps1 tatar-linux.sh allowlist.sample.json ioc.sample.json viewer.html > SHA256SUMS.txt
           echo "--- SHA256SUMS.txt"
           cat SHA256SUMS.txt
+
+      # A signed statement, made by GitHub's own signing service, that these exact
+      # files were produced by this workflow from this commit. Verify a download:
+      #   gh attestation verify Tatar.ps1 --repo ochmunkh/Tatar-Triage
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: 'dist/*'
 
       - name: Take release notes from CHANGELOG.md
         run: |

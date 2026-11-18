@@ -14,6 +14,9 @@ for a local collector are listed, and each is matched to a concrete test.
 |---|---|---|
 | Linux | `bash tests/test-security.sh` (needs `strace`; section S8 is SKIPPED without it) | about 2 min |
 | Windows | `powershell -NoProfile -File tests\Test-Security.ps1` (`-Quick` skips the full `-All` timing run) | about 4 min, 10 with `-All` |
+| Fuzz (Linux) | `python3 tests/fuzz.py [--iterations N]` | under 1 min |
+| Fuzz (Windows) | `pwsh -File tests/Test-Fuzz.ps1` | under 1 min |
+| Containment (Windows) | `tests\Test-Containment.ps1` in an elevated session; SKIP otherwise | about 3 min |
 | Viewer | `python tests/test-viewer.py` (Playwright, not in CI) and `python .github/scripts/check_viewer.py` | seconds |
 | Repo gates | the CI jobs: docs parity, contract parity, README parity, AV safety, viewer, schema validation, PSScriptAnalyzer, shellcheck | CI |
 
@@ -55,6 +58,34 @@ A test that cannot run is reported as `SKIP`, never as `PASS`.
 | SP 800-218 PS.1 / PS.2 | Releases are verifiable: `SHA256SUMS.txt` and the viewer CSP hash gate | release workflow, `check_viewer.py` |
 | SP 800-218 RV.1 | Defects found are fixed and recorded | see "Defects found" below |
 
+## Fuzz tests
+
+Random and mutated input goes to the code that parses text from the host or from
+a feed file, and a property that must hold for every input is checked.
+
+| ID | Target | Property |
+|---|---|---|
+| F1 | `json_escape` (Linux) | the output, quoted, parses and decodes to the exact input |
+| F2 / Z2 | `csv_cell` / `Protect-CsvCell` | no cell begins a spreadsheet formula; quotes are doubled |
+| F3 / Z3 | `hosts_entry` / `Format-HostsEntry` | only legal address and name characters survive; length is bounded |
+| F4 / Z4 | `al_paths_of` / `Get-PathCandidate` | only absolute paths without forbidden characters are extracted |
+| F5 / Z1 | `san_into` / `Remove-ControlChar` | no control, escape or bidi character survives |
+| F6 / Z5 | mutated allowlist and IOC feeds | a run exits 0 or 2, `summary.json` stays valid, no shell error text |
+
+The seed is fixed for reproducibility (`TATAR_FUZZ_SEED` varies it) and a failing
+input is printed. At the time of writing the properties held for several seeds
+and no new defect was found; fuzz input classes that fail are added as fixed
+cases to the security tests.
+
+## Supply chain
+
+GitHub Actions are pinned to commit SHAs (the tag is kept in a comment) and
+Dependabot proposes updates monthly. From the first release tagged after this
+change, the release assets carry a build-provenance attestation. Verify a
+download with:
+
+    gh attestation verify Tatar.ps1 --repo ochmunkh/Tatar-Triage
+
 ## Defects found by these tests
 
 The Linux suite was written first and made to fail against v1.7.0 before the fix.
@@ -73,13 +104,15 @@ deliberately after collection.
 
 ## Not covered (honest limits)
 
-- Windows has no equivalent of `strace` here: the offline claim is tested by
-  polling TCP connections of the process tree and by comparing host state before
-  and after, which can miss a very short connection. The Linux claim is stronger
+- Windows has no `strace`. The offline claim is tested twice: W8 polls TCP
+  connections and compares host state before and after (it can miss a very short
+  connection), and W13 (`tests/Test-Containment.ps1`) blocks outbound traffic for
+  the collector host with a Windows Firewall rule and reads the Windows Filtering
+  Platform audit (events 5156/5157) for any attempt. W13 needs an elevated
+  session and is SKIPPED without one. The Linux claim remains the stronger one
   (system-call trace).
 - Signal-handling tests (SIGTERM, SIGINT) exist for Linux only.
-- GitHub Actions in the workflows are pinned by tag, not by commit SHA.
-- No fuzzing campaign and no third-party penetration test has been performed.
+- Fuzzing is property-based and time-boxed (fixed seed in CI); it is not a coverage-guided campaign. No third-party penetration test has been performed.
 - The viewer test needs a browser and is run by hand, not in CI.
 - Real-host validation on an isolated lab machine (`docs/VALIDATION.md`) is a
   separate step and remains open.

@@ -446,7 +446,7 @@ powershell -NoProfile -File tests\Test-KnownAnswer.ps1
 bash tests/test-known-answer.sh
 ```
 
-Security and robustness tests: `bash tests/test-security.sh` (Linux) and `tests\Test-Security.ps1` (Windows). What they cover, how they map to OWASP and NIST, and what they do not cover: [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md).
+Security and robustness tests: `bash tests/test-security.sh` (Linux) and `tests\Test-Security.ps1` (Windows); fuzz tests: `python3 tests/fuzz.py` and `tests\Test-Fuzz.ps1`. What they cover, how they map to OWASP and NIST, and what they do not cover: [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md).
 
 Publishing `SHA256SUMS.txt` proves the file you hold is the file that was
 released. It does not tell an operator whether **this build, on this machine,
@@ -1115,7 +1115,7 @@ powershell -NoProfile -File tests\Test-KnownAnswer.ps1
 bash tests/test-known-answer.sh
 ```
 
-Аюулгүй байдал ба тэсвэрлэлтийн тест: `bash tests/test-security.sh` (Linux), `tests\Test-Security.ps1` (Windows). Юуг хамарч, OWASP/NIST-тэй хэрхэн харгалзаж, юуг хамаардаггүйг [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md)-ээс үз.
+Аюулгүй байдал ба тэсвэрлэлтийн тест: `bash tests/test-security.sh` (Linux), `tests\Test-Security.ps1` (Windows); fuzz тест: `python3 tests/fuzz.py`, `tests\Test-Fuzz.ps1`. Юуг хамарч, OWASP/NIST-тэй хэрхэн харгалзаж, юуг хамаардаггүйг [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md)-ээс үз.
 
 `SHA256SUMS.txt` нийтлэх нь таны гар дээрх файл нь гаргасан файл мөн гэдгийг
 нотолно. Гэхдээ **энэ build, энэ машин дээр зөв ажиллаж байна уу** гэдгийг
