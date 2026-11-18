@@ -85,25 +85,29 @@ TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `li
      (PowerShell, 33 modules)      (Bash, 18 modules)
           └──────────────┬──────────────┘
                          ▼
+      Private evidence folder · terminal-safe generated text
+                         ▼
              Unified JSON schema  (summary.schema.json · v1.6)
                          ▼
-        ┌────────────────┼────────────────┐
-        ▼                ▼                ▼
-     summary          findings         timeline
-    (+ report)       (SOAR / SIEM)     (+ hashes)
-        └────────────────┼────────────────┘
+   ┌───────────────┬─────┴─────────┬───────────────────┐
+   ▼               ▼               ▼                   ▼
+ summary        findings        timeline        manifest + digest
+(+ report)   (+ moduleStatus)  (+ hashes)       (sha256sum -c)
+   └───────────────┴─────┬─────────┴───────────────────┘
+                         ▼
+      tools/viewer.html (offline)  ·  SIEM / SOAR
                          ▼
                 DFIR investigation
 ```
 
 ### Data flow
 
-1. Parse arguments, create the output folder and chain of custody.
+1. Parse arguments, create the private output folder (a symlink or junction path, or an existing evidence folder, is refused) and the chain of custody.
 2. Detect the runtime environment (virtualization / container / security module).
 3. Run collectors in **order of volatility** (memory · network · process → disk · registry · logs). Each collector writes raw evidence to disk *and* a structured finding in memory.
 4. The **allowlist engine** suppresses known-good findings — kept for audit, never deleted.
 5. The **IOC engine** annotates known-bad findings, overrides the allowlist, and raises new findings from the collected evidence.
-6. Sort into active vs suppressed, then write `summary.txt` / `summary.json`, `findings.json`, and the SHA-256 manifest.
+6. Sort into active vs suppressed, then write `summary.txt` / `summary.json` (with a `moduleStatus[]` per module), `findings.json`, neutralise control and bidi characters in the generated text, and write the SHA-256 manifest and its own digest. `tools/viewer.html` reads the JSON offline.
 
 ### The findings model
 
@@ -125,7 +129,7 @@ Both feed paths are checked **before collection starts**. A path that cannot be 
 
 ### Trust boundaries
 
-No network calls — allowlist and IOC feeds are local files and every hash is computed locally. Read-only first; root/Admin only widens what can be *read*, never what is changed. The script's own SHA-256 and tool version ("version" in summary.json, a single constant per edition) are recorded in the chain of custody, and EDR-sensitive actions (memory dump, hive save, deleted-binary carving) are opt-in and off by default.
+No network calls — allowlist and IOC feeds are local files and every hash is computed locally. Read-only first; root/Admin only widens what can be *read*, never what is changed. The script's own SHA-256 and tool version ("version" in summary.json, a single constant per edition) are recorded in the chain of custody, and EDR-sensitive actions (memory dump, hive save, deleted-binary carving) are opt-in and off by default. The evidence folder is private to the examiner, text taken from the host (file names, command lines) is neutralised before it reaches a report, and temporary files are removed; [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md) lists the tests that hold each of these.
 
 ---
 
@@ -764,25 +768,29 @@ TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1`
      (PowerShell, 33 модуль)       (Bash, 18 модуль)
           └──────────────┬──────────────┘
                          ▼
+     Хувийн нотлох хавтас · terminal-д аюулгүй тайлан
+                         ▼
              Нэгдсэн JSON schema  (summary.schema.json · v1.6)
                          ▼
-        ┌────────────────┼────────────────┐
-        ▼                ▼                ▼
-     summary          findings         timeline
-    (+ тайлан)        (SOAR / SIEM)    (+ hashes)
-        └────────────────┼────────────────┘
+   ┌───────────────┬─────┴─────────┬───────────────────┐
+   ▼               ▼               ▼                   ▼
+ summary        findings        timeline        manifest + digest
+(+ тайлан)   (+ moduleStatus)  (+ hashes)       (sha256sum -c)
+   └───────────────┴─────┬─────────┴───────────────────┘
+                         ▼
+      tools/viewer.html (офлайн)  ·  SIEM / SOAR
                          ▼
               DFIR мөрдөн шинжилгээ
 ```
 
 ### Өгөгдлийн урсгал
 
-1. Аргумент уншиж, гаралтын хавтас болон chain of custody-г бэлдэнэ.
+1. Аргумент уншиж, хувийн гаралтын хавтас (symlink/junction зам, эсвэл аль хэдийн байгаа нотлох хавтсыг татгалзана) болон chain of custody-г бэлдэнэ.
 2. Ажиллаж буй орчноо (виртуал / контейнер / хамгаалалт) тодорхойлно.
 3. Модулиудаа **volatility-ийн дарааллаар** (RFC 3227) ажиллуулна (санах ой · сүлжээ · процесс → диск · registry · лог). Модуль бүр түүхий нотолгоог диск рүү, бүтэцтэй finding-ийг санах ойд гаргана.
 4. **Allowlist** нь урьдаас мэдэгдэж байгаа цэвэр зүйлсийг нууна — устгахгүй, аудитад үлдээнэ.
 5. **IOC** нь мэдэгдэж байгаа хортой индикаторыг тэмдэглэж, allowlist-ийг давж, цуглуулсан нотолгоонд тулгуурлан шинэ finding үүсгэнэ.
-6. Идэвхтэй / suppressed гэж эрэмбэлж `summary.txt` / `summary.json`, `findings.json`, SHA-256 manifest-ээ бичнэ.
+6. Идэвхтэй / suppressed гэж эрэмбэлж `summary.txt` / `summary.json` (модуль бүрийн `moduleStatus[]`-тай), `findings.json`-ийг бичиж, үүсгэсэн текст дэх control/bidi тэмдэгтийг саармагжуулан, SHA-256 manifest болон түүний өөрийн digest-ийг бичнэ. `tools/viewer.html` JSON-г офлайнаар уншина.
 
 ### Finding загвар
 
@@ -800,7 +808,7 @@ Feed-ийн хоёр замыг **цуглуулга эхлэхээс өмнө**
 
 ### Trust boundary
 
-Сүлжээгээр юу ч илгээхгүй — allowlist, IOC жагсаалт нь дотоод файл, хэш дотооддоо бодогдоно. Зөвхөн уншина; root/Admin нь уншиж болох хүрээг өргөтгөнө, өөрчлөх эрх нэмдэггүй. Скриптийн өөрийн SHA-256 болон хувилбарыг (`summary.json`-ийн `version`) chain of custody-д бичих ба EDR-т мэдрэг үйлдлүүд (memory dump, hive save, устсан файлын өгөгдлийг сэргээн гаргах) анхдагчаар унтраалттай, тухайлан асаадаг.
+Сүлжээгээр юу ч илгээхгүй — allowlist, IOC жагсаалт нь дотоод файл, хэш дотооддоо бодогдоно. Зөвхөн уншина; root/Admin нь уншиж болох хүрээг өргөтгөнө, өөрчлөх эрх нэмдэггүй. Скриптийн өөрийн SHA-256 болон хувилбарыг (`summary.json`-ийн `version`) chain of custody-д бичих ба EDR-т мэдрэг үйлдлүүд (memory dump, hive save, устсан файлын өгөгдлийг сэргээн гаргах) анхдагчаар унтраалттай, тухайлан асаадаг. Нотлох хавтас нь шинжээчид хувийн, хостоос авсан текст (файлын нэр, command line) тайланд орохын өмнө саармагжуулагдаж, түр файл устгагдана; эдгээрийг тус бүрд нь [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md)-д тэмдэглэсэн тест баталгаажуулна.
 
 ---
 
