@@ -47,6 +47,8 @@ sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-01
 
 `-List` / `--list` модулиудыг харуулна, `-DryRun` / `--dry-run` юу ч бичихгүйгээр төлөвлөгөөг шалгана. Run бүр exit code (0 цэвэр, 2 асуудалтай дууссан)-той дуусч, [`viewer`](tools/viewer.html)-ээр offline нээж болох хавтас үлдээнэ.
 
+Өөрийн indicator байгаа юу? SHA-256 hash, IP, domain, файлын нэрээ [`ioc.sample.json`](ioc.sample.json)-ийн хэлбэртэй JSON файлд хийж `-IOCFile feed.json` (Linux: `--iocfile feed.json`) гэж нэмнэ; sample нь хуулж авах загвар бөгөөд collector өөрийн feed-ийг яг ижлээр уншина. Таарсан зүйл allowlist-д цэвэрлэгдсэн байсан ч IOC тэмдэгтэй High finding болно. Энэ нь баталгаажуулах lead бөгөөд дүгнэлт биш; [таарцыг хэрхэн хийдэг](docs/MODULES.mn.md).
+
 ## Юу өгдөг вэ
 
 - **Windows 33 / Linux 18 модуль**, RFC 3227 order of volatility дарааллаар, нэг output contract (`schemaVersion 1.8`)-той.

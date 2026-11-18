@@ -43,6 +43,8 @@ sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-01
 
 Add `-List` / `--list` to see the modules and `-DryRun` / `--dry-run` to check the plan without writing anything. Every run ends with an exit code (0 clean, 2 finished with issues) and a folder you can open with the offline [`viewer`](tools/viewer.html).
 
+Have your own indicators? Put SHA-256 hashes, IPs, domains and file names in a JSON file shaped like [`ioc.sample.json`](ioc.sample.json) and add `-IOCFile feed.json` (Linux: `--iocfile feed.json`); the sample is a template to copy, and the collector reads it the same way. A match becomes a High finding marked IOC, even if your allowlist had cleared it. It is a lead to confirm, not a verdict; [how matching works](docs/MODULES.md).
+
 ## What you get
 
 - **33 modules** on Windows and 18 on Linux, run in RFC 3227 order of volatility, behind one output contract (`schemaVersion 1.8`).

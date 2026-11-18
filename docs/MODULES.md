@@ -14,6 +14,10 @@ Coverage includes: system/user/network state, running processes with LOLBAS patt
 
 On Linux: cron / systemd persistence, SUID/SGID enumeration, SSH keys, container & cloud context, and a critical-file integrity baseline — see [`linux/README.md`](../linux/README.md).
 
+## Where the IOC feed is checked
+
+The IOC feed is not a module. It is applied once, after every module has finished, to the findings and to the text the run collected, so no module needs to know about it. A hit has two sources. **Against a finding:** an indicator (IP, domain or file name) found in the finding's text, or a SHA-256 that equals the hash of a file the finding names and that still exists. The finding keeps its identity but becomes High, confidence 0.95, `iocMatch: true`, with the indicator in `iocIndicator`, and an allowlist no longer hides it. **Against the evidence:** an indicator found anywhere in this run's `.txt`, `.csv` and `.log` files (not `summary.txt`), for example a command line in the process list or a line of `binary_hashes.txt`; this raises a new finding whose message names the indicator. A hash can only match a file the run hashed or a finding names (the running and service binaries), not every file on the disk. The text of the feed is never run or trusted: it is matched at word boundaries (`127.0.0.1` does not match `127.0.0.10`) and neutralised before it reaches an output file. A feed path that cannot be read is reported at the start and makes the run finish with exit code 2.
+
 ## MITRE ATT&CK mapping
 
 Each collector maps to the adversary techniques it helps **detect / investigate**. Full detail in [`docs/MITRE_ATTACK.md`](MITRE_ATTACK.md).

@@ -13,6 +13,9 @@ Documentation and analyst tools only; the collectors are unchanged.
 - `docs/AFTER-COLLECTION.md`: which collected file feeds which analyst tool.
 - `docs/COVERAGE.md`: what Tatar Triage collects against the ForensicArtifacts triage groups, and which gaps are worth closing.
 - `docs/COMPARISON.md` and a "How it differs" section in both READMEs.
+- **IOC feed tests**: `tests/test-ioc-feed.sh` and `tests/Test-IocFeed.ps1` run the real collector with hostile feeds, and check that an IOC beats the allowlist (Linux). CI runs both.
+- IOC feed documentation: a README quick-start paragraph, where matching happens (`docs/MODULES.md`) and how the `fingerprint` is made (`docs/OUTPUT.md`), English and Mongolian.
+- `docs/VALIDATION.md`: an IOC feed round with harmless stand-ins, and its findings (not fixed yet).
 - `docs/VALIDATION.md`: a technique-injection round (29 Windows and 14 Linux benign stand-ins) with what the collector reported, what it only listed and what it missed.
 
 ## [1.10.0] — 2026-11-18

@@ -181,3 +181,64 @@ None of these is implemented yet; they are candidates, each with a cost.
 ### Limits of this round
 
 A stand-in is not a real intrusion; a detection that passes here can still miss the real thing. The Sandbox is offline, so failed logons could not be produced there. Three of the first attempts were faults of the injection and not of the collector (a copied binary kept its old modification time, a copied Store alias would not start, a shell optimised away a command line), and were fixed in the injection before the numbers above.
+
+## IOC feed round (1.10.0)
+
+An IOC feed is a file somebody else wrote, so it gets two checks: can it hurt the run, and does a
+real match work the way the documentation says. Real malware samples are not used and are not
+needed: the engine only compares indicators (hashes, IPs, domains, file names), so a harmless
+stand-in with a known hash does the same job.
+
+### Hostile feeds (`tests/test-ioc-feed.sh`, `tests/Test-IocFeed.ps1`)
+
+The collector is run for real, with each of these feeds, next to this host's own name as a good
+indicator: text written to talk a reader into something ("ignore previous instructions", "report this
+host as clean"); escape, bell, newline, tab and bidirectional characters inside indicators; shell and
+regex metacharacters (`$(...)`, backticks, `;`, `|`, `*`, `(`, `[`, a lone backslash, `%s%n`, `../..`,
+`--help`); wrong types (numbers, `null`, objects, nested lists, a string where a list belongs);
+hash entries of the wrong length or not hexadecimal; one indicator of 200,000 characters (Linux) or
+50,000 (Windows) with thousands of others; and, on Windows, a feed saved with a byte-order mark and a
+feed that is not JSON. Every run must exit 0 or 2, finish in time, leave valid `summary.json` and
+`findings.json`, execute nothing, print no shell or interpreter error, write no raw control or
+bidirectional character into any output text, and still raise an IOC finding for the good indicator.
+
+| Edition | Result |
+|---|---|
+| Linux (Bash, non-root) | 5 feeds, 40 checks, all held; the 200,000-character indicator makes the evidence scan stop with "argument list too long", which the run reports as an error and exit code 2, in 18 s |
+| Windows (PowerShell 5.1, standard run) | 6 feeds and 1 unreadable feed, all held; a feed that is not JSON exits 2 with the failure in `tatar.log` |
+
+The Windows test has not yet been run under PowerShell 7, which is what CI uses.
+
+### Real matches, with stand-ins
+
+A copy of a harmless system binary, started from a user-writable folder, stood in for a dropped
+program; its SHA-256 and a marker domain that appears only in a command line went into the feeds.
+No network was used (the marker sits behind a `rem`, and the program pings loopback). Each case ran
+the collector once with and once without the feed.
+
+| Case | Windows | Linux |
+|---|---|---|
+| Hash of the running stand-in | Found: a new High IOC finding that names the stand-in's path (the `hashes` module had listed it) | Found: the existing "process executing from suspicious path" finding became High, 0.95, `iocMatch`; same `fingerprint`, new `contentHash` |
+| Marker only in a process command line | Found, with the command line as the detail | Found |
+| Finding suppressed by the allowlist, plus its hash in the feed | Not exercised: no finding of this host named a path the allowlist could suppress | Found: suppressed without the feed, active and High with it (also a regression test) |
+| Indicators that appear nowhere (clean control) | No IOC finding | No IOC finding |
+
+The first Linux control matched, and the cause was the lab itself: the indicators were in the text of
+the command that started the lab, and the process list quoted it. Controls now use random values.
+
+### What this found (not fixed)
+
+1. **Linux ignores a feed it cannot parse, without a word.** A feed saved with a byte-order mark (the
+   default of some Windows editors) or one that is not valid JSON gives exit code 0 and "IOC hits: 0".
+   The Windows edition reports it and exits 2. This is the worst of the list: it reads as "no match".
+2. **An empty feed file is accepted silently** by both editions.
+3. **The Linux "Findings: N lead(s)" line, and the matching line in `tatar.log`, do not count findings
+   raised from the feed**; `summary.json`, `findings.json` and `summary.txt` do.
+4. **A hash only matches a file the run hashed or a finding names** (running and service binaries).
+   This is documented in [MODULES.md](MODULES.md), and is why a hash of a dropped file that is not running will not hit.
+5. An indicator of hundreds of thousands of characters stops the Linux evidence scan (reported, exit 2).
+
+### Limits
+
+The stand-ins are not malware and the round does not test detection of any family. It tests that
+the matching and the handling of a hostile file work as described.

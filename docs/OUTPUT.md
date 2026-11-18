@@ -25,6 +25,8 @@ Findings come from the collectors themselves: LOLBAS-style command lines, obfusc
 
 > **Important:** findings are automated pattern matches — **leads for review, not verdicts**. Legitimate software (updaters, IT tooling) regularly appears; validate each lead against the full report before drawing conclusions.
 
+Each finding in `findings.json` also carries a `fingerprint` (16 hex characters) and a `contentHash`. The fingerprint says what the finding *is*: its module, artifact class, category, its message (a process ID or a count such as "12 files" is masked) and the paths it names. It does not depend on when the scan ran, so the same finding on the same host has the same fingerprint in every scan, and `tatar-diff.py` uses it to tell new from old. The `contentHash` covers severity, confidence and detail, so a finding that stays but gets worse shows as *changed*. An IOC feed hit on an existing finding keeps that finding's fingerprint and only changes its content hash; an indicator found in the evidence becomes a finding of its own whose message names the indicator, so each indicator has its own stable fingerprint.
+
 ## Execution log (`tatar.log`)
 
 Each run writes a timestamped execution log alongside the evidence:

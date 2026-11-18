@@ -59,6 +59,9 @@ jobs:
       - name: IOC boundary unit tests
         run: bash tests/test-ioc-boundary.sh
 
+      - name: Hostile IOC feeds (the feed is a file someone else wrote)
+        run: bash tests/test-ioc-feed.sh
+
       # json_escape is the single point where collected bytes become JSON.
       # The test drives all three of its paths - including the no-python3
       # fallback, which it forces by shadowing python3, because CI always has
@@ -245,6 +248,10 @@ jobs:
       - name: IOC boundary unit tests
         shell: pwsh
         run: pwsh -File tests/Test-IocBoundary.ps1
+
+      - name: Hostile IOC feeds (Windows edition)
+        shell: pwsh
+        run: pwsh -File tests/Test-IocFeed.ps1
 
       - name: EncodedCommand pattern unit tests
         shell: pwsh

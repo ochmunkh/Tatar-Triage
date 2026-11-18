@@ -25,6 +25,8 @@ Finding-ууд collector-уудаас өөрсдөөс нь гарна: LOLBAS �
 
 > **Чухал:** finding бол автомат pattern match — **review хийх сэжүүр, эцсийн дүгнэлт биш.** Хууль ёсны программ (updater, IT хэрэгсэл) байнга орж ирдэг; дүгнэлт гаргахаасаа өмнө сэжүүр бүрийг дэлгэрэнгүй тайлантай тулгаж баталгаажуул.
 
+`findings.json` дахь finding бүр `fingerprint` (16 hex тэмдэгт) болон `contentHash` агуулна. Fingerprint нь finding-ийн *юу болохыг* хэлнэ: module, artifact class, category, message (process ID эсвэл "12 files" гэх мэт тоо далдлагдана) болон нэрлэсэн замууд. Энэ нь scan хэзээ ажилласнаас хамаарахгүй тул нэг хост дээрх ижил finding scan бүрт ижил fingerprint-тэй байх бөгөөд `tatar-diff.py` үүгээр шинэ, хуучныг ялгана. `contentHash` нь severity, confidence, detail-ийг хамарна, тиймээс хэвээр үлдсэн ч улам дордсон finding *өөрчлөгдсөн* гэж харагдана. Одоо байгаа finding дээрх IOC feed таарц тэр finding-ийн fingerprint-ийг хэвээр үлдээж зөвхөн content hash-ийг өөрчилнө; evidence-д олдсон indicator нь indicator-ыг нэрлэсэн өөрийн finding болох тул indicator бүр өөрийн тогтвортой fingerprint-тэй.
+
 ## Гүйцэтгэлийн лог (`tatar.log`)
 
 Run бүр нотолгооны хажууд цаг тэмдэгтэй гүйцэтгэлийн лог бичнэ:
