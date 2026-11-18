@@ -29,7 +29,8 @@
         "1.4",
         "1.5",
         "1.6",
-        "1.7"
+        "1.7",
+        "1.8"
       ],
       "description": "Version of THIS shared schema. Consumers key off this. 1.3 only ADDS optional finding properties, so a 1.2 consumer keeps working against a 1.3 document."
     },
@@ -147,6 +148,7 @@
         },
           "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{16}$", "description": "Stable identity of the finding across runs (1.7): SHA-256 of module, artifactClass, category, the message with a PID and counts masked, and the sorted paths. Two scans of the same host give the same fingerprint for the same finding; a different finding never shares one by design of the masking." },
           "contentHash": { "type": "string", "pattern": "^[0-9a-f]{16}$", "description": "Hash of what the finding says (1.7): severity, confidence and detail. Same fingerprint with a different contentHash means the finding is still there but changed." },
+          "recommendation": { "type": "string", "maxLength": 400, "description": "One static next step for the analyst, chosen by category (1.8). A pointer, not a verdict; the same text in both editions." },
           "evidence": { "type": "array", "description": "Where in this run's evidence the finding came from (1.7): the report file and the section the raising module writes to.", "items": { "type": "object", "required": ["file", "section"], "properties": { "file": { "type": "string" }, "section": { "type": "string" } } } },
           "collected_at": {
             "type": "string",
@@ -167,7 +169,7 @@
     {
       "if": {
         "required": ["schemaVersion"],
-        "properties": { "schemaVersion": { "enum": ["1.4","1.5","1.6","1.7"] } }
+        "properties": { "schemaVersion": { "enum": ["1.4","1.5","1.6","1.7","1.8"] } }
       },
       "then": {
         "description": "From schemaVersion 1.4 onward every timestamp in this document is ISO 8601 UTC at second precision - YYYY-MM-DDTHH:MM:SSZ - on every platform. Earlier versions are not held to it: the Windows producer wrote local time with an offset while the Linux producer wrote Z, so output from the two editions could not be sorted together and a 1.3 document carried both shapes at once (collected_at in Z beside generated with an offset). Constrained here rather than only described, because 'ISO-8601 string' was what the 1.1 schema already said.",

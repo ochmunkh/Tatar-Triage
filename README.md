@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.9-blue" alt="v1.9">
+  <img src="https://img.shields.io/badge/version-1.10-blue" alt="v1.10">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6" alt="Windows and Linux">
   <img src="https://img.shields.io/badge/modules-33-5eead4" alt="33 modules">
@@ -45,7 +45,7 @@ Add `-List` / `--list` to see the modules and `-DryRun` / `--dry-run` to check t
 
 ## What you get
 
-- **33 modules** on Windows and 18 on Linux, run in RFC 3227 order of volatility, behind one output contract (`schemaVersion 1.7`).
+- **33 modules** on Windows and 18 on Linux, run in RFC 3227 order of volatility, behind one output contract (`schemaVersion 1.8`).
 - **Read-only first.** Heavy or destructive actions (memory dump, hive save, full EVTX) are off unless you switch them on. It never extracts or decrypts passwords.
 - **Standard user, offline, AV-safe.** No network calls, no obfuscation, no AV/AMSI bypass. [What it does and does not do on a live host](docs/AV-SAFETY.md).
 - **Evidence you can verify.** SHA-256 manifest of every file, chain of custody, release attestation.
@@ -67,6 +67,8 @@ Run on the analyst's machine, standard library only, offline ([details](docs/TOO
 | `tools/tatar-diff.py` | What changed since the baseline scan? |
 | `tools/tatar-timeline.py` | What happened, in what order? (Timesketch CSV) |
 | `tools/tatar-aggregate.py` | Which host differs from the rest? |
+| `tools/tatar-review.py` | Record what you decided about a finding, and hide what you already cleared |
+| `tools/tatar-siem.py` | Send the findings to a SIEM as ECS-style NDJSON |
 
 ## Documentation
 

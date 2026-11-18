@@ -4,6 +4,18 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.10.0] — 2026-11-18
+
+Ideas taken from commercial triage platforms, kept inside the toolkit's rules: offline, read-only, standard user, nothing sent anywhere.
+
+### Added
+- **Reviewed verdicts** (`tools/tatar-review.py`). An analyst can record `good`, `suspicious` or `bad` for a finding in a plain `reviewed.json`, keyed by the finding fingerprint so it carries over to later scans. A review is *stale* when the finding's `contentHash` changed since, so a `good` never hides a finding that got worse. `tatar-diff.py --reviews` and `tatar-aggregate.py --reviews` hide what was cleared and tag the rest.
+- **Recommendation (schema 1.8).** Every finding carries `recommendation`, one static next step chosen by category, identical in both editions (`tests/fixtures/recommendations.tsv` is the shared reference). The viewer shows it as "Recommendation".
+- **SIEM export** (`tools/tatar-siem.py`): ECS-style NDJSON, one line per finding, optional Elasticsearch bulk format with a stable `_id`, never guesses a time zone, escapes control and bidirectional characters.
+
+### Changed
+- `schemaVersion` is now `1.8` (one optional property added to findings; 1.7 documents stay valid). The tools still read 1.7 scans.
+
 ## [1.9.1] — 2026-11-18
 
 Found by the 1.9.0 lab round (Sandbox, Kali root and not root, a physical Windows 11 as a standard user).

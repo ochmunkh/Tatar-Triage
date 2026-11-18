@@ -9,7 +9,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 COLLECTOR="${1:-$HERE/../linux/tatar-linux.sh}"
 VEC="$HERE/fixtures/identity-vectors.tsv"
 GSEP="$(printf '\035')"; FSEP="$(printf '\037')"
-for fn in _hash16 mask_message finding_fingerprint finding_contenthash evidence_section json_escape _emit_findings_json; do
+for fn in _hash16 mask_message finding_fingerprint finding_contenthash evidence_section recommendation_for json_escape _emit_findings_json; do
     body="$(awk -v n="$fn" '$0 ~ "^"n"\\(\\) \\{" { g = 1 } g { print } g && /^\}/ { exit }' "$COLLECTOR")"
     case "$body" in *"$fn()"*) eval "$body" ;; *) echo "FAIL  $fn not found"; exit 1 ;; esac
 done

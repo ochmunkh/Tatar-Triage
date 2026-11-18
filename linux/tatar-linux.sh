@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.9.1"
+VERSION="1.10.0"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -254,6 +254,31 @@ map_technique() {  # map_technique CATEGORY MESSAGE -> space-separated technique
 # held to it by check_docs_parity.py; the list is closed so a typo cannot invent
 # a class no rule will ever match.
 ARTIFACT_CLASSES="account admin-group bash-history cron deleted-binary dns-cache hosts-file ioc-match logon-failure network-connection package process-commandline service ssh-key suid temp-executable unknown writable-path"
+
+recommendation_for() {  # recommendation_for CATEGORY -> one static next step (schema 1.8)
+    # Same text as Get-Recommendation in Tatar.ps1; tests/fixtures/recommendations.tsv is the shared reference.
+    case "$1" in
+        process) printf '%s' "Check the image path, signature, parent process and network connections; hash the binary and look it up before ending the process." ;;
+        persistence) printf '%s' "Find who created the entry and when, hash what it launches, and compare it with a known-good build before removing it." ;;
+        privesc) printf '%s' "Confirm a standard user can write to the path or setting; fix the permissions or quote the path, then re-scan to confirm it is gone." ;;
+        lateral) printf '%s' "Identify the source host and account, check the matching logon events from the same time, and look for the same tool on other hosts." ;;
+        rmm) printf '%s' "Ask the owner whether this remote-management tool is approved; if not, record when and by which account it was installed before removing it." ;;
+        useractivity) printf '%s' "Ask the user whether they ran it; check where the file came from and when it first appeared." ;;
+        obfscan) printf '%s' "Decode the script in a safe place without running it; look for download commands, encoded payloads and where the file came from." ;;
+        indicators) printf '%s' "Hash the file, check where it came from and when it was created, and compare it with your allowlist before treating it as hostile." ;;
+        motw) printf '%s' "Check where the download came from and whether it was opened or run afterwards." ;;
+        network) printf '%s' "Compare the entry with what this host is meant to use; unexpected overrides can redirect traffic." ;;
+        sessions) printf '%s' "List the source addresses and target accounts in the logon events and check whether any attempt later succeeded." ;;
+        users) printf '%s' "Confirm the account is expected, who created it and when; set a password or disable the account if it is not needed." ;;
+        eventlogs) printf '%s' "Check whether the log was cleared or stopped on purpose and compare it with a copy forwarded to a collector." ;;
+        suid) printf '%s' "Verify the file against the package manager and confirm it is meant to carry the setuid bit." ;;
+        sshkeys) printf '%s' "Confirm each key belongs to a known person or system and check when authorized_keys last changed." ;;
+        bashhistory) printf '%s' "Read the surrounding commands and timestamps for downloads, credential use and cleanup." ;;
+        context) printf '%s' "Confirm whether this host is meant to run containers or is inside one; review mounted paths and privileges." ;;
+        ioc) printf '%s' "A match from your own indicator list; confirm it is not a coincidence, then search other hosts for the same indicator." ;;
+        *) printf '%s' "Review the evidence section named in this finding and confirm with the owner whether it is expected." ;;
+    esac
+}
 
 map_artifact_class() {  # map_artifact_class CATEGORY "MESSAGE DETAIL"
     local c="$1" t="$2"
@@ -1649,7 +1674,7 @@ EOF
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
         printf '  "version": "%s",\n' "$VERSION"
-        printf '  "schemaVersion": "1.7",\n'
+        printf '  "schemaVersion": "1.8",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "os": "%s",\n' "$(json_escape "$os")"
@@ -1732,7 +1757,7 @@ EOMS
     {
         printf '{\n'
         printf '  "tool": "%s",\n' "$(json_escape "$TOOL")"
-        printf '  "schemaVersion": "1.7",\n'
+        printf '  "schemaVersion": "1.8",\n'
         printf '  "platform": "linux",\n'
         printf '  "host": "%s",\n' "$(json_escape "$hn")"
         printf '  "caseId": "%s",\n' "$(json_escape "$CASE_ID")"
@@ -1838,11 +1863,11 @@ EOF
         if [ -n "$evsec" ] && [ -n "$evfile" ]; then
             evj="[{\"file\":\"$(json_escape "$evfile")\",\"section\":\"$(json_escape "$evsec")\"}]"
         else evj="[]"; fi
-        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"confidenceReason":"%s","suppressed":%s,"suppressReason":"%s","iocMatch":%s,"iocIndicator":"%s","module":"%s","artifactClass":"%s","collected_at":"%s","paths":%s,"fingerprint":"%s","contentHash":"%s","evidence":%s}' \
+        printf '{"id":"%s","severity":"%s","category":"%s","technique":%s,"message":"%s","detail":"%s","confidence":%s,"confidenceReason":"%s","suppressed":%s,"suppressReason":"%s","iocMatch":%s,"iocIndicator":"%s","module":"%s","artifactClass":"%s","collected_at":"%s","paths":%s,"fingerprint":"%s","contentHash":"%s","evidence":%s,"recommendation":"%s"}' \
             "$(json_escape "$fid")" "$(json_escape "$fs")" "$(json_escape "$fc")" "$techjson" \
             "$(json_escape "$fm")" "$(json_escape "$fd")" "$fconf" "$(json_escape "$fcr")" \
             "${fsup:-false}" "$(json_escape "$freason")" "$fioc" "$(json_escape "$find_")" \
-            "$(json_escape "$fmod")" "$(json_escape "${facls:-unknown}")" "$(json_escape "$fts")" "$pathsjson" "$fpr" "$fch" "$evj"
+            "$(json_escape "$fmod")" "$(json_escape "${facls:-unknown}")" "$(json_escape "$fts")" "$pathsjson" "$fpr" "$fch" "$evj" "$(json_escape "$(recommendation_for "$fc")")"
     done < "$f2"
 }
 

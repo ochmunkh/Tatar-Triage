@@ -4,7 +4,7 @@
 
 ## Architecture
 
-TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.7`), so a SIEM/SOAR pipeline ingests either platform identically.
+TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `linux/tatar-linux.sh` (Linux, 18 modules) — behind a single output contract. Both emit the same JSON schema (`schemaVersion 1.8`), so a SIEM/SOAR pipeline ingests either platform identically.
 
 ```
                     TATAR Triage
@@ -16,7 +16,7 @@ TATAR ships as two parity editions — `Tatar.ps1` (Windows, 33 modules) and `li
                          ▼
       Private evidence folder · terminal-safe generated text
                          ▼
-             Unified JSON schema  (summary.schema.json · v1.7)
+             Unified JSON schema  (summary.schema.json · v1.8)
                          ▼
    ┌───────────────┬─────┴─────────┬───────────────────┐
    ▼               ▼               ▼                   ▼

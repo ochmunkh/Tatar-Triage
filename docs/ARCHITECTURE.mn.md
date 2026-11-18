@@ -4,7 +4,7 @@
 
 ## Архитектур
 
-TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 33 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.7`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
+TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1` (Windows, 33 модуль), `tatar-linux.sh` (Linux, 18 модуль) — боловч хоёул ижил гаралтын contract-тай. Ижил JSON schema (`schemaVersion 1.8`) гаргадаг тул SIEM/SOAR аль ч платформын үр дүнг ялгалгүй уншина.
 
 ```
                     TATAR Triage
@@ -16,7 +16,7 @@ TATAR бол ижил үүрэгтэй хоёр хувилбар — `Tatar.ps1`
                          ▼
      Хувийн нотлох хавтас · terminal-д аюулгүй тайлан
                          ▼
-             Нэгдсэн JSON schema  (summary.schema.json · v1.7)
+             Нэгдсэн JSON schema  (summary.schema.json · v1.8)
                          ▼
    ┌───────────────┬─────┴─────────┬───────────────────┐
    ▼               ▼               ▼                   ▼

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Tyi++zgTcPLa13DWBPrJXSLxf4JMLu18JokSwkoVo/I='; style-src 'sha256-ax8vZy2HFTpoPMFtgUSaDLzsJf5v4SKVKZRReo5gem0='; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-3fI5v9WRMVGpoByKcuRh5dhkCIuQoaY3kxQKk/zDfGQ='; style-src 'sha256-ax8vZy2HFTpoPMFtgUSaDLzsJf5v4SKVKZRReo5gem0='; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>TATAR findings viewer</title>
@@ -540,6 +540,7 @@ th,td{border-bottom:1px solid var(--bd);padding:3px 8px;text-align:left;font-siz
     m('ID', s(f.id, 40));
     m('Module', it.mod);
     m('Category', s(f.category, 60));
+    m('Recommendation', s(f.recommendation, 400));
     m('Collected', s(f.collected_at, 40));
     m('Confidence', s(f.confidence, 10));
     m('Why this confidence', s(f.confidenceReason, 300));

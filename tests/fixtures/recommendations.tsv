@@ -1,0 +1,19 @@
+process	Check the image path, signature, parent process and network connections; hash the binary and look it up before ending the process.
+persistence	Find who created the entry and when, hash what it launches, and compare it with a known-good build before removing it.
+privesc	Confirm a standard user can write to the path or setting; fix the permissions or quote the path, then re-scan to confirm it is gone.
+lateral	Identify the source host and account, check the matching logon events from the same time, and look for the same tool on other hosts.
+rmm	Ask the owner whether this remote-management tool is approved; if not, record when and by which account it was installed before removing it.
+useractivity	Ask the user whether they ran it; check where the file came from and when it first appeared.
+obfscan	Decode the script in a safe place without running it; look for download commands, encoded payloads and where the file came from.
+indicators	Hash the file, check where it came from and when it was created, and compare it with your allowlist before treating it as hostile.
+motw	Check where the download came from and whether it was opened or run afterwards.
+network	Compare the entry with what this host is meant to use; unexpected overrides can redirect traffic.
+sessions	List the source addresses and target accounts in the logon events and check whether any attempt later succeeded.
+users	Confirm the account is expected, who created it and when; set a password or disable the account if it is not needed.
+eventlogs	Check whether the log was cleared or stopped on purpose and compare it with a copy forwarded to a collector.
+suid	Verify the file against the package manager and confirm it is meant to carry the setuid bit.
+sshkeys	Confirm each key belongs to a known person or system and check when authorized_keys last changed.
+bashhistory	Read the surrounding commands and timestamps for downloads, credential use and cleanup.
+context	Confirm whether this host is meant to run containers or is inside one; review mounted paths and privileges.
+ioc	A match from your own indicator list; confirm it is not a coincidence, then search other hosts for the same indicator.
+*	Review the evidence section named in this finding and confirm with the owner whether it is expected.

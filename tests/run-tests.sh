@@ -69,7 +69,7 @@ except Exception as e:
     sys.exit(1)
 
 check("%s : summary.json parses" % label, True)
-check("%s : schemaVersion is 1.7" % label, s.get("schemaVersion") == "1.7", s.get("schemaVersion"))
+check("%s : schemaVersion is 1.8" % label, s.get("schemaVersion") == "1.8", s.get("schemaVersion"))
 ms = s.get("moduleStatus")
 check("%s : moduleStatus lists every module in modulesRun" % label, isinstance(ms, list) and set(s.get("modulesRun", [])) <= set(e.get("module") for e in ms), ms)
 check("%s : moduleStatus entries are well formed" % label, isinstance(ms, list) and all(e.get("status") in ("ok","warn","failed","skipped") and isinstance(e.get("seconds"), (int, float)) and isinstance(e.get("errors"), int) for e in ms), ms)

@@ -9,7 +9,7 @@ good={"tool":"TATAR Triage Toolkit","version":"1.7.0","schemaVersion":"1.7","pla
  "moduleStatus":[{"module":"network","status":"ok","seconds":1,"errors":0},{"module":"process","status":"failed","seconds":2,"errors":1}],
  "moduleLimitations":[{"module":"process","limitation":"not root"}],"activeFindingsCount":2,"suppressedCount":1,"findingsCount":3,
  "findings":[
- {"id":"TTR-F-001","severity":"High","category":"process","message":"p running from deleted file","detail":"pid 1","confidence":0.7,"confidenceReason":"r","suppressed":False,"module":"process","artifactClass":"deleted-binary","technique":["T1059.001","javascript:alert(1)","T1036"],"paths":["/tmp/x"],"iocMatch":False},
+ {"id":"TTR-F-001","severity":"High","category":"process","message":"p running from deleted file","detail":"pid 1","confidence":0.7,"confidenceReason":"r","recommendation":"hash it first","suppressed":False,"module":"process","artifactClass":"deleted-binary","technique":["T1059.001","javascript:alert(1)","T1036"],"paths":["/tmp/x"],"iocMatch":False},
  {"id":"TTR-F-002","severity":"Review","category":"network","message":"hosts has 1","confidence":0.4,"suppressed":False,"module":"network","artifactClass":"hosts-file","technique":[],"paths":[]},
  {"id":"TTR-F-003","severity":"Review","category":"network","message":"sup","confidence":0.4,"suppressed":True,"suppressReason":"allowlist","module":"network","artifactClass":"hosts-file"}]}
 hostile={"host":"<img src=x onerror=window.__pwn=1>","findings":[
@@ -40,6 +40,7 @@ with sync_playwright() as p:
     check('guidance is shown for the class',pg.locator('details.f').first.inner_text().find('Next step')>=0 or True)
     pg.locator('details.f summary').first.click()
     check('guidance text present when expanded','deleted' in pg.inner_text('.guide').lower())
+    check('the collector recommendation is shown','hash it first' in pg.inner_text('details.f').lower() or 'hash it first' in pg.inner_text('body').lower())
     # hostile
     pg.set_input_files('#file',pg_host); pg.wait_for_timeout(1500)
     check('hostile: page still alive and listing',pg.locator('details.f').count()>=1,pg.locator('details.f').count())

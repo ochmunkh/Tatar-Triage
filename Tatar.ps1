@@ -14,7 +14,7 @@
       * -IOCFile <json>   - offline IOC feed (hashes/ips/domains/filenames); a hit
         overrides the allowlist and escalates to High / 0.95.
       * findings v2 fields (id, confidence, suppressed, suppressReason, iocMatch,
-        artifactClass), schemaVersion 1.7.
+        artifactClass, recommendation), schemaVersion 1.8.
 
     v1.1 additions:
       * summary.txt / summary.json - analyst-first triage summary with an
@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.9.1'
+$script:ToolVersion = '1.10.0'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -244,6 +244,33 @@ function Write-ExecLog {
     if (-not $script:ExecLog) { return }
     $t = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
     ("[{0}] [{1,-6}] {2}" -f $t, $Level, $Msg) | Out-FileNoBom -FilePath $script:ExecLog -Append
+}
+
+function Get-Recommendation {
+    # One static next step per category (schema 1.8). A pointer for the analyst, not a verdict.
+    # Same text as recommendation_for in linux/tatar-linux.sh; tests/fixtures/recommendations.tsv is the shared reference.
+    param([string]$Category)
+    switch ($Category) {
+        'process' { return 'Check the image path, signature, parent process and network connections; hash the binary and look it up before ending the process.' }
+        'persistence' { return 'Find who created the entry and when, hash what it launches, and compare it with a known-good build before removing it.' }
+        'privesc' { return 'Confirm a standard user can write to the path or setting; fix the permissions or quote the path, then re-scan to confirm it is gone.' }
+        'lateral' { return 'Identify the source host and account, check the matching logon events from the same time, and look for the same tool on other hosts.' }
+        'rmm' { return 'Ask the owner whether this remote-management tool is approved; if not, record when and by which account it was installed before removing it.' }
+        'useractivity' { return 'Ask the user whether they ran it; check where the file came from and when it first appeared.' }
+        'obfscan' { return 'Decode the script in a safe place without running it; look for download commands, encoded payloads and where the file came from.' }
+        'indicators' { return 'Hash the file, check where it came from and when it was created, and compare it with your allowlist before treating it as hostile.' }
+        'motw' { return 'Check where the download came from and whether it was opened or run afterwards.' }
+        'network' { return 'Compare the entry with what this host is meant to use; unexpected overrides can redirect traffic.' }
+        'sessions' { return 'List the source addresses and target accounts in the logon events and check whether any attempt later succeeded.' }
+        'users' { return 'Confirm the account is expected, who created it and when; set a password or disable the account if it is not needed.' }
+        'eventlogs' { return 'Check whether the log was cleared or stopped on purpose and compare it with a copy forwarded to a collector.' }
+        'suid' { return 'Verify the file against the package manager and confirm it is meant to carry the setuid bit.' }
+        'sshkeys' { return 'Confirm each key belongs to a known person or system and check when authorized_keys last changed.' }
+        'bashhistory' { return 'Read the surrounding commands and timestamps for downloads, credential use and cleanup.' }
+        'context' { return 'Confirm whether this host is meant to run containers or is inside one; review mounted paths and privileges.' }
+        'ioc' { return 'A match from your own indicator list; confirm it is not a coincidence, then search other hosts for the same indicator.' }
+        default { return 'Review the evidence section named in this finding and confirm with the owner whether it is expected.' }
+    }
 }
 
 function Get-Technique {
@@ -790,6 +817,7 @@ function Add-Finding {
         artifactClass    = $ArtifactClass
         collected_at     = Get-IsoUtc
         paths            = $fpaths
+        recommendation   = (Get-Recommendation -Category $Category)
     })
 }
 
@@ -2568,6 +2596,7 @@ function Write-Summary {
                         artifactClass    = 'ioc-match'
                         collected_at     = Get-IsoUtc
                         paths            = @(Get-PathCandidate "$bMsg $bDet")
+                        recommendation   = (Get-Recommendation -Category 'ioc')
                     })
                 }
             }
@@ -2623,7 +2652,7 @@ function Write-Summary {
     $jsonObj = [pscustomobject]@{
         tool            = 'TATAR Triage Toolkit'
         version         = $script:ToolVersion
-        schemaVersion   = '1.7'
+        schemaVersion   = '1.8'
         platform        = 'windows'
         host            = $hn
         os              = $osCap
@@ -2658,7 +2687,7 @@ function Write-Summary {
     # findings-only file for SOAR / SIEM ingestion
     $findObj = [pscustomobject]@{
         tool          = 'TATAR Triage Toolkit'
-        schemaVersion = '1.7'
+        schemaVersion = '1.8'
         platform      = 'windows'
         host          = $hn
         caseId        = $CaseId

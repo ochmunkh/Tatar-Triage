@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tatar-diff - compare two TATAR scans of the same host (schema 1.7).
 
-    python3 tools/tatar-diff.py BEFORE AFTER [--all] [--json] [--fail-on-new]
+    python3 tools/tatar-diff.py BEFORE AFTER [--all] [--json] [--fail-on-new] [--reviews reviewed.json]
 
 BEFORE and AFTER are an evidence folder, a summary.json or a findings.json.
 Findings are matched by their stable `fingerprint`:
@@ -10,12 +10,25 @@ Findings are matched by their stable `fingerprint`:
   changed    in both, contentHash differs (severity, confidence or detail moved)
   unchanged  in both, same contentHash (counted, listed only with --all)
 Suppressed (allowlisted) findings are ignored unless --all is given.
+--reviews reviewed.json (see tatar-review.py) drops findings you reviewed as good from
+new and changed (counted as reviewedGood) and tags the rest with their verdict; a review
+becomes stale, and the finding counts again, when the finding itself changed.
 Same fingerprint twice in one scan is handled (matched one to one).
 Read-only, offline, standard library only.
 Exit code: 0 = done, 1 = unreadable input, 2 = --fail-on-new and something is new.
 """
 import argparse, json, os, sys
 from collections import defaultdict
+
+def reviews_module():
+    """tatar-review.py next to this file (the hyphen in its name rules out a plain import)."""
+    import importlib.util
+    sys.dont_write_bytecode = True  # a pyc next to the tools would dirty the checkout
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tatar-review.py")
+    spec = importlib.util.spec_from_file_location("tatar_review", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def load(path):
@@ -73,8 +86,13 @@ def compare(a, b):
     return new, resolved, changed, same
 
 
+VERDICT = {}
+
+
 def line(f):
-    return "[%s] (%s) %s" % (f.get("severity", "?"), f.get("category", "?"), f.get("message", ""))
+    v = VERDICT.get(id(f))
+    return "[%s] (%s) %s%s" % (f.get("severity", "?"), f.get("category", "?"), f.get("message", ""),
+                               ("  {%s}" % v) if v and v != "unreviewed" else "")
 
 
 def main(argv=None):
@@ -83,6 +101,7 @@ def main(argv=None):
     ap.add_argument("--all", action="store_true", help="include suppressed findings and list unchanged ones")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--fail-on-new", action="store_true", help="exit 2 when something is new")
+    ap.add_argument("--reviews", help="reviewed.json: hide findings reviewed as good, tag the others")
     o = ap.parse_args(argv)
     try:
         da, pa = load(o.before); db, pb = load(o.after)
@@ -90,20 +109,45 @@ def main(argv=None):
         print("tatar-diff: %s" % e, file=sys.stderr)
         return 1
     new, resolved, changed, same = compare(index(da, o.all), index(db, o.all))
+    reviewed_good = 0
+    if o.reviews:
+        try:
+            rv = reviews_module()
+            rev = rv.load_reviews(o.reviews)
+        except (OSError, ValueError) as e:
+            print("tatar-diff: %s" % e, file=sys.stderr)
+            return 1
+        keep_new, keep_changed = [], []
+        for f in new:
+            v = rv.verdict_of(f, rev)[0]
+            if v == "good" and not o.all:
+                reviewed_good += 1
+            else:
+                keep_new.append(f); VERDICT[id(f)] = v
+        for x, y in changed:
+            v = rv.verdict_of(y, rev)[0]
+            if v == "good" and not o.all:
+                reviewed_good += 1
+            else:
+                keep_changed.append((x, y)); VERDICT[id(y)] = v
+        new, changed = keep_new, keep_changed
     warn = []
     if da.get("host") != db.get("host"):
         warn.append("the two scans are from different hosts (%s, %s)" % (da.get("host"), db.get("host")))
     if o.json:
         out = {"before": pa, "after": pb, "warnings": warn,
                "counts": {"new": len(new), "resolved": len(resolved), "changed": len(changed), "unchanged": len(same)},
-               "new": new, "resolved": resolved,
-               "changed": [{"before": x, "after": y} for x, y in changed]}
+               "new": [dict(f, verdict=VERDICT[id(f)]) if id(f) in VERDICT else f for f in new], "resolved": resolved,
+               "changed": [{"before": x, "after": dict(y, verdict=VERDICT[id(y)]) if id(y) in VERDICT else y} for x, y in changed]}
+        if o.reviews:
+            out["counts"]["reviewedGood"] = reviewed_good
         print(json.dumps(out, indent=2, ensure_ascii=False))
     else:
         print("TATAR diff  %s -> %s" % (da.get("generated", "?"), db.get("generated", "?")))
         for w in warn:
             print("WARNING: " + w)
-        print("new %d | resolved %d | changed %d | unchanged %d" % (len(new), len(resolved), len(changed), len(same)))
+        print("new %d | resolved %d | changed %d | unchanged %d%s" % (len(new), len(resolved), len(changed), len(same),
+              (" | reviewed good %d (hidden)" % reviewed_good) if o.reviews else ""))
         for title, items in (("NEW", new), ("RESOLVED", resolved)):
             if items:
                 print("\n" + title)

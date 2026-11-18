@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.9-blue" alt="v1.9">
+  <img src="https://img.shields.io/badge/version-1.10-blue" alt="v1.10">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6" alt="Windows and Linux">
   <img src="https://img.shields.io/badge/modules-33-5eead4" alt="33 modules">
@@ -49,7 +49,7 @@ sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-01
 
 ## Юу өгдөг вэ
 
-- **Windows 33 / Linux 18 модуль**, RFC 3227 order of volatility дарааллаар, нэг output contract (`schemaVersion 1.7`)-той.
+- **Windows 33 / Linux 18 модуль**, RFC 3227 order of volatility дарааллаар, нэг output contract (`schemaVersion 1.8`)-той.
 - **Read-only-first.** Хүнд/эвдрэлтэй үйлдлүүд (memory dump, hive save, бүтэн EVTX) анхдагчаар унтраалттай. Нууц үг задлахгүй, тайлахгүй.
 - **Энгийн хэрэглэгч, offline, AV-д аюулгүй.** Сүлжээний дуудлага, обфускаци, AV/AMSI bypass үгүй. [Амьд хост дээр юу хийдэг, юу хийдэггүй](docs/AV-SAFETY.md).
 - **Баталгаажуулж болох нотолгоо.** Файл бүрийн SHA-256 manifest, chain of custody, release attestation.
@@ -69,6 +69,8 @@ sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-01
 | `tools/tatar-diff.py` | Baseline scan-ээс хойш юу өөрчлөгдсөн бэ? |
 | `tools/tatar-timeline.py` | Юу, ямар дарааллаар болсон бэ? (Timesketch CSV) |
 | `tools/tatar-aggregate.py` | Аль хост бусдаасаа ялгаатай вэ? |
+| `tools/tatar-review.py` | Finding дээр гаргасан шийдвэрээ тэмдэглэж, аль хэдийн шалгасан зүйлээ нууна |
+| `tools/tatar-siem.py` | Finding-уудыг SIEM рүү ECS хэлбэрийн NDJSON-оор илгээнэ |
 
 ## Баримт бичиг
 

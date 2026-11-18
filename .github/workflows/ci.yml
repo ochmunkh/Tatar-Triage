@@ -137,12 +137,15 @@ jobs:
         run: |
           python3 tests/identity_ref.py
           bash tests/test-identity.sh
+          bash tests/test-recommendation.sh
 
-      - name: Analysis tools (diff, timeline, aggregate)
+      - name: Analysis tools (diff, timeline, aggregate, review, siem)
         run: |
           python3 tests/test-diff.py
           python3 tests/test-timeline.py
           python3 tests/test-aggregate.py
+          python3 tests/test-review.py
+          python3 tests/test-siem.py
 
       - name: Fuzz tests
         run: python3 tests/fuzz.py --iterations 1500 --feed-iterations 40
@@ -320,6 +323,9 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Test-Identity.ps1
 
+      - name: Finding recommendations (shared reference)
+        run: pwsh -File tests/Test-Recommendation.ps1
+
       - name: Containment with Windows Firewall
         shell: pwsh
         run: pwsh -File tests/Test-Containment.ps1
@@ -473,6 +479,9 @@ jobs:
       - name: Finding identity (golden vectors)
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-Identity.ps1
+
+      - name: Finding recommendations (shared reference)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-Recommendation.ps1
 
   docs-parity:
     name: Docs parity (badges / bilingual module lists / ATT&CK coverage)
