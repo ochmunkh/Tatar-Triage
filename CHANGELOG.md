@@ -10,6 +10,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 - **A new console layout in both editions.** The banner is now a compact header, a block shows host, case, privilege and the evidence folder, and each module prints one line with a progress bar, its status and its time. When the run is not privileged the header says so and what to do about it. The run ends with a short result block (modules, time, leads, errors, exit code) and where the report and summary are. The layout is plain ASCII, appended line by line, so redirected output, `-Silent` and remote sessions behave as before.
 - **The findings viewer has a dark look** with card-style summary fields, and it states when a run was not privileged. The page is still one sealed file with no network access.
 
+### Added
+- **Linux: repeated failed SSH logons from one address are now a finding.** Ten or more `Failed password` lines from the same source address in the last 200 auth-log lines raise a Review finding (T1110). Until now only `lastb` was counted, which needs root. Found by the technique-injection lab (L13).
+
 ### Fixed
 - **Linux: a process that exited during the scan** no longer prints a `/proc/<pid>/cmdline: No such file` message into the console output.
 

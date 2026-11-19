@@ -198,7 +198,17 @@ The same 14 stand-ins, run again as root in a throwaway container with the new c
 
 Two things the run showed. A stand-in written as `sleep 1800 # ... /dev/tcp/...` has no such command line: the shell drops the comment and starts `sleep` directly, so no collector could see it; the stand-in was changed to `sleep 1800; : ...`, which keeps the text in the command line, and that one is found. And the collector found the command line of the shell that was running the check itself, which is expected when the text is on the command line. The collector's own process tree is skipped, so the patterns in its own source never produce a finding.
 
-Failed logons from `auth.log` (L13) are still counted from `lastb` only.
+Failed logons from `auth.log` (L13) were still counted from `lastb` only. That gap was closed in the next round:
+
+### Third run, after the auth-log count (Linux)
+
+The same 14 stand-ins, run as root in a throwaway container (Ubuntu 24.04) with the console and auth-log changes. All 13 that could be planted are now a finding or named in a finding; L02 still could not be planted (no `crontab` command in the container).
+
+| ID | Before | After |
+|---|---|---|
+| L13 30 failed SSH logons from one address | In the report only (`lastb` needs root and a `btmp` file) | Finding (Review, T1110): "Repeated failed SSH logons from <address>: N in the last 200 auth-log lines", raised for any address with ten or more |
+
+The count reads the lines the module already collects, so it needs no extra privilege and no extra time. The threshold of ten is a starting point: a service account with a stale password can reach it without any attack.
 
 ## IOC feed round (1.10.0)
 

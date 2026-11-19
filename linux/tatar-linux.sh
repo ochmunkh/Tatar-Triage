@@ -1094,7 +1094,14 @@ m_sessions() {
     [ -z "$al" ] && [ -r /var/log/secure ] && al=/var/log/secure
     if [ -n "$al" ]; then
         echo "-- $al (accepted/failed/sudo, last 200) --" >> "$REPORT"
-        grep -iE 'accepted|failed password|sudo:|new user|useradd' "$al" 2>/dev/null | tail -n 200 >> "$REPORT"
+        local authl; authl=$(grep -iE 'accepted|failed password|sudo:|new user|useradd' "$al" 2>/dev/null | tail -n 200)
+        printf '%s\n' "$authl" >> "$REPORT"
+        # The same lines, counted per source address: a password guess against sshd is the
+        # one brute-force trace that exists without root (lastb needs it). Ten or more from
+        # one address in the lines read is a lead; the threshold is a starting point, not proof.
+        printf '%s\n' "$authl" | grep -i 'failed password' | sed -n 's/.* from \([0-9A-Fa-f.:]\{3,45\}\)\( port.*\)\{0,1\}$/\1/p' | sort | uniq -c | sort -rn | head -n 3 | while read -r bn bip; do
+            [ "${bn:-0}" -ge 10 ] && add_finding "Review" "sessions" "Repeated failed SSH logons from ${bip}: ${bn} in the last 200 auth-log lines" "Possible password guessing against sshd (T1110); check the source address in $al and whether any logon from it succeeded"
+        done
     elif have journalctl; then
         echo "-- journalctl sshd (last 200) --" >> "$REPORT"
         journalctl _COMM=sshd -n 200 --no-pager 2>/dev/null >> "$REPORT"
