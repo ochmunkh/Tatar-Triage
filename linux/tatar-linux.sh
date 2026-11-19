@@ -1290,7 +1290,7 @@ m_kernelmods() {
 m_indicators() {
     section "13 Suspicious indicators"
     echo "-- world-writable files in system dirs --" >> "$REPORT"
-    find /etc /bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin /usr/local/lib -xdev -type f -perm -0002 2>/dev/null | while read -r f; do
+    find /etc /bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin -xdev -type f -perm -0002 2>/dev/null | while read -r f; do
         echo "[!] world-writable: $f" >> "$REPORT"
         add_finding "Review" "indicators" "World-writable system file: $f" "System binaries/config should not be world-writable"
     done
