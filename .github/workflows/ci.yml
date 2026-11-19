@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# The jobs only read the repository. Without this line the token gets the
+# repository default, which can include write access.
+permissions:
+  contents: read
+
 jobs:
   linux:
     name: Linux (bash-n / shellcheck / run / schema)
@@ -534,3 +539,16 @@ jobs:
       # coverage of the closed artifactClass set are checked, not trusted.
       - name: The findings viewer is sealed and covers every class
         run: python3 .github/scripts/check_viewer.py
+
+      # The mistakes no collector test can see: a version bumped in one edition,
+      # a CHANGELOG section with no date or no body (release.yml builds the
+      # release notes from it), a sample log that still counts 30 modules, an
+      # action pinned to a tag, a workflow with no token permissions, a local
+      # hand-off file that got tracked. Each one needed a repair commit once.
+      - name: Release and repository integrity
+        run: python3 .github/scripts/check_release_integrity.py .
+
+      # A gate that has never failed proves nothing. This breaks one thing at a
+      # time in a copy of the tree and requires the gate to catch each one.
+      - name: The integrity gate catches what it claims to
+        run: python3 tests/test-release-integrity.py

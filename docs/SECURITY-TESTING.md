@@ -23,17 +23,19 @@ for a local collector are listed, and each is matched to a concrete test.
 | Containment (Windows) | `tests\Test-Containment.ps1` in an elevated session; SKIP otherwise | about 3 min |
 | Viewer | `python tests/test-viewer.py` (Playwright, not in CI) and `python .github/scripts/check_viewer.py` | seconds |
 | Repo gates | the CI jobs: docs parity, contract parity, README parity, AV safety, viewer, schema validation, PSScriptAnalyzer, shellcheck | CI |
+| Release integrity | `python3 .github/scripts/check_release_integrity.py` and its proof, `python3 tests/test-release-integrity.py` (breaks 15 things one at a time and requires the gate to catch each) | seconds |
 
 A test that cannot run is reported as `SKIP`, never as `PASS`.
 
-## Result at v1.8.0
+## Result at v1.12 (CI run of 1.12.1)
 
 | Suite | Result |
 |---|---|
 | `tests/test-security.sh` (Linux) | 65 passed, 0 failed |
-| `tests/Test-Security.ps1` (Windows) | 55 passed, 0 failed (full `-All` run 127 s, collector peak 417 MB) |
+| `tests/Test-Security.ps1` (Windows) | 49 passed, 0 failed, 2 skipped on the CI runner (it runs elevated, so the unprivileged checks skip); 55 passed on a standard-user desktop |
 | Functional suites | Windows contract 233/233, Linux contract 45/45, all unit suites green |
 
+The heading names the current major.minor. `check_release_integrity.py` fails the build when it does not, so these numbers are re-recorded for every release line.
 ## Requirement to test map
 
 ### OWASP ASVS 4.0 and Top 10 2021 (applicable subset)
@@ -123,3 +125,56 @@ deliberately after collection.
   separate step and remains open.
 - Results describe the machine the tests ran on; a different Windows build or
   distribution can differ.
+
+## Repository and release controls
+
+Software that is run on a host under investigation is trusted on its release, so
+the repository and the release are held to rules too. `check_release_integrity.py`
+turns the ones that can be checked from the tree into a build failure; the rest
+are stated here so they are not mistaken for tested.
+
+| Check | What fails the build | Why it exists |
+|---|---|---|
+| RI-01 | The newest released CHANGELOG section differs from the version the two collectors carry, has no date, or is empty | `release.yml` builds the release notes from that section |
+| RI-02 | `release.yml` copies a file that is not in the repository | A renamed file would give a release without it |
+| RI-03 | A sample log line shows a module count other than the Windows module count | The sample said 30 after the tool had 33 |
+| RI-04 | A document writes the summary fields with capitals | The schema and both collectors use lower case |
+| RI-05 | The recorded test results are from another release line | Numbers older than the tool read as current |
+| RI-06 | An action is not pinned to a commit, a workflow declares no token permissions, uses `pull_request_target`, or interpolates text an outsider controls into a `run:` step | A pipeline that builds the release is part of what is trusted |
+| RI-07 | A tracked file or the newest commit message carries a name the maintainer keeps out of the repository | Maintainer rule |
+| RI-08 | Hand-off notes, lab files, result folders or planning pages are tracked | They describe real hosts and work in progress |
+| RI-09 | `LICENSE`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md` or `dependabot.yml` is missing | What a project is judged by |
+
+### Where this meets the standards
+
+This is the author's own mapping, written from the published control names. It was
+not checked against the standard texts in the course of writing it, it is not an
+audit, and it is not a claim of conformity with any of them.
+
+| Source | Control | What in this repository answers it |
+|---|---|---|
+| ISO/IEC 27001:2022 Annex A | 8.25 secure development life cycle, 8.28 secure coding | PSScriptAnalyzer and ShellCheck in CI, fuzz tests, review of every change through CI |
+| | 8.26 application security requirements | The numbered claims in `docs/AV-SAFETY.md` (AV-01 to AV-09), each with a check that fails the build |
+| | 8.29 security testing in development | `tests/test-security.sh`, `tests/Test-Security.ps1`, the hostile-feed tests |
+| | 8.31 separation of environments | Detection tests that change a host run only with `TATAR_LAB=disposable` |
+| | 8.32 change management | CHANGELOG, RI-01, protected `main` |
+| | 8.33 test information | Fixtures hold no real host data; evidence folders are git-ignored; RI-08 |
+| | 8.8 technical vulnerabilities, 8.9 configuration | Dependabot for pinned actions, `SECURITY.md`, `.gitattributes` line-ending rules |
+| ISO/IEC 27037:2012 | Identification, collection, acquisition and preservation of digital evidence; auditability, repeatability, reproducibility | Read-only collection (S8, W8), hashes and a recorded chain of custody (S9, W7), deterministic output (S14, W12). The tool records these; it does not make the examiner's process conformant |
+| NIST SP 800-218 (SSDF) | PO.1 requirements, PO.3 toolchain, PS.1 protect code, PS.2 release integrity, PS.3 archive releases | AV-SAFETY claims, CI, pinned actions, `SHA256SUMS.txt` and build-provenance attestation on each release, GitHub releases |
+| | PW.7 code analysis, PW.8 testing, PW.9 secure defaults | Linters, the test suites, EDR-sensitive actions off unless asked (AV-05) |
+| | RV.1 and RV.2 vulnerabilities | `SECURITY.md`, the defect table below |
+| OWASP Top 10 CI/CD | CICD-SEC-3 dependency chain, SEC-4 poisoned pipeline execution, SEC-5 pipeline access control, SEC-9 artifact integrity | Pinned actions and Dependabot, RI-06, least-privilege token, `SHA256SUMS.txt` and attestation |
+| OpenSSF Scorecard | Pinned-Dependencies, Token-Permissions, Dangerous-Workflow, Dependency-Update-Tool, Security-Policy, License | RI-06, RI-09. The Scorecard itself has not been run |
+
+### Not covered
+
+- Branch protection and required reviews are repository settings. CI cannot read
+  them, so nothing here proves they are on.
+- No secret scanning, code scanning (SAST) or software bill of materials is run.
+  The collectors have no third-party dependencies, so the bill would be short.
+- Release tags are not signed; release assets carry a build-provenance
+  attestation instead. No SLSA level is claimed.
+- ISO/IEC 27041, 27042 and 27043 (suitability, analysis, investigation
+  principles) concern the investigator's method, not the collector; the
+  measured detection and false-positive rates are in `docs/VALIDATION.md`.
