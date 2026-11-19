@@ -1857,8 +1857,8 @@ function Collect-PersistenceExtra {
         # A job that runs a command when it finishes is a persistence and download trick that
         # needs no file of its own. Other users' jobs need Administrator; this says so.
         Add-Report "`n-- BITS transfer jobs (collecting user only; -AllUsers needs Administrator) --"
-        $bits = @(); try { $bits = @(Get-BitsTransfer -ErrorAction Stop) } catch {}
-        if ($bits.Count -eq 0) { Add-Report '(none)' }
+        $bits = @(); try { if ((Get-Service -Name BITS -ErrorAction Stop).Status -eq 'Running') { $bits = @(Get-BitsTransfer -ErrorAction Stop) } } catch {}  # only when BITS already runs: asking a stopped service would start it
+        if ($bits.Count -eq 0) { Add-Report '(none, or the BITS service is not running and was left alone)' }
         foreach ($b in $bits) {
             # NotifyCmdLine is a two-element array (program, parameters); an empty one is still a
             # non-null collection, which made every Chrome and Edge updater job a false lead.

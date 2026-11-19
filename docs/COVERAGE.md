@@ -34,7 +34,7 @@ Administrator, a shadow copy or a raw volume read is left for an acquisition too
 | Persistence | Startup folders, Run keys, autoruns | Report |
 | Persistence | WMI event subscriptions | Judged |
 | Persistence | IFEO, AppInit, Winlogon and similar ASEP values | Judged |
-| Persistence | BITS jobs (`Get-BitsTransfer`, current user) | Judged when a job runs a program on completion; the queue database itself is not copied |
+| Persistence | BITS jobs (`Get-BitsTransfer`, current user) | Judged when a job runs a program on completion; read only when the BITS service is already running (asking a stopped service would start it); the queue database itself is not copied |
 | Persistence | PowerShell profiles | Judged for download and decode patterns |
 | Persistence | Group-policy startup and logon scripts | Report |
 | Persistence | Shim databases, `autoexec.bat`, `winstart.bat` | No |
