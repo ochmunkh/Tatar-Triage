@@ -4,6 +4,15 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **A new console layout in both editions.** The banner is now a compact header, a block shows host, case, privilege and the evidence folder, and each module prints one line with a progress bar, its status and its time. When the run is not privileged the header says so and what to do about it. The run ends with a short result block (modules, time, leads, errors, exit code) and where the report and summary are. The layout is plain ASCII, appended line by line, so redirected output, `-Silent` and remote sessions behave as before.
+- **The findings viewer has a dark look** with card-style summary fields, and it states when a run was not privileged. The page is still one sealed file with no network access.
+
+### Fixed
+- **Linux: a process that exited during the scan** no longer prints a `/proc/<pid>/cmdline: No such file` message into the console output.
+
 ## [1.11.0] — 2026-11-19
 
 New detections in both editions (found by the technique-injection lab), fixes for IOC and allowlist feeds, analyst tools and documentation, and corrected Mongolian text.

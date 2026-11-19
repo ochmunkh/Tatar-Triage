@@ -2,16 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-3fI5v9WRMVGpoByKcuRh5dhkCIuQoaY3kxQKk/zDfGQ='; style-src 'sha256-ax8vZy2HFTpoPMFtgUSaDLzsJf5v4SKVKZRReo5gem0='; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-S0JTFvPpWS52wLbrE2dRdkZjMw1uQ3yiRN8+rzE+2wQ='; style-src 'sha256-J51LYcle+EG1wgN7YSRDK8yC2TSujFvaYtq/Sq789Oc='; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>TATAR findings viewer</title>
-<style>:root{--bg:#f6f7f9;--fg:#15191f;--mut:#5b6573;--card:#fff;--bd:#d5dae1;--ac:#0b6e6e;--hi:#b42318;--rv:#8a5a00;--ioc:#6b2fa0;--cor:#1b5fb4;--bgc:#eef1f5}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1318;--fg:#e6e9ee;--mut:#9aa5b4;--card:#171c23;--bd:#2b333d;--ac:#4fc3c3;--hi:#ff7b72;--rv:#e3b341;--ioc:#c9a0ff;--cor:#79b8ff;--bgc:#1d232b}}
+<style>:root{--bg:#070d17;--fg:#d7e6f2;--mut:#8aa0b4;--card:#0c1626;--bd:#16324a;--ac:#38e8ff;--hi:#f87171;--rv:#fbbf24;--ioc:#c9a0ff;--cor:#79b8ff;--bgc:#0a1220;--ok:#4ade80}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .top,main,.foot{max-width:1100px;margin:0 auto;padding:12px 16px}
-h1{margin:8px 0 4px;font-size:22px}
+h1{margin:8px 0 4px;font-size:28px;letter-spacing:.04em;color:var(--ac);font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.top{border-bottom:1px solid var(--bd)}
 .note{margin:0;color:var(--mut);max-width:70ch}
 code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px}
 .muted{color:var(--mut)}
@@ -22,11 +22,11 @@ code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13
 .msg{flex-basis:100%;margin:0;min-height:1.4em}
 .msg.err{color:var(--hi)}
 .panel{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 14px;margin-top:12px}
-.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 18px;margin:0}
-.kv div{min-width:0}
-.kv dt{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
-.kv dd{margin:0;overflow-wrap:anywhere}
-.warn{border-left:4px solid var(--rv);padding-left:10px;margin:10px 0 0}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:0}
+.kv div{min-width:0;background:var(--bgc);border:1px solid var(--bd);border-radius:10px;padding:10px 12px}
+.kv dt{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.14em}
+.kv dd{margin:4px 0 0;overflow-wrap:anywhere;font-size:17px;font-weight:600}
+.warn{border-left:4px solid var(--rv);padding:6px 10px;margin:10px 0 0;background:var(--bgc);border-radius:0 6px 6px 0;color:var(--rv)}
 #controls{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center}
 #controls label{display:flex;gap:6px;align-items:center;font-size:13px}
 input[type=search],select{background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font:inherit;max-width:100%}
@@ -51,7 +51,8 @@ a{color:var(--ac)}
 ul.paths{margin:4px 0;padding-left:20px;overflow-wrap:anywhere}
 table{border-collapse:collapse;width:100%;margin-top:6px}
 th,td{border-bottom:1px solid var(--bd);padding:3px 8px;text-align:left;font-size:13px}
-.foot{font-size:13px}</style>
+.foot{font-size:13px;border-top:1px solid var(--bd);margin-top:18px}
+.foot b{color:var(--ac);float:right;letter-spacing:.1em}</style>
 </head>
 <body>
 <header class="top">
@@ -77,7 +78,7 @@ th,td{border-bottom:1px solid var(--bd);padding:3px 8px;text-align:left;font-siz
   </section>
   <section id="list" aria-label="Findings"></section>
 </main>
-<footer class="foot muted">Guidance is a starting question per artifact class, written for an analyst working on their own machine. It never replaces reading the evidence.</footer>
+<footer class="foot muted"><b>READ-ONLY FIRST</b>Guidance is a starting question per artifact class, written for an analyst working on their own machine. It never replaces reading the evidence.</footer>
 <script type="application/json" id="guidance">{
  "account": {
   "title": "Local account",
@@ -467,6 +468,9 @@ th,td{border-bottom:1px solid var(--bd);padding:3px 8px;text-align:left;font-siz
     if ('errorsLogged' in doc) { kv(dl, 'Errors logged', s(doc.errorsLogged, 20)); }
     kv(dl, 'Findings', s(doc.activeFindingsCount !== undefined ? doc.activeFindingsCount + ' active, ' + doc.suppressedCount + ' suppressed' : (Array.isArray(doc.findings) ? doc.findings.length : 0), 80));
     p.appendChild(dl);
+    if (doc.privileged === false || doc.privileged === 'False' || doc.privileged === 'false') {
+      p.appendChild(el('p', 'warn', 'Standard user run: locked files and some logs were not readable. Run as Administrator (Windows) or root (Linux) for full coverage. Nothing was changed on this host.'));
+    }
 
     var skipped = Array.isArray(doc.modulesSkipped) ? doc.modulesSkipped : [];
     if (skipped.length) {

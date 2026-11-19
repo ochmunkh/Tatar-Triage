@@ -822,24 +822,10 @@ function Add-Finding {
 }
 
 function Show-Banner {
-    $art = @(
-    '  _____  _    _____  _    ____  ',
-    ' |_   _|/ \  |_   _|/ \  |  _ \ ',
-    '   | | / _ \   | | / _ \ | |_) |',
-    '   | |/ ___ \  | |/ ___ \|  _ < ',
-    '   |_/_/   \_\ |_/_/   \_\_| \_\'
-    )
-    $w = 62
-    $bar = '+' + ('=' * $w) + '+'
     Write-Host ""
-    foreach ($l in $art) { Write-Host ("   " + $l) -ForegroundColor Cyan }
-    Write-Host ""
-    Write-Host $bar -ForegroundColor DarkCyan
-    Write-Host ('|' + ("   TATAR TRIAGE TOOLKIT   v$($script:ToolVersion)").PadRight($w) + '|') -ForegroundColor White
-    Write-Host ('|' + ('   Windows Quick Triage / Incident Response Collector').PadRight($w) + '|') -ForegroundColor Gray
-    Write-Host ('|' + ('   Transparent DFIR  -  sign & allow-list, do not evade').PadRight($w) + '|') -ForegroundColor DarkGray
-    Write-Host $bar -ForegroundColor DarkCyan
-    Write-Host ""
+    Write-Host ("  TATAR TRIAGE  v{0}  Windows" -f $script:ToolVersion) -ForegroundColor Cyan
+    Write-Host "  DFIR / endpoint forensics console  -  read-only first, sign & allow-list, do not evade" -ForegroundColor DarkGray
+    Write-Host (' ' + ('=' * 77)) -ForegroundColor DarkCyan
 }
 
 function Show-Help {
@@ -3688,7 +3674,12 @@ Modules     : $($toRun -join ', ')
 OutputDir   : $script:OutDir
 "@ | Out-FileNoBom $script:ReportFile
 
-Write-Console "`n[i] Output: $script:OutDir`n" 'Green'
+$hdrCase = if ($CaseId) { [string]$CaseId } else { '-' }
+Write-Console ("  HOST      {0}   CASE  {1}" -f $hostn, $hdrCase) 'White'
+if ($isAdmin) { Write-Console "  ADMIN     yes" 'Green' }
+else { Write-Console "  ADMIN     LIMITED   ! run as Administrator for full coverage" 'Yellow' }
+Write-Console ("  EVIDENCE  {0}   MODE  read-only" -f $script:OutDir) 'White'
+Write-Console (' ' + ('-' * 77)) 'DarkCyan'
 
 # An allowlist / IOC path that cannot be read used to be skipped in silence.
 # That is the worst failure mode a triage tool has: the analyst reads "no
@@ -3722,7 +3713,8 @@ foreach ($m in $toRun) {
         continue
     }
     if (-not $Silent) { Write-Progress -Activity 'TATAR Triage' -Status $m -PercentComplete (($i/$n)*100) }
-    Write-Console ("[{0}/{1}] {2}" -f $i, $n, $m) 'Cyan'
+    $barW = 20; $fill = [int][math]::Round(($i / $n) * $barW, [MidpointRounding]::AwayFromZero)
+    $lineHead = "  [{0}{1}] {2,2}/{3}  {4}  " -f ('#' * $fill), ('-' * ($barW - $fill)), $i, $n, ([string]$m).PadRight(13)
     Write-ExecLog 'START' ("module {0} ({1}/{2})" -f $m, $i, $n)
     $script:CurrentModule = $m
     $mStart = Get-Date; $errBefore = $script:ErrorCount; $crashed = $false
@@ -3731,6 +3723,8 @@ foreach ($m in $toRun) {
     $mErrs = $script:ErrorCount - $errBefore
     $mStat = if ($crashed) { 'failed' } elseif ($mErrs -gt 0) { 'warn' } else { 'ok' }
     $script:ModuleStatus.Add([pscustomobject]@{ module = [string]$m; status = $mStat; seconds = $secs; errors = $mErrs })
+    $mColor = switch ($mStat) { 'ok' { 'Green' } 'warn' { 'Yellow' } default { 'Red' } }
+    Write-Console ($lineHead + ("{0,-6} {1}s" -f $mStat, $secs)) $mColor
     if ($crashed) { Write-ExecLog 'FAILED' ("module {0} crashed after {1}s - see ERROR above" -f $m, $secs) }
     elseif ($script:ErrorCount -gt $errBefore) { Write-ExecLog 'WARN' ("module {0} finished in {1}s with {2} error(s)" -f $m, $secs, ($script:ErrorCount - $errBefore)) }
     else { Write-ExecLog 'OK' ("module {0} finished in {1}s" -f $m, $secs) }
@@ -3745,7 +3739,8 @@ if ($ran -eq 0) {
 # =====================================================================
 #  Finalize: summary + chain of custody + manifest + optional compress
 # =====================================================================
-Write-Console "`n[i] Finalizing (summary, metadata, manifest, hashes)..." 'Green'
+Write-Console (' ' + ('-' * 77)) 'DarkCyan'
+Write-Console "  Finalizing (summary, metadata, manifest, hashes)..." 'Green'
 $end = Get-Date
 $selfHash = ''
 try { if ($PSCommandPath) { $selfHash = (Get-FileHash -Path $PSCommandPath -Algorithm SHA256).Hash } } catch {}
@@ -3837,7 +3832,7 @@ try {
     $mh = Get-FileHash -LiteralPath $manifest -Algorithm SHA256 -ErrorAction Stop
     [IO.File]::WriteAllText((Join-Path $script:OutDir 'manifest_sha256.txt.sha256'), ("{0}  manifest_sha256.txt`n" -f $mh.Hash.ToLower()), (New-Object System.Text.UTF8Encoding($false)))
     Write-ExecLog 'INFO' ("Manifest SHA-256: {0}" -f $mh.Hash.ToLower())
-    Write-Console ("[i] Manifest SHA-256: {0}" -f $mh.Hash.ToLower()) 'Green'
+    Write-Console ("  Manifest SHA-256: {0}" -f $mh.Hash.ToLower()) 'Green'
 } catch { Add-Err "Manifest failed: $_" }
 
 if ($Compress) {
@@ -3856,8 +3851,12 @@ if ($Compress) {
 $exitCode = if ($script:ErrorCount -gt 0) { 2 } else { 0 }
 Write-ExecLog 'INFO' ("Run complete. Findings: {0} | Errors: {1} | Exit code: {2}" -f $script:Findings.Count, $script:ErrorCount, $exitCode)
 
-Write-Console "`n[+] Done. Report  : $script:ReportFile" 'Green'
-Write-Console ("[+] Summary : {0}" -f (Join-Path $script:OutDir 'summary.txt')) 'Green'
-Write-Console ("[+] Findings: {0} lead(s) for review | Errors logged: {1} | Exit code: {2}" -f $script:Findings.Count, $script:ErrorCount, $exitCode) 'Green'
-Write-Console "[i] This tool does NOT extract passwords. Encrypt & handle output per policy." 'DarkGray'
+Write-Console (' ' + ('=' * 77)) 'DarkCyan'
+$doneColor = if ($exitCode -eq 0) { 'Green' } else { 'Yellow' }
+Write-Console ("  DONE      {0}/{1} modules   {2}s   {3} lead(s) for review   errors {4}   exit {5}" -f $ran, $n, [math]::Round(((Get-Date) - $start).TotalSeconds), $script:Findings.Count, $script:ErrorCount, $exitCode) $doneColor
+if (-not $isAdmin) { Write-Console "  ADMIN     limited run: locked files and some logs were not readable" 'Yellow' }
+Write-Console ("  REPORT    {0}" -f $script:ReportFile) 'White'
+Write-Console ("  SUMMARY   {0}" -f (Join-Path $script:OutDir 'summary.txt')) 'White'
+Write-Console "  NEXT      open viewer.html on the analyst machine, then load summary.json" 'White'
+Write-Console "  This tool does NOT extract passwords. Encrypt & handle output per policy." 'DarkGray'
 exit $exitCode

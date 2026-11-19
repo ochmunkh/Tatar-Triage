@@ -183,6 +183,12 @@ cleanup_tmp() {
     return 0
 }
 
+c_out_nonl() {   # console output without the line break, suppressed by --silent
+    [ "$SILENT" -eq 1 ] && return 0
+    local _m; san_into _m "$1"
+    printf '%s' "$_m"
+}
+
 c_out() {   # console output, suppressed by --silent
     [ "$SILENT" -eq 1 ] && return 0
     local _m; san_into _m "$1"
@@ -896,26 +902,9 @@ json_escape() {
 
 banner() {
     [ "$SILENT" -eq 1 ] && return 0
-    # The ASCII art keeps its quoted heredoc so the backslashes stay literal;
-    # the title line is printed separately so it follows $TOOL_DISPLAY and
-    # $VERSION. It used to hard-code both "(Linux)" and "v1.2.5", which made
-    # the banner the one header in this script a version bump leaves stale.
-    cat <<'EOF'
-
-   _____  _    _____  _    ____
-  |_   _|/ \  |_   _|/ \  |  _ \
-    | | / _ \   | | / _ \ | |_) |
-    | |/ ___ \  | |/ ___ \|  _ <
-    |_/_/   \_\ |_/_/   \_\_| \_\
-
-+==============================================================+
-EOF
-    printf '|   %-59s|\n' "${TOOL_DISPLAY^^}   v$VERSION"
-    cat <<'EOF'
-|   Fast DFIR triage / artifact collector                      |
-|   Transparent - review, sign & allow-list; do not evade      |
-+==============================================================+
-EOF
+    printf '\n  TATAR TRIAGE  v%s  Linux\n' "$VERSION"
+    printf '  DFIR / endpoint forensics console  -  read-only first, sign & allow-list, do not evade\n'
+    printf ' %s\n' "=============================================================================="
 }
 
 show_help() {
@@ -1032,7 +1021,7 @@ m_process() {
     for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
         exe=$(readlink -f "/proc/$pid/exe" 2>/dev/null) || continue
         [ -z "$exe" ] && continue
-        cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+        cmd=$(tr '\0' ' ' 2>/dev/null < "/proc/$pid/cmdline")
         case "$exe" in
             *"(deleted)"*)
                 echo "[!] PID $pid deleted-binary exe: $exe | cmd: $cmd" >> "$REPORT"
@@ -1072,7 +1061,7 @@ m_process() {
             hop=$((hop + 1))
         done
         [ "$skip" -eq 1 ] && continue
-        cl=$(tr '\0' ' ' < "/proc/$cpid/cmdline" 2>/dev/null) || continue
+        cl=$(tr '\0' ' ' 2>/dev/null < "/proc/$cpid/cmdline") || continue
         [ -n "$cl" ] || continue
         if [[ "$cl" == *"${rsdev}tcp/"* || "$cl" == *"${rsdev}udp/"* ]] || [[ "$cl" =~ (^|[[:space:]/])(nc|ncat|netcat)[[:space:]].*-e[[:space:]] ]] \
            || [[ "$cl" =~ bash[[:space:]]+-i[[:space:]]*\>\& ]] || [[ "$cl" =~ (curl|wget)[^\|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z|da)?sh([[:space:]]|$) ]] \
@@ -2178,9 +2167,11 @@ if on_root_fs; then
     add_note "$(root_fs_note); prefer external media that is already mounted."
 fi
 
-c_out ""; c_out "[i] Output: $OUTDIR"
-c_out "[i] Env: virt=$ENV_VIRT container=$ENV_CONTAINER runtime=$ENV_RUNTIME secmod=$ENV_SECMOD"
-c_out ""
+c_out "  HOST      $HOSTN   CASE  ${CASE_ID:--}"
+if [ "$IS_ROOT" = true ]; then c_out "  ADMIN     root"; else c_out "  ADMIN     LIMITED   ! run as root for full coverage"; fi
+c_out "  EVIDENCE  $OUTDIR   MODE  read-only"
+c_out "  ENV       virt=$ENV_VIRT container=$ENV_CONTAINER runtime=$ENV_RUNTIME secmod=$ENV_SECMOD"
+c_out " ------------------------------------------------------------------------------"
 
 I=0; N=$(echo $TO_RUN | wc -w); RAN=0; SKIPPED=""; MODSTATUS=""
 for m in $TO_RUN; do
@@ -2193,7 +2184,9 @@ for m in $TO_RUN; do
         add_err "Unknown module requested, nothing was collected for it: $m"
         continue
     fi
-    c_out "[$I/$N] $m"
+    _fill=$(( (I * 20 + N / 2) / N )); _bar=""; _k=0
+    while [ "$_k" -lt 20 ]; do if [ "$_k" -lt "$_fill" ]; then _bar="${_bar}#"; else _bar="${_bar}-"; fi; _k=$((_k+1)); done
+    c_out_nonl "$(printf '  [%s] %2d/%d  %-13s  ' "$_bar" "$I" "$N" "$m")"
     execlog "START" "module $m ($I/$N)"
     CURRENT_MODULE="$m"
     err_before=$ERROR_COUNT; mstart=$(date +%s)
@@ -2218,11 +2211,12 @@ for m in $TO_RUN; do
     if [ "$rc" -ne 0 ] && [ "$rc" -ne 99 ]; then mstat=failed
     elif [ "$ERROR_COUNT" -gt "$err_before" ]; then mstat=warn; fi
     MODSTATUS="$MODSTATUS $m:$mstat:$secs:$((ERROR_COUNT-err_before))"
+    c_out "$(printf '%-6s %ss' "$mstat" "$secs")"
 done
 
 if [ "$RAN" -eq 0 ]; then c_out "[x] No valid modules were run."; execlog "FATAL" "No valid modules were run."; exit 1; fi
 
-c_out ""; c_out "[i] Finalizing (summary, metadata, manifest)..."
+c_out " ------------------------------------------------------------------------------"; c_out "  Finalizing (summary, metadata, manifest)..."
 END_ISO="$(iso)"; DUR=$(( $(date +%s) - START_EPOCH ))
 
 SELF="$0"; SELF_HASH="$(sha256sum "$SELF" 2>/dev/null | awk '{print $1}')"
@@ -2268,7 +2262,7 @@ MH="$(sha256sum "$MANIFEST" 2>/dev/null | awk '{print $1}')"
 if [ -n "$MH" ]; then
     printf '%s  manifest_sha256.txt\n' "$MH" > "$OUTDIR/manifest_sha256.txt.sha256"
     execlog "INFO" "Manifest SHA-256: $MH"
-    c_out "[i] Manifest SHA-256: $MH"
+    c_out "  Manifest SHA-256: $MH"
 else
     add_err "Could not hash manifest_sha256.txt"
 fi
@@ -2297,9 +2291,11 @@ execlog "INFO" "Run complete. Findings: $FCOUNT | Errors: $ERROR_COUNT | Exit co
 
 rm -f "$FINDINGS_FILE" "$STATS_FILE" 2>/dev/null
 
-c_out ""
-c_out "[+] Done. Report  : $REPORT"
-c_out "[+] Summary : $OUTDIR/summary.txt"
-c_out "[+] Findings: $FCOUNT lead(s) for review | Errors logged: $ERROR_COUNT | Exit code: $EXIT_CODE"
-c_out "[i] Findings are review leads, not verdicts. Encrypt & handle output per policy."
+c_out " =============================================================================="
+c_out "  DONE      $RAN/$N modules   ${DUR}s   $FCOUNT lead(s) for review   errors $ERROR_COUNT   exit $EXIT_CODE"
+[ "$IS_ROOT" = false ] && c_out "  ADMIN     limited run: unreadable files and some logs were skipped"
+c_out "  REPORT    $REPORT"
+c_out "  SUMMARY   $OUTDIR/summary.txt"
+c_out "  NEXT      open viewer.html on the analyst machine, then load summary.json"
+c_out "  Findings are review leads, not verdicts. Encrypt & handle output per policy."
 exit $EXIT_CODE
