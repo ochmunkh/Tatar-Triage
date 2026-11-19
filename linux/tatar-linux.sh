@@ -821,6 +821,10 @@ ioc_technique() {  # ioc_technique INDICATOR -> ATT&CK id
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
+bounded() {  # bounded SECONDS COMMAND... : run with a time limit when timeout exists
+    local secs="$1"; shift
+    if have timeout; then timeout "$secs" "$@"; else "$@"; fi
+}
 
 # Execution-context detection (container / virtualization / LSM). Best-effort.
 ENV_VIRT="unknown"; ENV_CONTAINER=false; ENV_RUNTIME="none"; ENV_SECMOD="none"
@@ -1176,7 +1180,7 @@ m_persistence() {
         done
     done
     echo "-- at jobs --" >> "$REPORT"
-    have atq && atq >> "$REPORT" 2>/dev/null
+    have atq && bounded 10 atq >> "$REPORT" 2>/dev/null
     ls -la /var/spool/at /var/spool/cron/atjobs 2>/dev/null >> "$REPORT"
     echo "-- ld.so.preload --" >> "$REPORT"
     if [ -r /etc/ld.so.preload ]; then
@@ -1304,11 +1308,13 @@ m_indicators() {
     done
     [ "$sdn" -eq 0 ] && add_note "sudoers was NOT readable (needs root): NOPASSWD rules were not checked"
     echo "-- firewall rules --" >> "$REPORT"
-    if have nft; then nft list ruleset 2>&1 | head -n 200 >> "$REPORT"; fi
-    if have iptables; then iptables -S >> "$REPORT" 2>&1; fi
-    if have ufw; then ufw status >> "$REPORT" 2>&1; fi
+    # Every external command below is bounded: lastlog walks a sparse file that is
+    # enormous on hosts with very large user ids, and the firewall tools can wait on a lock.
+    if have nft; then bounded 20 nft list ruleset 2>&1 | head -n 200 >> "$REPORT"; fi
+    if have iptables; then bounded 20 iptables -S 2>&1 | head -n 200 >> "$REPORT"; fi
+    if have ufw; then bounded 20 ufw status 2>&1 | head -n 100 >> "$REPORT"; fi
     echo "-- last logins (lastlog) --" >> "$REPORT"
-    have lastlog && lastlog 2>/dev/null | grep -v 'Never logged in' >> "$REPORT"
+    have lastlog && bounded 20 lastlog 2>/dev/null | grep -v 'Never logged in' | head -n 200 >> "$REPORT"
     echo "-- executables in /tmp /dev/shm /var/tmp --" >> "$REPORT"
     local tc=0 d tl tfirst="" shown
     for d in /tmp /dev/shm /var/tmp; do
