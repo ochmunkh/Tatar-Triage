@@ -112,7 +112,9 @@ runfind() {  # runfind LABEL args... -> prints "suppressed severity iocMatch" of
     python3 - "$(ls -d "$W/o-$l"/*/)findings.json" "$SD" <<'PY'
 import json, sys
 for f in json.load(open(sys.argv[1], encoding="utf-8"))["findings"]:
-    if sys.argv[2] in (f.get("detail", "") + f.get("message", "")) and f.get("category") != "ioc":
+    # the process finding for the running stand-in; a bulk "N executables in /tmp" finding also
+    # mentions the folder but is not about one file, so an allowlist path cannot suppress it
+    if f.get("category") == "process" and sys.argv[2] in (f.get("detail", "") + f.get("message", "")):
         print(f.get("suppressed"), f.get("severity"), f.get("iocMatch")); break
 PY
 }
