@@ -4,9 +4,9 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.11.0] — 2026-11-19
 
-Collector fixes for IOC and allowlist feeds, plus analyst tools and documentation. The version number is raised when this is released.
+New detections in both editions (found by the technique-injection lab), fixes for IOC and allowlist feeds, analyst tools and documentation, and corrected Mongolian text.
 
 ### Fixed
 - **Linux: a feed it could not use matched nothing without a word.** An IOC feed saved with a byte-order mark, one that is not valid JSON, not an object, or with no indicator in it now makes the run exit 2 and says so in `tatar.log`; a byte-order mark is accepted. An allowlist that is not valid JSON is reported the same way. (Found by the new hostile-feed tests.)
