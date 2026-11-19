@@ -97,6 +97,44 @@ foreach ($n in $broken.Keys) {
     Check "$n : tatar.log names the IOC failure" ($tl -and (Test-Path $tl) -and ((Get-Content $tl -Raw) -match 'IOC'))
 }
 
+# Known-bad beats known-good. A Run key entry that starts a copy of a harmless binary from the
+# user Temp folder is a finding the allowlist can suppress; the same entry with the file's SHA-256
+# in the feed must come back active, High and marked IOC. The Run value and the folder are removed.
+Write-Host '[ioc-over-allowlist]'
+$sd = Join-Path ([IO.Path]::GetTempPath()) ('tatar-iocwin-' + (Get-Random))
+New-Item -ItemType Directory -Path $sd | Out-Null
+$stand = Join-Path $sd 'standin.exe'
+Copy-Item (Join-Path $env:windir 'System32\ping.exe') $stand
+$rk = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$rn = 'TatarIocStandin' + (Get-Random)
+function Get-StandinFinding { param([string]$Label, [string[]]$Extra = @())
+    $out = Join-Path $W ('o-' + $Label)
+    Push-Location $Cwd
+    & $PwshHost -NoProfile -File $Collector -Modules 'persistence' -Silent -OutputPath $out @Extra 2>&1 | Out-Null
+    Pop-Location
+    $dir = Get-ChildItem $out -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $dir) { return $null }
+    $doc = Get-Content (Join-Path $dir.FullName 'findings.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    @($doc.findings) | Where-Object { $_.category -eq 'persistence' -and ((([string]$_.detail) + ([string]$_.message)) -like "*$rn*") } | Select-Object -First 1
+}
+try {
+    New-ItemProperty -Path $rk -Name $rn -Value ('"{0}" -n 1 127.0.0.1' -f $stand) -PropertyType String | Out-Null
+    $sha = (Get-FileHash -Path $stand -Algorithm SHA256).Hash.ToLower()
+    $hf = Put 'standin-hash' (J @{ hashes = @($sha) })
+    $af = Put 'standin-allow' (J @{ paths = @($sd + '\*') })
+    $f0 = Get-StandinFinding 'plain'
+    Check 'the stand-in Run entry is raised as a finding' ([bool]$f0)
+    if ($f0) {
+        $f1 = Get-StandinFinding 'allow' @('-Allowlist', $af)
+        Check 'an allowlisted finding is suppressed without a feed' ($f1 -and $f1.suppressed -eq $true) ("got " + ($f1 | ConvertTo-Json -Compress))
+        $f2 = Get-StandinFinding 'both' @('-Allowlist', $af, '-IOCFile', $hf)
+        Check "the same finding with the file's SHA-256 in the feed is active, High and marked IOC" ($f2 -and $f2.suppressed -ne $true -and $f2.severity -eq 'High' -and $f2.iocMatch -eq $true) ("got " + ($f2 | ConvertTo-Json -Compress))
+    }
+} finally {
+    Remove-ItemProperty -Path $rk -Name $rn -ErrorAction SilentlyContinue
+    Remove-Item $sd -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Remove-Item $W -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ""
 Write-Host ("RESULT  passed: {0}  failed: {1}" -f $Pass, $Fail)

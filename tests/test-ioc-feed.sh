@@ -121,6 +121,18 @@ PY
 base="$(runfind noioc --allowlist "$W/allow.json")"
 if [ -z "$base" ]; then
     echo "  SKIP  no finding names the stand-in on this host, nothing for the allowlist to suppress"
+    # what the run did find, so a skip on a new host can be understood instead of trusted
+    python3 - "$(ls -d "$W/o-noioc"/*/ 2>/dev/null | head -n1)findings.json" "$SD" <<'PY' 2>/dev/null
+import json, sys
+try:
+    fs = json.load(open(sys.argv[1], encoding="utf-8"))["findings"]
+except Exception as e:
+    print("        (no findings.json: %s)" % e); sys.exit(0)
+print("        findings in the run: %d; stand-in folder: %s" % (len(fs), sys.argv[2]))
+for f in fs[:12]:
+    print("        %s %s %s" % (f.get("category"), f.get("suppressed"), f.get("message", "")[:100]))
+PY
+    ls -l "$SD" 2>&1 | sed 's/^/        /'; ps -eo pid,args 2>/dev/null | grep "tatar-iocfeed" | grep -v grep | sed 's/^/        /'
 else
     check "an allowlisted finding is suppressed without a feed" "$([ "${base%% *}" = True ] && echo 1 || echo 0)" "$base"
     both="$(runfind both --allowlist "$W/allow.json" --iocfile "$W/h.json")"
