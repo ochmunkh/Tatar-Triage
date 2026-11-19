@@ -45,21 +45,21 @@ The heading names the current major.minor. `check_release_integrity.py` fails th
 | ASVS V5.1 / V5.3, A03 Injection | Arguments, output paths and feed files are data, never code | S1, S2, S3 / W1, W2, W3 |
 | ASVS V5.3.3 output encoding | Host-supplied names and command lines cannot inject terminal escapes, bidi controls or spreadsheet formulas into reports | S4, S5 / W4 |
 | ASVS V12.3 file execution, A03 | No file name on the examined host is ever executed | S4, S5 / W4 |
-| ASVS V12.4 / V4.2, A01 Broken access control | Evidence is private to the examiner (mode 0700/0600; ACL without Everyone/Users) | S6 / W5 |
+| ASVS V8.1.2, A01 Broken access control | Evidence is private to the examiner (mode 0700/0600; ACL without Everyone/Users) | S6 / W5 |
 | A01, A05 | The collector refuses to write through a symlink or junction, and refuses to reuse an existing evidence folder | S7 / W6 |
-| ASVS V10, A08 Integrity failures | Tampering with evidence or with the manifest is detected; the script that ran is recorded by hash | S9 / W7 |
+| ASVS V10.3.2, A08 Integrity failures | Tampering with evidence or with the manifest is detected; the script that ran is recorded by hash | S9 / W7 |
 | A02/A09 data handling and logging | Temp files are removed on normal exit and on signals; nothing is left in TEMP | S10, S11 / W9 |
 | A05 Security misconfiguration | Runs unprivileged; no package, privilege or network program is started | S8, S12 / W8, W10 |
-| ASVS V8 data protection | Strict UTF-8, no byte-order mark, Unicode round-trips | S13 / W11 |
-| ASVS V13, A04 Insecure design | Budgets for time and memory; hostile feeds cannot hang or crash a run | S3, N1, N2 / W3, N1, N2 |
+| ASVS V5.1 input validation (no ASVS item names byte-order marks) | Strict UTF-8, no byte-order mark, Unicode round-trips | S13 / W11 |
+| ASVS V12.1.1, A04 Insecure design | Budgets for time and memory; hostile feeds cannot hang or crash a run | S3, N1, N2 / W3, N1, N2 |
 
 ### NIST
 
 | Reference | Requirement | Tests |
 |---|---|---|
 | SP 800-86 section 3.1 (collection) | Collection must not alter the host being examined | S8 (no writes outside the output folder), W8 (Run keys, startup, hosts, tasks, services, accounts unchanged) |
-| SP 800-86 section 3.1.2, 3.3 | Integrity and chain of custody: hashes, tool identity, examiner and case recorded | S9 / W7 |
-| SP 800-86 section 3.2 | Order of volatility is kept; results are repeatable | S14 / W12 determinism |
+| SP 800-86 section 3.1.2 (acquiring the data) | Integrity (message digests) and chain of custody: hashes, tool identity, examiner and case recorded | S9 / W7 |
+| SP 800-86 section 3.1.2 (volatile data first) | Memory, network and processes are collected ahead of files and logs | the order of the collector registry; not tested separately |
 | SP 800-218 PW.7 / PW.8 (review, test) | Code is tested for security properties, with hostile input | all of the above |
 | SP 800-218 PS.1 / PS.2 | Releases are verifiable: `SHA256SUMS.txt` and the viewer CSP hash gate | release workflow, `check_viewer.py` |
 | SP 800-218 RV.1 | Defects found are fixed and recorded | see "Defects found" below |
@@ -147,15 +147,15 @@ are stated here so they are not mistaken for tested.
 
 ### Where this meets the standards
 
-This is the author's own mapping, written from the published control names; it is
-not an audit and not a claim of conformity with any of them. On 2026-11-19 three
-parts were compared with the projects' own pages: the ten OWASP Top 10 CI/CD
-risk names (owasp.org), the four SSDF practice groups and the SP 800-218
-reference (csrc.nist.gov), and the Scorecard checks Pinned-Dependencies,
-Token-Permissions, Security-Policy and Dependency-Update-Tool (the Scorecard
-repository). The individual SSDF practice identifiers, the ISO/IEC control
-names, and the other Scorecard check names are from memory and have not been
-compared with the standard texts, which are not freely readable.
+This is the author's own mapping; it is not an audit and not a claim of conformity
+with any of them. On 2026-11-19 it was compared with the sources: the OWASP Top 10
+CI/CD risk names (owasp.org), the SSDF practice names (SP 800-218 v1.1), the ISO/IEC
+27001:2022 Annex A control names (a copy of the standard), the ASVS 4.0.3 chapter and
+item titles, the section titles of SP 800-86, and the OpenSSF Scorecard check names.
+The comparison corrected five rows of the OWASP and NIST tables above (ASVS V12.4, V4.2, V8 and
+V13 did not fit what they were cited for; SP 800-86 section 3.3 is analysis, and the
+order of volatility and chain of custody are in 3.1.2). Not compared: ISO/IEC 27037,
+the OWASP Top 10 2021 item names and the SLSA specification.
 
 | Source | Control | What in this repository answers it |
 |---|---|---|
