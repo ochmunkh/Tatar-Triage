@@ -8,7 +8,7 @@
 - **Do not reboot / shut down** the host before collection finishes.
 - The output can contain **sensitive data** (registry hives, browser metadata). Encrypt the archive and transfer it securely.
 - Some modules (`hives`, `memorydump`, `exportevtx`) are known to trigger EDR/AV. This is expected — **coordinate with your SOC and allow-list the tool in advance** rather than disabling EDR.
-- What the collector will and will not do on a live endpoint is written down as eight numbered claims in **[AV / EDR safety](AV-SAFETY.md)**, each enforced by a CI check. If a commit breaks one, the build fails and names it.
+- What the collector will and will not do on a live endpoint is written down as nine numbered claims in **[AV / EDR safety](AV-SAFETY.md)**, each enforced by a CI check. If a commit breaks one, the build fails and names it.
 
 ### Getting past AV without evading it
 

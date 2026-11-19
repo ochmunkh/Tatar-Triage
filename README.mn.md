@@ -52,7 +52,7 @@ sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-01
 ## Юу өгдөг вэ
 
 - **Windows 33 / Linux 18 модуль**, RFC 3227 order of volatility дарааллаар, нэг output contract (`schemaVersion 1.8`)-той.
-- **Read-only-first.** Хүнд/эвдрэлтэй үйлдлүүд (memory dump, hive save, бүтэн EVTX) анхдагчаар унтраалттай. Нууц үг задлахгүй, тайлахгүй.
+- **Read-only-first.** Хүнд, эсвэл хост дээр өөрчлөлт хийж болзошгүй үйлдлүүд (memory dump, hive save, бүтэн EVTX) анхдагчаар унтраалттай. Нууц үг задлахгүй, тайлахгүй.
 - **Энгийн хэрэглэгч, offline, AV-д аюулгүй.** Сүлжээний дуудлага, обфускаци, AV/AMSI bypass үгүй. [Амьд хост дээр юу хийдэг, юу хийдэггүй](docs/AV-SAFETY.md).
 - **Баталгаажуулж болох нотолгоо.** Файл бүрийн SHA-256 manifest, chain of custody, release attestation.
 - **Тогтвортой дугаартай finding.** Finding бүр тогтвортой `fingerprint`-тэй тул нэг хостын хоёр scan-ийг харьцуулж болно (доорх хэрэгслүүд).
@@ -111,7 +111,7 @@ sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-01
 
 Зөвхөн **зөвшөөрөлтэй** хэрэглээнд: өөрийн эзэмшлийн буюу бичгээр зөвшөөрөл авсан системд ашиглана уу.
 
-Хэрэгсэл дээр өөрөө аюулгүй байдлын асуудал олсон бол [`SECURITY.md`](SECURITY.md)-г үзээд хувиараа мэдэгдээрэй. Хувь нэмэр оруулахыг хүсвэл [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Хэрэгсэл дээр өөрөө аюулгүй байдлын асуудал олсон бол [`SECURITY.md`](SECURITY.md)-г үзээд нууцаар мэдэгдээрэй. Хувь нэмэр оруулахыг хүсвэл [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Лиценз
 
