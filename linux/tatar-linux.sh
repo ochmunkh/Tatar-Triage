@@ -1302,7 +1302,7 @@ m_indicators() {
             sdn=$((sdn + 1))
             grep -E 'NOPASSWD' "$sdf" 2>/dev/null | grep -vE '^[[:space:]]*#' | while read -r sdl; do
                 echo "[$sdf] $sdl" >> "$REPORT"
-                add_finding "Review" "users" "sudoers grants NOPASSWD in ${sdf##*/}" "$sdl" "T1548.003"
+                add_finding "Review" "users" "sudoers grants NOPASSWD in ${sdf##*/}" "$sdf: $sdl | many images (Kali, cloud, live systems) and some packages ship such a rule; check who added it and when, or allowlist the file with packageOwned" "T1548.003"
             done
         fi
     done
@@ -1320,7 +1320,9 @@ m_indicators() {
     [ "$fwn" -eq 0 ] && report "(no firewall configuration file was readable; the live ruleset is not queried)"
     # lastlog is bounded: it walks a sparse file that is enormous on hosts with very large user ids.
     echo "-- last logins (lastlog) --" >> "$REPORT"
-    have lastlog && bounded 20 lastlog 2>/dev/null | grep -v 'Never logged in' | head -n 200 >> "$REPORT"
+    if have lastlog; then bounded 20 lastlog 2>/dev/null | grep -v 'Never logged in' | head -n 200 >> "$REPORT"
+    elif have lastlog2; then bounded 20 lastlog2 2>/dev/null | head -n 200 >> "$REPORT"
+    else report "(neither lastlog nor lastlog2 is installed)"; fi
     echo "-- executables in /tmp /dev/shm /var/tmp --" >> "$REPORT"
     local tc=0 d tl tfirst="" shown
     for d in /tmp /dev/shm /var/tmp; do

@@ -100,8 +100,11 @@ check "allowlist that is not JSON : exits 2" "$([ "$rc" = 2 ] && echo 1 || echo 
 # Known-bad beats known-good: a finding the allowlist suppresses comes back, High, when the
 # feed holds the SHA-256 of the file it names. The stand-in is a copy of a harmless binary.
 echo "[ioc-over-allowlist]"
-SD="/tmp/tatar-iocfeed-$$"; mkdir -p "$SD"; cp "$(command -v sleep)" "$SD/standin" && chmod +x "$SD/standin"
-"$SD/standin" 120 & SP=$!
+# The stand-in is a copy of bash, which runs under any name. (A copy of sleep does not: on a
+# host where sleep is a coreutils multi-call binary it refuses to start as "standin", the test
+# then skipped, and the check never ran on CI.) The trailing ":" keeps bash from exec'ing sleep.
+SD="/tmp/tatar-iocfeed-$$"; mkdir -p "$SD"; cp "$(command -v bash)" "$SD/standin" && chmod +x "$SD/standin"
+"$SD/standin" -c 'sleep 120; :' & SP=$!
 sleep 1
 SH="$(sha256sum "$SD/standin" | cut -d' ' -f1)"
 printf '{"hashes":["%s"]}' "$SH" > "$W/h.json"
