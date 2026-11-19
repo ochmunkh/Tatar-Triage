@@ -16,6 +16,7 @@ for a local collector are listed, and each is matched to a concrete test.
 | Windows | `powershell -NoProfile -File tests\Test-Security.ps1` (`-Quick` skips the full `-All` timing run) | about 4 min, 10 with `-All` |
 | Linux fixes | `bash tests/test-linux-fixes.sh` (SUID walk, journal extracts, named limitations) | seconds |
 | Analysis tools and identity | `python3 tests/test-diff.py`, `test-timeline.py`, `test-aggregate.py`, `test-review.py`, `test-siem.py`; `bash tests/test-identity.sh`, `tests/test-recommendation.sh`; Windows: `tests\Test-Identity.ps1`, `Test-Recommendation.ps1` | seconds |
+| New detections | `bash tests/test-linux-detections.sh` (privileged checks need root and `TATAR_LAB=disposable`); Windows: `tests\Test-AutostartTarget.ps1` | under 2 min |
 | Hostile IOC feeds | `bash tests/test-ioc-feed.sh`; Windows: `tests\Test-IocFeed.ps1` (real runs with feeds built to cause trouble) | under 1 min |
 | Fuzz (Linux) | `python3 tests/fuzz.py [--iterations N]` | under 1 min |
 | Fuzz (Windows) | `pwsh -File tests/Test-Fuzz.ps1` | under 1 min |

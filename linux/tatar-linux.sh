@@ -1074,7 +1074,7 @@ m_process() {
            || [[ "$cl" =~ bash[[:space:]]+-i[[:space:]]*\>\& ]] || [[ "$cl" =~ (curl|wget)[^\|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z|da)?sh([[:space:]]|$) ]] \
            || [[ "$cl" =~ base64[[:space:]]+(-d|--decode).*\|[[:space:]]*(ba|z|da)?sh([[:space:]]|$) ]] || [[ "$cl" =~ mkfifo.*(nc|ncat)[[:space:]] ]]; then
             echo "[!] PID $cpid command line: $cl" >> "$REPORT"
-            add_finding "Review" "process" "Process command line looks like a reverse shell or pipe-to-shell (PID $cpid)" "cmd: $cl"
+            add_finding "Review" "process" "Process command line looks like a reverse shell or pipe-to-shell (PID $cpid)" "cmd: $cl" "T1059.004"
         fi
     done
     echo "" >> "$REPORT"; echo "-- Suspicious command-line patterns (ps) --" >> "$REPORT"
@@ -1172,7 +1172,7 @@ m_persistence() {
     for tdir in /etc/systemd/system /usr/lib/systemd/system /lib/systemd/system /root/.config/systemd/user /home/*/.config/systemd/user; do
         [ -d "$tdir" ] || continue
         grep -rHE '^(ExecStart|ExecStartPre|ExecStartPost)=[-@+!]*[^#]*(/tmp/|/dev/shm/|/var/tmp/)' "$tdir" 2>/dev/null | head -n 20 | while read -r ufile; do
-            add_finding "Review" "persistence" "systemd unit starts a program from a temporary directory" "$ufile"
+            add_finding "Review" "persistence" "systemd unit starts a program from a temporary directory" "$ufile" "T1543.002"
         done
     done
     echo "-- at jobs --" >> "$REPORT"
@@ -1182,7 +1182,7 @@ m_persistence() {
     if [ -r /etc/ld.so.preload ]; then
         cat /etc/ld.so.preload >> "$REPORT" 2>/dev/null
         local lp; lp=$(grep -vE '^[[:space:]]*(#|$)' /etc/ld.so.preload 2>/dev/null | tr '\n' ' ')
-        [ -n "$lp" ] && add_finding "High" "persistence" "/etc/ld.so.preload loads a library into every program" "$lp| a preload entry is a classic rootkit hook (T1574.006); confirm the library belongs to a package"
+        [ -n "$lp" ] && add_finding "High" "persistence" "/etc/ld.so.preload loads a library into every program" "$lp| a preload entry is a classic rootkit hook (T1574.006); confirm the library belongs to a package" "T1574.006"
     else
         report "(/etc/ld.so.preload does not exist or is not readable)"
     fi
@@ -1192,7 +1192,7 @@ m_persistence() {
         [ -f "$sf" ] && [ -r "$sf" ] || continue
         grep -HniE '(curl|wget)[^|#]*\|[[:space:]]*(ba)?sh|base64[[:space:]]+(-d|--decode)|/dev/tcp/|(nc|ncat)[[:space:]].*-e[[:space:]]' "$sf" 2>/dev/null | head -n 5 | while read -r cl; do
             echo "[!] $cl" >> "$REPORT"
-            add_finding "Review" "persistence" "Suspicious command in a shell startup file" "$cl"
+            add_finding "Review" "persistence" "Suspicious command in a shell startup file" "$cl" "T1546.004"
         done
     done
     echo "-- known_hosts (count per home) --" >> "$REPORT"
@@ -1298,7 +1298,7 @@ m_indicators() {
             sdn=$((sdn + 1))
             grep -E 'NOPASSWD' "$sdf" 2>/dev/null | grep -vE '^[[:space:]]*#' | while read -r sdl; do
                 echo "[$sdf] $sdl" >> "$REPORT"
-                add_finding "Review" "users" "sudoers grants NOPASSWD in ${sdf##*/}" "$sdl"
+                add_finding "Review" "users" "sudoers grants NOPASSWD in ${sdf##*/}" "$sdl" "T1548.003"
             done
         fi
     done

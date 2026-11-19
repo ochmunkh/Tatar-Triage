@@ -30,6 +30,10 @@ technique without raising a finding for it.
 | Module | Evidence | Technique |
 |---|---|---|
 | `persistence` | HKCU/HKLM Run / RunOnce keys, Startup | T1547.001 Registry Run Keys / Startup Folder |
+| `persistence` | Run key, Startup folder or scheduled task starting from `Users\Public`, `Windows\Temp`, user Temp, Downloads, Recycle Bin | T1547.001 · T1053.005 Scheduled Task |
+| `persistence` | BITS job that runs a program on completion | T1197 BITS Jobs |
+| `persistence` | PowerShell profile with download or decode patterns | T1546.013 PowerShell Profile |
+| `firewall` | Defender real-time protection off; exclusions on risky folders | T1562.001 Disable or Modify Tools |
 | `persistence` | Non-Microsoft scheduled tasks | T1053.005 Scheduled Task |
 | `services` | Service name / binary / start mode | T1543.003 Windows Service |
 | `lateral` | WMI event subscription persistence | T1546.003 WMI Event Subscription |
@@ -106,6 +110,11 @@ The Linux edition raises findings from its own module set. Mapping lives in
 | `users` | Second account with UID 0 | T1136 Create Account · T1078 Valid Accounts |
 | `users` | Account with an EMPTY password in `/etc/shadow` | T1078 Valid Accounts |
 | `persistence` | Suspicious `cron` / `cron.d` / user crontab command | T1053.003 Cron |
+| `process` | Command line that looks like a reverse shell or pipe-to-shell | T1059.004 Unix Shell |
+| `persistence` | Cron entry or systemd unit starting from `/tmp`, `/dev/shm`, `/var/tmp` | T1053.003 Cron · T1543.002 Systemd Service |
+| `persistence` | Non-empty `/etc/ld.so.preload` | T1574.006 Dynamic Linker Hijacking |
+| `persistence` | Download-and-run or reverse-shell line in a shell startup file | T1546.004 Unix Shell Configuration Modification |
+| `users` | sudoers `NOPASSWD` | T1548.003 Sudo and Sudo Caching |
 | `suid` | SUID/SGID binary outside the standard paths | T1548.001 Setuid and Setgid |
 | `sshkeys` | `root` `authorized_keys`, `sshd_config` key settings | T1098.004 SSH Authorized Keys |
 | `bashhistory` | Notable shell-history command (`curl`, `chattr`, `history -c`…) | T1552.003 Bash History |
@@ -193,6 +202,10 @@ finding үүсгэхгүйгээр техникийн *нотолгоог* л б
 | Модуль | Нотолгоо | Техник |
 |---|---|---|
 | `persistence` | HKCU/HKLM Run / RunOnce түлхүүр, Startup | T1547.001 Registry Run Keys / Startup Folder |
+| `persistence` | `Users\Public`, `Windows\Temp`, хэрэглэгчийн Temp, Downloads, Recycle Bin-аас эхлэх Run key, Startup folder, scheduled task | T1547.001 · T1053.005 Scheduled Task |
+| `persistence` | Дууссаны дараа програм ажиллуулдаг BITS job | T1197 BITS Jobs |
+| `persistence` | Татаж авах/декод хийх хэв маягтай PowerShell profile | T1546.013 PowerShell Profile |
+| `firewall` | Defender бодит цагийн хамгаалалт унтраалттай; эрсдэлтэй хавтас дахь exclusion | T1562.001 Disable or Modify Tools |
 | `persistence` | Microsoft-ийн бус төлөвлөгдсөн даалгавар | T1053.005 Scheduled Task |
 | `services` | Service-ийн нэр / binary / эхлэх горим | T1543.003 Windows Service |
 | `lateral` | WMI event subscription-ээр тогтвортой байх | T1546.003 WMI Event Subscription |
@@ -269,6 +282,11 @@ Linux хувилбар нь өөрийн модулийн багцаас finding
 | `users` | UID 0-тэй хоёр дахь бүртгэл | T1136 Create Account · T1078 Valid Accounts |
 | `users` | `/etc/shadow` дотор ХООСОН нууц үгтэй бүртгэл | T1078 Valid Accounts |
 | `persistence` | Сэжигтэй `cron` / `cron.d` / хэрэглэгчийн crontab команд | T1053.003 Cron |
+| `process` | Reverse shell эсвэл pipe-to-shell төст командын мөр | T1059.004 Unix Shell |
+| `persistence` | `/tmp`, `/dev/shm`, `/var/tmp`-аас эхэлдэг cron бичлэг эсвэл systemd unit | T1053.003 Cron · T1543.002 Systemd Service |
+| `persistence` | Хоосон биш `/etc/ld.so.preload` | T1574.006 Dynamic Linker Hijacking |
+| `persistence` | Shell startup файл дахь татаж ажиллуулах эсвэл reverse shell мөр | T1546.004 Unix Shell Configuration Modification |
+| `users` | sudoers `NOPASSWD` | T1548.003 Sudo and Sudo Caching |
 | `suid` | Стандарт замаас гадуурх SUID/SGID binary | T1548.001 Setuid and Setgid |
 | `sshkeys` | `root`-ийн `authorized_keys`, `sshd_config`-ийн түлхүүрийн тохиргоо | T1098.004 SSH Authorized Keys |
 | `bashhistory` | Анхаарал татах shell-ийн түүхийн команд (`curl`, `chattr`, `history -c`…) | T1552.003 Bash History |
