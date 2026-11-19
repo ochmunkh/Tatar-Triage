@@ -210,6 +210,26 @@ The same 14 stand-ins, run as root in a throwaway container (Ubuntu 24.04) with 
 
 The count reads the lines the module already collects, so it needs no extra privilege and no extra time. The threshold of ten is a starting point: a service account with a stale password can reach it without any attack.
 
+## Where the measured rates stand (1.12.0)
+
+False negatives are counted against planted stand-ins; false positives are counted against hosts where nothing was planted. Both are small numbers from a handful of hosts, not rates for the world, and each row says what was and was not re-measured.
+
+| | Planted | Raised a finding | Reported only | Not covered or not run | Measured on |
+|---|---|---|---|---|---|
+| Linux, first round (1.10.0) | 14 | 7 | 5 | 2 | Disposable container, root |
+| Linux, now (1.12.0) | 14 | 13 of the 13 that could be planted | 0 | 1 not planted (no `crontab` command in the container) | Same kind of container, Ubuntu 24.04, root |
+| Windows, first round (1.10.0) | 29 | 20 | 6 | 3 | Windows Sandbox, administrator |
+| Windows, now (1.12.0) | 29 | Not re-measured | Not re-measured | Not re-measured | The autostart, Defender, Remote Desktop and similar checks added since are covered by unit and hostile-input tests, not by a new Sandbox round |
+
+| Host where nothing was planted | Findings | Judged |
+|---|---|---|
+| Kali Rolling VM, root and not root (1.8 to 1.9) | 0 | 0 false positives |
+| Windows Sandbox, clean Windows 11 (1.9) | 1 | Expected: the Sandbox's own administrator account |
+| Windows 11 developer workstation, not elevated (1.9 to 1.11) | 34 to 39 Review leads | No true lead; every one traced to the machine's own tools, installers or scripts. This is the noise level to expect on a busy workstation, and the reason findings are leads and not verdicts |
+| Ubuntu container with the stand-ins (1.12) | 26 | The 13 planted ones, plus the container context finding, the container runtime's own helper process with a deleted binary, the host-name override its runtime adds, and the stock `/tmp` executables count |
+
+Keep measuring with the same method: plant benign stand-ins on a throwaway machine, run the collector, and write down for each one whether it became a finding, was only reported, or was missed. What has not been measured yet, in the order it is likely to matter: a domain controller and a domain-joined workstation, Windows Server, an older Windows 10 build, a Red Hat family Linux host, and a host that was really intruded rather than seeded.
+
 ## IOC feed round (1.10.0)
 
 An IOC feed is a file somebody else wrote, so it gets two checks: can it hurt the run, and does a
