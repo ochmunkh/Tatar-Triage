@@ -147,9 +147,15 @@ are stated here so they are not mistaken for tested.
 
 ### Where this meets the standards
 
-This is the author's own mapping, written from the published control names. It was
-not checked against the standard texts in the course of writing it, it is not an
-audit, and it is not a claim of conformity with any of them.
+This is the author's own mapping, written from the published control names; it is
+not an audit and not a claim of conformity with any of them. On 2026-11-19 three
+parts were compared with the projects' own pages: the ten OWASP Top 10 CI/CD
+risk names (owasp.org), the four SSDF practice groups and the SP 800-218
+reference (csrc.nist.gov), and the Scorecard checks Pinned-Dependencies,
+Token-Permissions, Security-Policy and Dependency-Update-Tool (the Scorecard
+repository). The individual SSDF practice identifiers, the ISO/IEC control
+names, and the other Scorecard check names are from memory and have not been
+compared with the standard texts, which are not freely readable.
 
 | Source | Control | What in this repository answers it |
 |---|---|---|
