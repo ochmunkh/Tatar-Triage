@@ -124,6 +124,13 @@ try {
     $af = Put 'standin-allow' (J @{ paths = @($sd + '\*') })
     $f0 = Get-StandinFinding 'plain'
     Check 'the stand-in Run entry is raised as a finding' ([bool]$f0)
+    if (-not $f0) {
+        # say what the run did see, so a miss on another host can be understood
+        Write-Host "        Run value present: $((Get-ItemProperty -Path $rk -Name $rn -ErrorAction SilentlyContinue).$rn)"
+        $dd = Get-ChildItem (Join-Path $W 'o-plain') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($dd) { Get-Content (Join-Path $dd.FullName 'findings.json') -Raw | ConvertFrom-Json | ForEach-Object { @($_.findings) } | Select-Object -First 8 | ForEach-Object { Write-Host ('        ' + $_.category + ' ' + $_.message) }
+                   Select-String -Path (Join-Path $dd.FullName 'TATAR_Report_*.txt') -Pattern $rn -SimpleMatch | Select-Object -First 3 | ForEach-Object { Write-Host ('        report: ' + $_.Line.Trim()) } }
+    }
     if ($f0) {
         $f1 = Get-StandinFinding 'allow' @('-Allowlist', $af)
         Check 'an allowlisted finding is suppressed without a feed' ($f1 -and $f1.suppressed -eq $true) ("got " + ($f1 | ConvertTo-Json -Compress))

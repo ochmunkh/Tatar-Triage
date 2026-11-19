@@ -1691,6 +1691,20 @@ function Collect-Persistence {
             $k = if ("$($s.Location)" -match '(?i)startup') { 'startup-folder' } else { 'run-key' }
             $autoEntries.Add([pscustomobject]@{ Name = $s.Name; Command = $s.Command; Location = $s.Location; Kind = $k; What = 'Autostart entry' })
         }
+        # The Run keys are read directly as well: Win32_StartupCommand lists the hives of loaded interactive
+        # profiles, so a Run value in the collecting user's own hive can be missing from it (a service session,
+        # a build runner). Entries both sources return are judged once.
+        $seenAuto = @{}; foreach ($e in $autoEntries) { $seenAuto[('{0}|{1}' -f $e.Name, $e.Command)] = $true }
+        foreach ($rk2 in $runKeys) {
+            if (-not (Test-PathSafe $rk2)) { continue }
+            $rp = Get-ItemProperty $rk2 -ErrorAction SilentlyContinue
+            foreach ($pn in @($rp.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' })) {
+                $cmd2 = [string]$pn.Value
+                if (-not $cmd2 -or $seenAuto.ContainsKey(('{0}|{1}' -f $pn.Name, $cmd2))) { continue }
+                $seenAuto[('{0}|{1}' -f $pn.Name, $cmd2)] = $true
+                $autoEntries.Add([pscustomobject]@{ Name = $pn.Name; Command = $cmd2; Location = $rk2; Kind = 'run-key'; What = 'Autostart entry' })
+            }
+        }
         foreach ($tk in $autoTasks) {
             foreach ($a in @($tk.Actions)) {
                 if ($a.Execute) { $autoEntries.Add([pscustomobject]@{ Name = $tk.TaskName; Command = ("{0} {1}" -f $a.Execute, $a.Arguments).Trim(); Location = $tk.TaskPath; Kind = 'scheduled-task'; What = 'Scheduled task' }) }
