@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://github.com/ochmunkh/Tatar-Triage/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/version-1.11-blue" alt="v1.11">
+  <img src="https://img.shields.io/badge/version-1.12-blue" alt="v1.12">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6" alt="Windows and Linux">
   <img src="https://img.shields.io/badge/modules-33-5eead4" alt="33 modules">

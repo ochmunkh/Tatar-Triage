@@ -4,11 +4,14 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.12.0] — 2026-11-19
+
+A new console and viewer layout, a finding for repeated failed SSH logons, the domain role in the report, finding ids that are unique, and a first-run guide in the help.
 
 ### Changed
 - **A new console layout in both editions.** The banner is now a compact header, a block shows host, case, privilege and the evidence folder, and each module prints one line with a progress bar, its status and its time. When the run is not privileged the header says so and what to do about it. The run ends with a short result block (modules, time, leads, errors, exit code) and where the report and summary are. The layout is plain ASCII, appended line by line, so redirected output, `-Silent` and remote sessions behave as before.
 - **The findings viewer has a dark look** with card-style summary fields, and it states when a run was not privileged. The page is still one sealed file with no network access.
+- **`--help` and `-Help` start with a short first-run guide** (run the quick profile, open `summary.txt`, load `summary.json` in the viewer), and the Linux help lists the documented `--iocfile` option, which it had left out.
 
 ### Added
 - **Linux: repeated failed SSH logons from one address are now a finding.** Ten or more `Failed password` lines from the same source address in the last 200 auth-log lines raise a Review finding (T1110). Until now only `lastb` was counted, which needs root. Found by the technique-injection lab (L13).
@@ -18,6 +21,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 - **IOC over allowlist, by address.** Both IOC test suites now cover a finding that the allowlist suppresses by its path and the feed names by an address: the feed wins, and a feed that lists only other addresses (a near miss included) leaves the suppression alone. `docs/ARCHITECTURE.md` and its Mongolian page say in two sentences why the feed wins and how narrow the override is.
 
 ### Fixed
+- **Linux: several findings in one run could carry the same id** (for example four findings numbered `TTR-F-005`). The counter lived in a shell variable that a pipeline's subshell does not hand back. The number is now counted from the files the findings are written to, and a test fails when two findings share an id. The fingerprint, which identifies a finding across runs, was not affected.
 - **Linux: a process that exited during the scan** no longer prints a `/proc/<pid>/cmdline: No such file` message into the console output.
 
 ## [1.11.0] — 2026-11-19
@@ -441,7 +445,6 @@ Found by reading the output of real scans of a workstation, not by a test suite.
 - `Collect-Persistence`'s section header promises "startup, Run keys, scheduled
   tasks". It keeps the promise: `Get-ScheduledTask` is there. An earlier doubt
   about this came from a bad grep, not from the code.
-
 
 ### Fixed
 Six defects, every one of them found by running the tool on a real workstation

@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.11.0'
+$script:ToolVersion = '1.12.0'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -839,6 +839,13 @@ USAGE:
   .\Tatar.ps1 -All -DryRun                  Preview the plan; write nothing
   .\Tatar.ps1 -List                         List available modules
   .\Tatar.ps1 -Help                         Show this help
+
+FIRST RUN:
+  1. Run the quick profile (about 10 seconds): .\Tatar.ps1 -Quick
+     Without Administrator the run still works, but some artifacts are skipped and the report says which.
+  2. Open summary.txt in the output folder. High findings come first, then Review.
+  3. For a filterable view, open viewer.html on your own machine and load summary.json.
+  A finding is a lead to check, not a verdict. Nothing on this host is changed except the output folder.
 
 OPTIONS:
   -OutputPath <path>   Output base dir (default C:\Forensic; PREFER an external drive)

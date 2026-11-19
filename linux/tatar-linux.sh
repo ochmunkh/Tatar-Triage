@@ -27,7 +27,7 @@
 # Do NOT 'set -e': a failing collector must never abort the whole run.
 set -o pipefail 2>/dev/null || true
 
-VERSION="1.11.0"
+VERSION="1.12.0"
 # 'tool' in summary.json MUST be identical on every platform: 'platform' is the
 # discriminator, so a "(Linux)" suffix here breaks grouping by tool name in any
 # dashboard that ingests both editions. The edition stays visible to humans via
@@ -305,6 +305,15 @@ map_artifact_class() {  # map_artifact_class CATEGORY "MESSAGE DETAIL"
 }
 
 FIND_SEQ=0
+# The next finding number, counted from the files the findings are written to. A counter kept in a
+# shell variable does not survive add_finding being called from the right-hand side of a pipe (a
+# subshell), and several checks do exactly that; the result was one id on several findings.
+next_find_seq() {
+    local a=0 b=0
+    [ -n "${FINDINGS_FILE:-}" ] && [ -f "$FINDINGS_FILE" ] && a=$(grep -c '^TTR-F-' "$FINDINGS_FILE" 2>/dev/null)
+    [ -n "${F2:-}" ] && [ -f "$F2" ] && b=$(grep -c '^TTR-F-' "$F2" 2>/dev/null)
+    FIND_SEQ=$(( ${a:-0} + ${b:-0} + 1 ))
+}
 add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
     local sev="$1" cat="$2" msg="$3" det="$4" tech="${5:-}"
     # Strip both record separators as well as tab/newline: these strings come
@@ -324,7 +333,7 @@ add_finding() {  # add_finding SEVERITY CATEGORY MESSAGE DETAIL [TECHNIQUE(s)]
         Review) conf=0.4 ;;
         *)      printf "add_finding: unknown severity '%s' (expected High or Review)\n" "$sev" >&2; return 1 ;;
     esac
-    FIND_SEQ=$((FIND_SEQ+1))
+    next_find_seq
     id=$(printf 'TTR-F-%03d' "$FIND_SEQ")
     # columns (FSEP-delimited):
     #   id | sev | cat | msg | det | tech | conf | module | collected_at | class
@@ -919,6 +928,13 @@ USAGE:
   ./tatar-linux.sh --list                         List available modules
   ./tatar-linux.sh --help                         Show this help
 
+FIRST RUN:
+  1. Run the quick profile (about 10 seconds): sudo ./tatar-linux.sh --quick
+     Without root the run still works, but some artifacts are skipped and the report says which.
+  2. Open summary.txt in the output folder. High findings come first, then Review.
+  3. For a filterable view, open viewer.html on your own machine and load summary.json.
+  A finding is a lead to check, not a verdict. Nothing on this host is changed except the output folder.
+
 OPTIONS:
   --output <path>   Output base dir (default /tmp/forensic; PREFER external media)
   --caseid <id>     Case / incident id for chain of custody
@@ -928,7 +944,7 @@ OPTIONS:
   --dry-run         Show output dir, module order, gated ops and feed verdicts,
                     then exit 0 without creating or writing anything. Alias: --preview
   --allowlist <json> Suppress known-good findings (paths[], hashes[], packageOwned)
-  --ioc <json>      Match findings/evidence vs IOCs (hashes[], ips[], domains[], filenames[])
+  --iocfile <json>  Match findings/evidence vs IOCs (hashes[], ips[], domains[], filenames[]). Alias: --ioc
   --dump-deleted    Recover deleted running binaries via /proc/PID/exe (opt-in; off by default)
 
 OUTPUT (always written):
@@ -1670,7 +1686,7 @@ EOF
                             if ioc_match "$cand" "$val"; then printf '%s' "$cand"; break; fi
                         done)"
                 if [ -n "$ln" ]; then
-                    FIND_SEQ=$((FIND_SEQ+1))
+                    next_find_seq
                     bmsg="IOC observed in collected evidence: $val"
                     bdet="$(printf '%s' "$ln" | tr '\t\035\037' '   ' | cut -c1-160)"
                     bpaths="$(al_paths_of "$bmsg" "$bdet" | tr '\n' "$GSEP" | sed "s/${GSEP}*\$//")"
