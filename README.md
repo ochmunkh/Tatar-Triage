@@ -34,6 +34,8 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 .\Tatar.ps1 -All -OutputPath E:\Evidence -CaseId IR-2026-014 -Examiner "Name" -Compress
 ```
 
+The setting lasts only for that PowerShell window and ends with it; the machine's execution policy is not changed.
+
 **Linux** (Bash, root recommended):
 
 ```bash

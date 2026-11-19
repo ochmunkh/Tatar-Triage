@@ -38,6 +38,8 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 .\Tatar.ps1 -All -OutputPath E:\Evidence -CaseId IR-2026-014 -Examiner "Нэр" -Compress
 ```
 
+Энэ тохиргоо зөвхөн тухайн PowerShell цонхонд үйлчилж, цонхоор хамт дуусна; машины execution policy өөрчлөгдөхгүй.
+
 **Linux** (Bash, root санал болгоно):
 
 ```bash

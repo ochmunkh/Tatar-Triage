@@ -6,7 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+### Tests
+- **RI-10 in the release-integrity gate**: every script in `tools/` may import only the Python standard library, as `docs/TOOLS.md` promises. The gate reads the syntax tree and runs nothing; its proof test now breaks 16 things.
+
 ### Documentation
+- **`docs/SECURITY-TESTING.md`** maps ISO/IEC 27001:2022 Annex A 5.24, 5.26, 5.28, 5.31 and 8.15 and says a certificate belongs to an organisation's management system, never to a tool.
+- **README (both languages)** says the `Bypass` execution policy is set for that PowerShell window only; **`docs/ARCHITECTURE` (both languages)** says the allowlist and IOC feeds are read as data and never run.
 - **README and `docs/ARCHITECTURE` (both languages) say the evidence folder is confidential**: it holds sensitive information about the examined host, and where a collection is part of a risk assessment or audit under the Law on Cyber Security of Mongolia (articles 8.5 and 9.6) it should be handled like those reports.
 - **`docs/SECURITY-TESTING.md` maps the OWASP Top 10:2025 (A01-A10), CIS Controls v8.1 (by number and title) and the Law on Cyber Security** to what the tool does and does not do. Items that do not apply to a command-line collector (authentication, web access control) are marked as such.
 

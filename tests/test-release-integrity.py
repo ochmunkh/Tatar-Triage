@@ -143,6 +143,10 @@ def local_file(tmp):
         fh.write("local notes\n")
 
 
+def outside_import(tmp):
+    edit(tmp, "tools/tatar-diff.py", lambda t: t + "\nimport requests\n")
+
+
 def drop_security(tmp):
     os.remove(os.path.join(tmp, "SECURITY.md"))
 
@@ -162,6 +166,7 @@ mutation("RI-06", "a run step interpolates a pull request title", injection)
 mutation("RI-07", "a document carries a name the repository keeps out", bad_name)
 mutation("RI-08", "a local hand-off file is tracked", local_file)
 mutation("RI-09", "SECURITY.md is missing", drop_security)
+mutation("RI-10", "a tool imports a package outside the standard library", outside_import)
 
 print("")
 print("release integrity gate: %d passed, %d failed" % (passed, failed))

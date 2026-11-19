@@ -23,7 +23,7 @@ for a local collector are listed, and each is matched to a concrete test.
 | Containment (Windows) | `tests\Test-Containment.ps1` in an elevated session; SKIP otherwise | about 3 min |
 | Viewer | `python tests/test-viewer.py` (Playwright, not in CI) and `python .github/scripts/check_viewer.py` | seconds |
 | Repo gates | the CI jobs: docs parity, contract parity, README parity, AV safety, viewer, schema validation, PSScriptAnalyzer, shellcheck | CI |
-| Release integrity | `python3 .github/scripts/check_release_integrity.py` and its proof, `python3 tests/test-release-integrity.py` (breaks 15 things one at a time and requires the gate to catch each) | seconds |
+| Release integrity | `python3 .github/scripts/check_release_integrity.py` and its proof, `python3 tests/test-release-integrity.py` (breaks 16 things one at a time and requires the gate to catch each) | seconds |
 
 A test that cannot run is reported as `SKIP`, never as `PASS`.
 
@@ -164,11 +164,12 @@ are stated here so they are not mistaken for tested.
 | RI-07 | A tracked file or the newest commit message carries a name the maintainer keeps out of the repository | Maintainer rule |
 | RI-08 | Hand-off notes, lab files, result folders or planning pages are tracked | They describe real hosts and work in progress |
 | RI-09 | `LICENSE`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md` or `dependabot.yml` is missing | What a project is judged by |
+| RI-10 | A script in `tools/` imports something outside the Python standard library | `docs/TOOLS.md` promises standard library only; the gate reads the syntax tree and runs nothing |
 
 ### Where this meets the standards
 
 This is the author's own mapping; it is not an audit and not a claim of conformity
-with any of them. On 2026-11-19 it was compared with the sources: the OWASP Top 10
+with any of them. A certificate under ISO/IEC 27001 is issued to an organisation's information security management system, never to a tool; the ISO rows show which controls the tool helps an organisation meet, not certification or conformity. On 2026-11-19 it was compared with the sources: the OWASP Top 10
 CI/CD risk names (owasp.org), the SSDF practice names (SP 800-218 v1.1), the ISO/IEC
 27001:2022 Annex A control names (a copy of the standard), the ASVS 4.0.3 chapter and
 item titles, the section titles of SP 800-86, and the OpenSSF Scorecard check names.
@@ -186,6 +187,10 @@ The OWASP Top 10:2025 item names and background were compared with the text on o
 | | 8.32 change management | CHANGELOG, RI-01, protected `main` |
 | | 8.33 test information | Fixtures hold no real host data; evidence folders are git-ignored; RI-08 |
 | | 8.8 technical vulnerabilities, 8.9 configuration | Dependabot for pinned actions, `SECURITY.md`, `.gitattributes` line-ending rules |
+| | 5.24 incident management planning and preparation, 5.26 response to information security incidents | The tool supplies first evidence for incident handling; plans, roles and exercises belong to the organisation |
+| | 5.28 collection of evidence | Read-only collection, a SHA-256 manifest that checks itself, the hash of the script that ran and a chain of custody record (S8, S9, W7, W8). The control itself is the organisation's process |
+| | 5.31 legal, statutory, regulatory and contractual requirements | The Law on Cyber Security of Mongolia (articles 8.5 and 9.6) is named in the README and `docs/ARCHITECTURE.md`, which call the evidence folder confidential |
+| | 8.15 logging | `tatar.log` and the chain of custody record what ran, and host-supplied text is neutralised before it reaches them. The tool does not configure logging on the host |
 | ISO/IEC 27037:2012 | Identification, collection, acquisition and preservation of digital evidence; auditability, repeatability, reproducibility | Read-only collection (S8, W8), hashes and a recorded chain of custody including the time zone and a note that the host clock was not verified against an outside source (S9, W7), deterministic output (S14, W12). The tool records these; it does not make the examiner's process conformant |
 | NIST SP 800-218 (SSDF) | PO.1 requirements, PO.3 toolchain, PS.1 protect code, PS.2 release integrity, PS.3 archive releases | AV-SAFETY claims, CI, pinned actions, `SHA256SUMS.txt` and build-provenance attestation on each release, GitHub releases |
 | | PW.7 code analysis, PW.8 testing, PW.9 secure defaults | Linters, the test suites, EDR-sensitive actions off unless asked (AV-05) |

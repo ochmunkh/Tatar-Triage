@@ -26,11 +26,14 @@ test of the collectors can see.
          planning pages) is not tracked.
   RI-09  The files a project is judged by exist: LICENSE, SECURITY.md,
          CODE_OF_CONDUCT.md, CONTRIBUTING.md, dependabot.yml.
+  RI-10  The analysis tools in tools/ import only the Python standard library,
+         as docs/TOOLS.md promises (checked on the syntax tree, nothing runs).
 
 Exit 0 = every rule holds, 1 = at least one failed.  Run from the repo root:
 
     python3 .github/scripts/check_release_integrity.py [ROOT]
 """
+import ast
 import io
 import os
 import re
@@ -216,6 +219,28 @@ def ri09(root):
             fail("RI-09", "%s is missing" % rel)
 
 
+def ri10(root, files):
+    std = getattr(sys, "stdlib_module_names", None)
+    if std is None:
+        return  # Python older than 3.10 has no list to compare with
+    for rel in sorted(f for f in files if re.match(r"tools/[^/]+\.py$", f)):
+        try:
+            tree = ast.parse(read(root, rel))
+        except SyntaxError as exc:
+            fail("RI-10", "%s does not parse: %s" % (rel, exc.msg))
+            continue
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                names = [node.module]
+            for name in names:
+                top = name.split(".")[0]
+                if top not in std:
+                    fail("RI-10", "%s:%d imports %s, which is not in the standard library" % (rel, node.lineno, top))
+
+
 def main(argv):
     root = argv[1] if len(argv) > 1 else "."
     win_v, lin_v = versions(root)
@@ -227,6 +252,7 @@ def main(argv):
     ri07(root, files)
     ri08(root, files)
     ri09(root)
+    ri10(root, files)
     if FAILS:
         for f in FAILS:
             print("FAIL: " + f)
@@ -234,7 +260,7 @@ def main(argv):
         return 1
     print("OK: release integrity - version %s in both editions and the CHANGELOG, workflows pinned "
           "and least-privilege, sample logs and field names match the code, nothing local-only "
-          "tracked, no names kept out of the repository" % win_v)
+          "tracked, the tools use only the standard library, no names kept out of the repository" % win_v)
     return 0
 
 
