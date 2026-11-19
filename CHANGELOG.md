@@ -4,6 +4,17 @@ All notable changes to TATAR Triage Toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 [SemVer](https://semver.org/).
 
+## [1.12.1] — 2026-11-19
+
+Two findings now read better for the analyst, and the output examples match the shipped tool.
+
+### Changed
+- **The script scan names what a pattern means.** A finding for the encoded-command check used to print the whole regular expression; it now says "encoded command argument (-enc / -EncodedCommand)". The hidden-window check reads "hidden window flag (-w hidden)". The report keeps the raw expression on each line.
+- **The "executable files in temp or AppData" finding says where they are.** The detail now starts with how many top-level folders hold them and the five largest with their counts, so 30000 files under one installer or runtime folder can be told apart from a few spread out.
+
+### Tests and documentation
+- `Test-EncodedArg.ps1` checks the pattern labels, that both script-scan findings use them, and that the temp-executable finding names the folders.
+- The sample log in `docs/OUTPUT.md` shows 6/33 and 26/33, the `summary.json` field names are written in lower case as the schema has them, and the English README says which pages have no Mongolian twin; these were corrected after 1.12.0 was tagged.
 ## [1.12.0] — 2026-11-19
 
 A new console and viewer layout, a finding for repeated failed SSH logons, the domain role in the report, finding ids that are unique, and a first-run guide in the help.

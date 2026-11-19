@@ -55,6 +55,33 @@ foreach ($line in [IO.File]::ReadAllLines($Cases)) {
     }
 }
 
+# The finding text shows what a pattern means, not the expression behind it.
+$ast = [System.Management.Automation.Language.Parser]::ParseInput($src, [ref]$null, [ref]$null)
+$fn  = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-ObfPatternLabel' }, $true)
+if (-not $fn) {
+    $fail++; Write-Host '  FAIL  Get-ObfPatternLabel not found in the collector' -ForegroundColor Red
+} else {
+    $script:EncArgPattern = $pattern
+    . ([scriptblock]::Create($fn.Extent.Text))
+    $labelCases = @(
+        @($pattern,         'encoded command argument (-enc / -EncodedCommand)'),
+        @('-w\s+hidden',    'hidden window flag (-w hidden)'),
+        @('eval\(',         'eval('),
+        @('WScript\.Shell', 'WScript.Shell'),
+        @('IEX',            'IEX')
+    )
+    foreach ($c in $labelCases) {
+        $got = Get-ObfPatternLabel $c[0]
+        if ($got -ceq $c[1]) { $pass++; Write-Host ("  PASS  label for {0}" -f $c[1]) -ForegroundColor Green }
+        else { $fail++; Write-Host ("  FAIL  label for {0}: got '{1}'" -f $c[1], $got) -ForegroundColor Red }
+    }
+    $raw = ([regex]::Matches($src, "Suspicious pattern '\{0\}' in") | Measure-Object).Count
+    $used = ([regex]::Matches($src, 'Get-ObfPatternLabel \$first\.Pattern') | Measure-Object).Count
+    if ($used -ge 2) { $pass++; Write-Host '  PASS  both obfscan findings use the label' -ForegroundColor Green }
+    else { $fail++; Write-Host '  FAIL  an obfscan finding still prints the raw pattern' -ForegroundColor Red }
+}
+if ($src.Contains('top-level folder(s), the largest: {1}')) { $pass++; Write-Host '  PASS  temp-executable finding names where the files are' -ForegroundColor Green }
+else { $fail++; Write-Host '  FAIL  temp-executable finding does not say where the files are' -ForegroundColor Red }
 Write-Host ''
 Write-Host ("EncodedCommand pattern: {0} passed, {1} failed" -f $pass, $fail)
 if ($fail -gt 0) { exit 1 }

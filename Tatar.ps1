@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.12.0'
+$script:ToolVersion = '1.12.1'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false
@@ -2085,6 +2085,19 @@ function Collect-PSHistory {
     } catch { Add-Err "PSHistory failed: $_" }
 }
 
+# The scan patterns are regexes; some read badly in a finding. Show the analyst
+# what each one means, not the expression. The report line keeps the raw form.
+function Get-ObfPatternLabel {
+    param([string]$Pattern)
+    if ($Pattern -ceq $script:EncArgPattern) { return 'encoded command argument (-enc / -EncodedCommand)' }
+    switch -CaseSensitive ($Pattern) {
+        '-w\s+hidden'    { return 'hidden window flag (-w hidden)' }
+        'eval\('         { return 'eval(' }
+        'WScript\.Shell' { return 'WScript.Shell' }
+        default          { return $Pattern }
+    }
+}
+
 function Collect-ObfScan {
     Add-Section '17 Obfuscated/suspicious script scan (Downloads/Desktop/Temp, 30d)'
     try {
@@ -2141,13 +2154,13 @@ function Collect-ObfScan {
             $first = $h[0]
             if ($h.Count -eq 1) {
                 Add-Finding -Category 'obfscan' `
-                    -Message ("Suspicious pattern '{0}' in {1}" -f $first.Pattern, $first.File) `
+                    -Message ("Suspicious pattern '{0}' in {1}" -f (Get-ObfPatternLabel $first.Pattern), $first.File) `
                     -Detail  ("line {0}: {1}" -f $first.Line, $first.Snip)
             } else {
                 $dirs   = @($h | ForEach-Object { $_.Dir } | Select-Object -Unique).Count
                 $sample = ($h | Select-Object -First 3 | ForEach-Object { $_.File }) -join ' ; '
                 Add-Finding -Category 'obfscan' `
-                    -Message ("Suspicious pattern '{0}' in {1} cop(ies) of {2}, across {3} director(ies)" -f $first.Pattern, $h.Count, $first.Leaf, $dirs) `
+                    -Message ("Suspicious pattern '{0}' in {1} cop(ies) of {2}, across {3} director(ies)" -f (Get-ObfPatternLabel $first.Pattern), $h.Count, $first.Leaf, $dirs) `
                     -Detail  ("First {0} of {1}: {2} | line {3}: {4} | every match is listed individually in report section 17. Many copies of one file under temp directories is the shape of an installer unpacking itself; confirm the publisher before treating it as a lead." -f ([Math]::Min(3,$h.Count)), $h.Count, $sample, $first.Line, $first.Snip)
             }
         }
@@ -2470,6 +2483,7 @@ function Collect-Indicators {
         Add-Report '-- Executables written to temp locations (last 14 days) --'
         $tmpCount = 0
         $tmpFirst = New-Object System.Collections.Generic.List[string]
+        $tmpTop = @{}
         # %TEMP% and %LOCALAPPDATA%\Temp are the SAME directory for an
         # interactive user, so every executable under it was counted twice -
         # in the finding text and in the ExecInTempDirs counter that
@@ -2484,7 +2498,15 @@ function Collect-Indicators {
             if (Test-PathSafe $d) {
                 $items = Get-FilesByExtension -Path $d -Extension '.exe','.dll','.scr' -Since (Get-Date).AddDays(-14) | Select-Object FullName, Length, LastWriteTime
                 $tmpCount += @($items).Count
-                foreach ($it in @($items)) { if ($tmpFirst.Count -lt 10) { $tmpFirst.Add([string]$it.FullName) } }
+                foreach ($it in @($items)) {
+                    if ($tmpFirst.Count -lt 10) { $tmpFirst.Add([string]$it.FullName) }
+                    # Which top-level folder holds the files: 30000 files under one
+                    # installer or runtime folder read very differently from 30 spread out.
+                    $full = [string]$it.FullName
+                    $rel = $full.Substring([Math]::Min($d.Length + 1, $full.Length))
+                    $top = if ($rel.IndexOf('\') -lt 0) { '(top level)' } else { $rel.Split('\')[0] }
+                    $tmpTop[$top] = 1 + [int]$tmpTop[$top]
+                }
                 $items | Out-String | Out-FileNoBom $script:ReportFile -Append
             }
         }
@@ -2494,7 +2516,8 @@ function Collect-Indicators {
             # and hash passes only ever see message+detail, so this aggregate -
             # the noisiest finding the tool raises, by its own admission - named
             # no file and could not be reached by any allowlist rule.
-            Add-Finding -Category 'indicators' -Message ("{0} executable file(s) written to temp/appdata locations in the last 14 days" -f $tmpCount) -Detail ("First {0} of {1}: {2} | see report section 28 for all - legitimate installers/updaters also appear here" -f $tmpFirst.Count, $tmpCount, ($tmpFirst -join ' '))
+            $tmpWhere = (@($tmpTop.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 5 | ForEach-Object { '{0} ({1})' -f $_.Key, $_.Value })) -join ', '
+            Add-Finding -Category 'indicators' -Message ("{0} executable file(s) written to temp/appdata locations in the last 14 days" -f $tmpCount) -Detail ("In {0} top-level folder(s), the largest: {1} | First {2} of {3}: {4} | see report section 28 for all - legitimate installers/updaters also appear here" -f $tmpTop.Count, $tmpWhere, $tmpFirst.Count, $tmpCount, ($tmpFirst -join ' '))
         }
     } catch { Add-Err "Indicators failed: $_" }
 }
