@@ -14,6 +14,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 - **Linux: repeated failed SSH logons from one address are now a finding.** Ten or more `Failed password` lines from the same source address in the last 200 auth-log lines raise a Review finding (T1110). Until now only `lastb` was counted, which needs root. Found by the technique-injection lab (L13).
 - **Windows: the domain role is recorded.** `sysinfo` writes the role to the report and, on a domain controller, adds a limitation saying that Active Directory itself is not examined.
 
+### Tests and documentation
+- **IOC over allowlist, by address.** Both IOC test suites now cover a finding that the allowlist suppresses by its path and the feed names by an address: the feed wins, and a feed that lists only other addresses (a near miss included) leaves the suppression alone. `docs/ARCHITECTURE.md` and its Mongolian page say in two sentences why the feed wins and how narrow the override is.
+
 ### Fixed
 - **Linux: a process that exited during the scan** no longer prints a `/proc/<pid>/cmdline: No such file` message into the console output.
 

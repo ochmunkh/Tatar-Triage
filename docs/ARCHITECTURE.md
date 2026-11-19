@@ -54,6 +54,8 @@ Suppresses known-good findings by **path glob**, **Authenticode publisher** (Win
 
 Takes an offline feed of `hashes / ips / domains / filenames` (`hashes` are SHA-256 — MD5/SHA-1 are not compared; see [`ioc.sample.json`](../ioc.sample.json)). *Pass A* matches existing findings and a hit **overrides the allowlist** — it re-activates a suppressed finding and escalates it to High / 0.95. *Pass B* raises new findings for IOCs seen anywhere in the collected evidence (deduplicated against Pass A), tagged by indicator type — `T1071` for an IP, `T1071.004` for a domain, `T1204.002` for a filename, `T1588.001` for a hash. The rule is simple: a known-bad indicator always beats a known-good allowlist entry.
 
+An allowlist entry says a thing is routine and a feed entry says an analyst believes it is bad, so when both match one finding the feed wins: hiding a listed indicator behind a routine-looking path, publisher or hash is the failure an attacker would aim for. The override is exact, not broad: only a finding that names a listed indicator on a boundary comes back (an address such as `203.0.113.70` does not match a listed `203.0.113.7`), everything else the allowlist suppressed stays suppressed, and `tests/test-ioc-feed.sh` and `tests/Test-IocFeed.ps1` check both directions.
+
 Both feed paths are checked **before collection starts**. A path that cannot be read is never skipped in silence: it warns on the console, is logged as an error, and forces exit code `2` — so a typo in a filename can never leave you reading "no active findings" while the feed never ran.
 
 ### Trust boundaries

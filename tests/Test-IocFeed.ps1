@@ -138,6 +138,15 @@ try {
         Check 'an allowlisted finding is suppressed without a feed' ($f1 -and $f1.suppressed -eq $true) ("got " + ($f1 | ConvertTo-Json -Compress))
         $f2 = Get-StandinFinding 'both' @('-Allowlist', $af, '-IOCFile', $hf)
         Check "the same finding with the file's SHA-256 in the feed is active, High and marked IOC" ($f2 -and $f2.suppressed -ne $true -and $f2.severity -eq 'High' -and $f2.iocMatch -eq $true) ("got " + ($f2 | ConvertTo-Json -Compress))
+        # The same, by address (the stand-in's command line holds 127.0.0.1). An allowlist holds paths,
+        # publishers and hashes, never addresses; the feed names the address and wins. A feed that names
+        # other addresses (127.0.0.10 is a near miss) must leave the suppression alone.
+        $ih = Put 'standin-ip-hit'  (J @{ ips = @('127.0.0.1') })
+        $im = Put 'standin-ip-miss' (J @{ ips = @('127.0.0.10', '127.0.0.2') })
+        $f3 = Get-StandinFinding 'iphit' @('-Allowlist', $af, '-IOCFile', $ih)
+        Check 'the same finding with its address in the feed is active, High and marked IOC' ($f3 -and $f3.suppressed -ne $true -and $f3.severity -eq 'High' -and $f3.iocMatch -eq $true) ("got " + ($f3 | ConvertTo-Json -Compress))
+        $f4 = Get-StandinFinding 'ipmiss' @('-Allowlist', $af, '-IOCFile', $im)
+        Check 'a feed that names other addresses (127.0.0.10 included) leaves it suppressed' ($f4 -and $f4.suppressed -eq $true) ("got " + ($f4 | ConvertTo-Json -Compress))
     }
 } finally {
     Remove-ItemProperty -Path $rk -Name $rn -ErrorAction SilentlyContinue

@@ -104,7 +104,9 @@ echo "[ioc-over-allowlist]"
 # host where sleep is a coreutils multi-call binary it refuses to start as "standin", the test
 # then skipped, and the check never ran on CI.) The trailing ":" keeps bash from exec'ing sleep.
 SD="/tmp/tatar-iocfeed-$$"; mkdir -p "$SD"; cp "$(command -v bash)" "$SD/standin" && chmod +x "$SD/standin"
-"$SD/standin" -c 'sleep 120; :' & SP=$!
+# 203.0.113.7 is in a documentation range (TEST-NET-3); it sits in the command line, behind a ":",
+# so the process finding names an address the run never contacts.
+"$SD/standin" -c 'sleep 120; : 203.0.113.7' & SP=$!
 sleep 1
 SH="$(sha256sum "$SD/standin" | cut -d' ' -f1)"
 printf '{"hashes":["%s"]}' "$SH" > "$W/h.json"
@@ -141,6 +143,18 @@ else
     both="$(runfind both --allowlist "$W/allow.json" --iocfile "$W/h.json")"
     check "the same finding with the file's SHA-256 in the feed is active, High and marked IOC" \
         "$([ "$both" = "False High True" ] && echo 1 || echo 0)" "$both"
+    # The same, by address. An allowlist holds paths, publishers and hashes, never addresses, so
+    # "an allowlisted program talking to a listed address" is a finding the allowlist suppresses by
+    # its path and the feed names by its address. The feed wins; a feed that names other addresses
+    # (a near miss included) must leave the suppression alone.
+    printf '{"ips":["203.0.113.7"]}' > "$W/ip-hit.json"
+    printf '{"ips":["203.0.113.70","203.0.113.1","198.51.100.7"]}' > "$W/ip-miss.json"
+    iphit="$(runfind iphit --allowlist "$W/allow.json" --iocfile "$W/ip-hit.json")"
+    check "the same finding with its address in the feed is active, High and marked IOC" \
+        "$([ "$iphit" = "False High True" ] && echo 1 || echo 0)" "$iphit"
+    ipmiss="$(runfind ipmiss --allowlist "$W/allow.json" --iocfile "$W/ip-miss.json")"
+    check "a feed that names other addresses (203.0.113.70 included) leaves it suppressed" \
+        "$([ "${ipmiss%% *}" = True ] && echo 1 || echo 0)" "$ipmiss"
 fi
 kill "$SP" 2>/dev/null; rm -rf "$SD"
 

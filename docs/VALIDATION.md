@@ -235,7 +235,7 @@ bidirectional character into any output text, and still raise an IOC finding for
 | Linux (Bash, non-root) | 6 feeds and 4 unusable feeds, 65 checks, all held after the fixes below; the 200,000-character indicator makes the evidence scan stop with "argument list too long", which the run reports as an error and exit code 2, in 18 s |
 | Windows (PowerShell 5.1, standard run) | 6 feeds and 4 unusable feeds, 50 checks, all held after the fixes below |
 
-The Windows test has not yet been run under PowerShell 7, which is what CI uses.
+The Windows test also runs under PowerShell 7: the CI job that uses it runs `tests/Test-IocFeed.ps1` and has been green since the fixes below. Two checks were added for the case "the allowlist suppresses a finding by its path, and the feed lists an address that finding names": the feed wins, and a feed that lists only other addresses (a near miss included) leaves the suppression alone.
 
 ### Real matches, with stand-ins
 
