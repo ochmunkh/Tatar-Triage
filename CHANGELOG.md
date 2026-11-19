@@ -13,6 +13,7 @@ Two findings now read better for the analyst, and the output examples match the 
 - **The "executable files in temp or AppData" finding says where they are.** The detail now starts with how many top-level folders hold them and the five largest with their counts, so 30000 files under one installer or runtime folder can be told apart from a few spread out.
 
 ### Tests and documentation
+- The containment test in `Test-Security.ps1` now names the service whose start mode changed during a run (a CI runner changed one once while the collector, which only reads, was running), so a failure can be explained from the log.
 - `Test-EncodedArg.ps1` checks the pattern labels, that both script-scan findings use them, and that the temp-executable finding names the folders.
 - The sample log in `docs/OUTPUT.md` shows 6/33 and 26/33, the `summary.json` field names are written in lower case as the schema has them, and the English README says which pages have no Mongolian twin; these were corrected after 1.12.0 was tagged.
 ## [1.12.0] — 2026-11-19

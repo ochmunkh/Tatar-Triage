@@ -305,8 +305,17 @@ $b = Join-Path $Work 'w8'
 $r = Invoke-Collector -Arguments @('-Modules', 'sysinfo,network,process,sessions,users,services,persistence,apps,indicators,timeline', '-Silent', '-OutputPath', $b) -TimeoutSec 400 -WatchNet
 $after = Get-Canary
 $diff = @($before.Keys | Where-Object { [string]$before[$_] -ne [string]$after[$_] })
+# Name the service that changed. A start mode that flips on a CI runner while the
+# collector (which only reads) is running is otherwise a mystery in the log.
+$svcWhat = ''
+if ($diff -contains 'services') {
+    $sb = @{}; foreach ($e in ([string]$before['services'] -split ';')) { if ($e) { $kv = $e -split '=', 2; $sb[$kv[0]] = $kv[1] } }
+    $sa = @{}; foreach ($e in ([string]$after['services']  -split ';')) { if ($e) { $kv = $e -split '=', 2; $sa[$kv[0]] = $kv[1] } }
+    $names = @(($sb.Keys + $sa.Keys) | Select-Object -Unique | Where-Object { $sb[$_] -ne $sa[$_] })
+    $svcWhat = ' [' + ((@($names | Select-Object -First 5 | ForEach-Object { "$_ : $($sb[$_]) -> $($sa[$_])" })) -join '; ') + ']'
+}
 Check 'W8 : the traced run finished' (($r.Exit -eq 0 -or $r.Exit -eq 2) -and -not $r.TimedOut) "exit $($r.Exit)"
-Check 'W8 : Run keys, startup folder, hosts file, scheduled tasks, services and accounts are unchanged' ($diff.Count -eq 0) ($diff -join ', ')
+Check 'W8 : Run keys, startup folder, hosts file, scheduled tasks, services and accounts are unchanged' ($diff.Count -eq 0) (($diff -join ', ') + $svcWhat)
 Check 'W8 : no non-loopback TCP connection was seen from the collector or its children (offline)' ($r.Net.Count -eq 0) (($r.Net | Select-Object -Unique | Select-Object -First 3) -join '; ')
 
 # ---------------------------------------------------------------------------
