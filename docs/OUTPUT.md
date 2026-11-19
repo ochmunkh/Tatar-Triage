@@ -19,7 +19,7 @@
 Every run ends with an analyst-first one-pager so the IR lead knows **what to look at first**:
 
 - **`summary.txt`** — host / OS / case metadata, quick stats (process count, listening ports, established connections, accounts, hashed binaries, … the same keys on every platform) and the aggregated **Suspicious findings** list, sorted by severity.
-- **`summary.json`** — the same data as structured JSON (`stats`, `findings[]` with `Severity/Category/Message/Detail`), ready for SIEM ingestion or scripted post-processing.
+- **`summary.json`** — the same data as structured JSON (`stats`, `findings[]` with `severity/category/message/detail`), ready for SIEM ingestion or scripted post-processing.
 
 Findings come from the collectors themselves: LOLBAS-style command lines, obfuscated-script matches, PsExec artifacts, WMI event-subscription consumers, unquoted / user-writable service paths, `AlwaysInstallElevated`, security-log-cleared (1102) events, executables recently dropped in temp locations, and more.
 
@@ -32,9 +32,9 @@ Each finding in `findings.json` also carries a `fingerprint` (16 hex characters)
 Each run writes a timestamped execution log alongside the evidence:
 
 ```
-[2026-07-10 22:26:16.693] [START ] module sysinfo (1/30)
+[2026-07-10 22:26:16.693] [START ] module sysinfo (6/33)
 [2026-07-10 22:26:17.721] [OK    ] module sysinfo finished in 1s
-[2026-07-10 22:26:17.751] [START ] module hives (26/30)
+[2026-07-10 22:26:17.751] [START ] module hives (26/33)
 [2026-07-10 22:26:17.995] [ERROR ] Hives failed: Access denied
 [2026-07-10 22:26:17.996] [WARN  ] module hives finished in 0.2s with 1 error(s)
 ```

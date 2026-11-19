@@ -49,7 +49,7 @@ Have your own indicators? Put SHA-256 hashes, IPs, domains and file names in a J
 
 - **33 modules** on Windows and 18 on Linux, run in RFC 3227 order of volatility, behind one output contract (`schemaVersion 1.8`).
 - **Read-only first.** Heavy or destructive actions (memory dump, hive save, full EVTX) are off unless you switch them on. It never extracts or decrypts passwords.
-- **Standard user, offline, AV-safe.** No network calls, no obfuscation, no AV/AMSI bypass. [What it does and does not do on a live host](docs/AV-SAFETY.md).
+- **Standard user, offline, AV-safe.** No network calls, no obfuscation, no AV/AMSI bypass. Actions an EDR can notice (`-CollectHives`, `-ExportEvtx`, `-MemoryDump`) are off unless you ask. [What it does and does not do on a live host](docs/AV-SAFETY.md).
 - **Evidence you can verify.** SHA-256 manifest of every file, chain of custody, release attestation.
 - **Findings with identity.** Each finding has a stable `fingerprint`, so two scans of a host can be compared (see the tools below).
 
@@ -100,7 +100,7 @@ Run on the analyst's machine, standard library only, offline ([details](docs/TOO
 | [Security testing](docs/SECURITY-TESTING.md) · [Validation](docs/VALIDATION.md) | How it is tested, lab results |
 | [Coverage](docs/COVERAGE.md) · [After collection](docs/AFTER-COLLECTION.md) · [Comparison](docs/COMPARISON.md) | What is and is not collected, which tool reads which file, how it differs |
 
-Each document has a Mongolian twin (`.mn.md`).
+Most documents have a Mongolian twin (`.mn.md`); coverage, after-collection, comparison, AV-safety, ATT&CK, tools, security-testing and validation are English only.
 
 ## Legal
 

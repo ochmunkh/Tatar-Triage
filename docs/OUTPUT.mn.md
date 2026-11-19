@@ -19,7 +19,7 @@
 Run бүр шинжээчид зориулсан нэг хуудсаар төгсдөг — IR ахлагч **юуг эхэлж харахаа** мэдэж авна:
 
 - **`summary.txt`** — host / OS / case мета, quick stats (процессын тоо, listening port, established холболт, account, хэш тооцсон binary … платформ бүр дээр ижил түлхүүрүүд) болон severity-ээр эрэмбэлсэн **сэжигтэй finding**-үүдийн нэгтгэсэн жагсаалт.
-- **`summary.json`** — ижил өгөгдөл бүтэцтэй JSON хэлбэрээр (`stats`, `Severity/Category/Message/Detail`-тай `findings[]`), SIEM-д залгих эсвэл скриптээр боловсруулахад бэлэн.
+- **`summary.json`** — ижил өгөгдөл бүтэцтэй JSON хэлбэрээр (`stats`, `severity/category/message/detail`-тай `findings[]`), SIEM-д залгих эсвэл скриптээр боловсруулахад бэлэн.
 
 Finding-ууд collector-уудаас өөрсдөөс нь гардаг: LOLBAS маягийн command line, обфускацитай скрипт, PsExec-ийн ул мөр, WMI event-subscription consumer, хашилтгүй / хэрэглэгч бичих эрхтэй service-ийн зам, `AlwaysInstallElevated`, security log цэвэрлэсэн (1102) event, temp хавтсанд саяхан үүссэн executable гэх мэт.
 
@@ -32,9 +32,9 @@ Finding-ууд collector-уудаас өөрсдөөс нь гардаг: LOLBAS
 Run бүр нотолгооны хажууд цаг тэмдэгтэй гүйцэтгэлийн лог бичнэ:
 
 ```
-[2026-07-10 22:26:16.693] [START ] module sysinfo (1/30)
+[2026-07-10 22:26:16.693] [START ] module sysinfo (6/33)
 [2026-07-10 22:26:17.721] [OK    ] module sysinfo finished in 1s
-[2026-07-10 22:26:17.751] [START ] module hives (26/30)
+[2026-07-10 22:26:17.751] [START ] module hives (26/33)
 [2026-07-10 22:26:17.995] [ERROR ] Hives failed: Access denied
 [2026-07-10 22:26:17.996] [WARN  ] module hives finished in 0.2s with 1 error(s)
 ```
