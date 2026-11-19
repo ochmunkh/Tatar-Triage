@@ -4,7 +4,7 @@
 
 ## Шаардлага
 
-- Windows 10 / 11 (Server 2016+ бас ажиллана) · PowerShell 5.1+ (PowerShell 7 дэмжинэ)
+- Windows 10 / 11 (Server 2016+ бас ажиллана) · PowerShell 5.1+ (PowerShell 7-г дэмжинэ)
 - Linux: Debian/Ubuntu эсвэл RHEL/CentOS/Fedora (bash 4+, coreutils)
 - Бүрэн цуглуулгад **Administrator / root** зөвлөж байна.
 
@@ -36,17 +36,17 @@ sudo ./tatar-linux.sh --all --dry-run   # төлөвлөгөө харах (юу 
 | `-Modules a,b,c` | Зөвхөн нэрлэсэн модулиудыг ажиллуулна |
 | `-List` | Модулиудыг жагсаагаад гарна |
 | `-Help` | Тусламж хэвлээд гарна |
-| `-OutputPath <зам>` | Гаралтын үндсэн хавтас (default `C:\Forensic`; **гадаад дискийг илүүд үз**) |
+| `-OutputPath <зам>` | Гаралтын үндсэн хавтас (default `C:\Forensic`; **гадаад дискийг илүүд үзнэ үү**) |
 | `-CaseId <id>` | Chain of custody-д бичих case / incident ID |
 | `-Examiner <нэр>` | Chain of custody-д бичих шинжээчийн нэр |
 | `-Compress` | Төгсгөлд нь гаралтыг zip болгож SHA-256 авна |
-| `-CollectHives` | SAM/SECURITY/SYSTEM/SOFTWARE + NTUSER-ийг хадгална (credential материал; EDR сэрэмжлүүлж болзошгүй) |
-| `-ExportEvtx` | Бүтэн `.evtx` лог export хийнэ |
-| `-MemoryDump` | `tools\winpmem.exe`-ээр санах ойн raw image авна (EDR сэрэмжлүүлж болзошгүй) |
-| `-Silent` / `-Quiet` | Консолын **бүх** гаралтыг дарна (banner, явц, төлөв). Файлууд — `tatar.log` ч мөн — хэвээр бичигдэнэ. WinRM / хуваарьт / автомат run-д зориулав |
+| `-CollectHives` | SAM/SECURITY/SYSTEM/SOFTWARE + NTUSER-ийг хадгална (credential материал; EDR сэрэмжлүүлэх боломжтой) |
+| `-ExportEvtx` | Бүтэн `.evtx` лог экспортлоно |
+| `-MemoryDump` | `tools\winpmem.exe`-ээр санах ойн raw image авна (EDR сэрэмжлүүлэх боломжтой) |
+| `-Silent` / `-Quiet` | Консолын **бүх** гаралтыг дарна (banner, явц, төлөв). Файлууд — `tatar.log` ч мөн — хэвээр бичигдэнэ. WinRM / хуваарийн дагуу / автомат run-д зориулав |
 | `-DryRun` / `-Preview` | Тодорхойлсон гаралтын хавтас, модулиудыг ажиллах дарааллаар нь, аль gated үйлдэл асаалттайг, allowlist / IOC feed уншигдаж байгаа эсэхийг хэвлээд `0`-ээр гарна — **юу ч үүсгэхгүй, юу ч бичихгүй** |
 | `-Allowlist <json>` | Мэдэгдэж байгаа цэвэр finding-ийг зам, Authenticode нийтлэгч, эсвэл SHA-256-аар нууна. Suppressed finding аудитад үлдэнэ, устдаггүй |
-| `-IOCFile <json>` | Finding болон цуглуулсан нотолгоог офлайн IOC feed-тэй тулгана (hashes = зөвхөн SHA-256, ips, domains, filenames). Таарвал allowlist-ийг **давж**, High болгож өсгөнө |
+| `-IOCFile <json>` | Finding болон цуглуулсан нотолгоог офлайн IOC feed-тэй тулгана (hashes = зөвхөн SHA-256, ips, domains, filenames). Таарвал allowlist-ийг **давж**, High зэрэглэл болгож өсгөнө |
 
 ### Exit code
 

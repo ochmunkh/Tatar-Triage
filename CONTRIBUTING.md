@@ -119,6 +119,8 @@ downloading anything; an unbounded filesystem walk.
 - **Cross-platform parity** — make sure a collector exists (or is documented as N/A) on both OSes.
 - **Docs & translations** (English / Mongolian).
 
+Contributors are credited in [`CONTRIBUTORS.md`](CONTRIBUTORS.md); a merged pull request earns a row there.
+
 ## Adding a collector
 
 1. Windows: add the logic to `Tatar.ps1` (or a module it calls). Linux: add to `linux/`.

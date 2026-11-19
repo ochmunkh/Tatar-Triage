@@ -22,7 +22,7 @@ Linux: `process` модуль reverse shell эсвэл pipe-to-shell төст к
 
 ## MITRE ATT&CK тэмдэглэгээ
 
-Collector бүр нь халдагчийн аль техникийг **илрүүлэх / шинжлэхэд** туслахаар нь ATT&CK-тай холбогдоно. Дэлгэрэнгүйг [`docs/MITRE_ATTACK.md`](MITRE_ATTACK.md)-аас үз.
+Collector бүр нь халдагчийн аль техникийг **илрүүлэх / шинжлэхэд** туслах үүднээс ATT&CK-тай холбогдоно. Дэлгэрэнгүйг [`docs/MITRE_ATTACK.md`](MITRE_ATTACK.md)-аас үзнэ үү.
 
 | Модуль / artifact | ATT&CK technique | Tactic |
 |---|---|---|
