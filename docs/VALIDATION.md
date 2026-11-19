@@ -171,7 +171,7 @@ The Linux host is a container, so the collector also raised its `context` findin
 
 ### What this found
 
-None of these is implemented yet; they are candidates, each with a cost.
+Items 1 to 3 were implemented afterwards, except that the failed-logon count in item 3 still reads `lastb` only (see the second Linux run below); item 4 is by design.
 
 1. **Autostart entries that point into a user-writable folder** (Run keys, Startup folder, scheduled tasks; cron and systemd units on Linux) produce no finding. The Windows persistence module is narrow on purpose, after a module that raised 144 findings of which 142 were noise. A rule limited to targets under `C:\Users\Public`, `C:\ProgramData`, the temp folders and Downloads, and not `AppData`, where OneDrive, Teams and most updaters live, is the version that stays quiet on an ordinary workstation.
 2. **Windows reads neither Remote Desktop's state nor Defender's.** Real-time protection off and exclusions on user-writable paths are among the most common first moves of an intruder. Exclusions need Administrator to read; the collector would have to say so when it cannot.
@@ -181,6 +181,24 @@ None of these is implemented yet; they are candidates, each with a cost.
 ### Limits of this round
 
 A stand-in is not a real intrusion; a detection that passes here can still miss the real thing. The Sandbox is offline, so failed logons could not be produced there. Three of the first attempts were faults of the injection and not of the collector (a copied binary kept its old modification time, a copied Store alias would not start, a shell optimised away a command line), and were fixed in the injection before the numbers above.
+
+### Second run, after the detections above (Linux)
+
+The same 14 stand-ins, run again as root in a throwaway container with the new collector (nine modules; `lab/lab-linux.sh`, `lab/analyze.py`).
+
+| ID | Before | After |
+|---|---|---|
+| L01 cron entry from /tmp | Reported only | Finding (Review) |
+| L03 systemd unit from /tmp | Reported only | Finding (Review) |
+| L10 world-writable script in /usr/local/bin | Not covered | Finding (Review) |
+| L12 reverse-shell command line | Reported only | Finding (Review) |
+| L14 sudoers NOPASSWD | Reported only | Finding (Review) |
+| L02 root crontab | Not run | Not run (no crontab command in the container) |
+| L04, L08, L11, L13 | Unchanged | Unchanged (L08's finding names the first 10 of the files only, so the stand-in is in the report, not in the finding text) |
+
+Two things the run showed. A stand-in written as `sleep 1800 # ... /dev/tcp/...` has no such command line: the shell drops the comment and starts `sleep` directly, so no collector could see it; the stand-in was changed to `sleep 1800; : ...`, which keeps the text in the command line, and that one is found. And the collector found the command line of the shell that was running the check itself, which is expected when the text is on the command line. The collector's own process tree is skipped, so the patterns in its own source never produce a finding.
+
+Failed logons from `auth.log` (L13) are still counted from `lastb` only.
 
 ## IOC feed round (1.10.0)
 

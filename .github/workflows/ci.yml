@@ -62,6 +62,9 @@ jobs:
       - name: Hostile IOC feeds (the feed is a file someone else wrote)
         run: bash tests/test-ioc-feed.sh
 
+      - name: New Linux detections (command lines; privileged checks skip on a runner)
+        run: bash tests/test-linux-detections.sh
+
       # json_escape is the single point where collected bytes become JSON.
       # The test drives all three of its paths - including the no-python3
       # fallback, which it forces by shadowing python3, because CI always has
@@ -252,6 +255,10 @@ jobs:
       - name: Hostile IOC feeds (Windows edition)
         shell: pwsh
         run: pwsh -File tests/Test-IocFeed.ps1
+
+      - name: Autostart target unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-AutostartTarget.ps1
 
       - name: EncodedCommand pattern unit tests
         shell: pwsh

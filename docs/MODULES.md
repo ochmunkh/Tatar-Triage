@@ -18,6 +18,12 @@ On Linux: cron / systemd persistence, SUID/SGID enumeration, SSH keys, container
 
 The IOC feed is not a module. It is applied once, after every module has finished, to the findings and to the text the run collected, so no module needs to know about it. A hit has two sources. **Against a finding:** an indicator (IP, domain or file name) found in the finding's text, or a SHA-256 that equals the hash of a file the finding names and that still exists. The finding keeps its identity but becomes High, confidence 0.95, `iocMatch: true`, with the indicator in `iocIndicator`, and an allowlist no longer hides it. **Against the evidence:** an indicator found anywhere in this run's `.txt`, `.csv` and `.log` files (not `summary.txt`), for example a command line in the process list or a line of `binary_hashes.txt`; this raises a new finding whose message names the indicator. A hash can only match a file the run hashed or a finding names (the running and service binaries), not every file on the disk. The text of the feed is never run or trusted: it is matched at word boundaries (`127.0.0.1` does not match `127.0.0.10`) and neutralised before it reaches an output file. A feed path that cannot be read is reported at the start and makes the run finish with exit code 2.
 
+## Persistence and configuration checks that raise a finding
+
+Windows: an autostart entry (Run key, Startup folder, scheduled task) that starts a program from `Users\Public`, `Windows\Temp`, a user Temp or Downloads folder or the Recycle Bin is raised for review (T1547.001, T1053.005); AppData and ProgramData are not, because ordinary software starts from there. The `firewall` module also reports Defender real-time protection and exclusions (exclusions need Administrator). The `rdp` module raises RDP enabled without network-level authentication (T1021.001). The `persistence` module raises BITS jobs that run a program on completion (T1197) and PowerShell profiles with download or decode patterns (T1546.013).
+
+Linux: the `process` module raises command lines that look like a reverse shell or pipe-to-shell; `persistence` raises cron entries and systemd units that start from a temporary directory, a non-empty `/etc/ld.so.preload` (High, T1574.006) and suspicious lines in shell startup files; `indicators` raises `NOPASSWD` in sudoers (a note says so when the file is not readable without root).
+
 ## MITRE ATT&CK mapping
 
 Each collector maps to the adversary techniques it helps **detect / investigate**. Full detail in [`docs/MITRE_ATTACK.md`](MITRE_ATTACK.md).

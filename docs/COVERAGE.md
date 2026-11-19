@@ -34,8 +34,10 @@ Administrator, a shadow copy or a raw volume read is left for an acquisition too
 | Persistence | Startup folders, Run keys, autoruns | Report |
 | Persistence | WMI event subscriptions | Judged |
 | Persistence | IFEO, AppInit, Winlogon and similar ASEP values | Judged |
-| Persistence | BITS queue database | No (the command line of a running process is judged for `bitsadmin`) |
-| Persistence | Shim databases, `autoexec.bat`, `winstart.bat`, group-policy scripts, PowerShell profiles | No |
+| Persistence | BITS jobs (`Get-BitsTransfer`, current user) | Judged when a job runs a program on completion; the queue database itself is not copied |
+| Persistence | PowerShell profiles | Judged for download and decode patterns |
+| Persistence | Group-policy startup and logon scripts | Report |
+| Persistence | Shim databases, `autoexec.bat`, `winstart.bat` | No |
 | Interactive activity | Jump Lists | Report per file, and Judged for items opened over the network; the application ID is not decoded |
 | Interactive activity | Recent files | Copy |
 | Interactive activity | Recycle Bin | Report (`recyclebin.csv`) |
@@ -66,17 +68,23 @@ Administrator, a shadow copy or a raw volume read is left for an acquisition too
 | History | Shell history (bash, zsh, ash) | Report, and Judged for suspicious commands |
 | History | viminfo, Python, MySQL and other tool histories | No |
 | User configuration | `authorized_keys` | Report, and Judged for root |
-| User configuration | `known_hosts`, ssh user config, shell configuration files | No |
-| System configuration | passwd, group, sudoers, `sshd_config` | Report (sshd settings: the key ones only) |
+| User configuration | Shell startup files (`.bashrc`, `.profile`, `/etc/profile.d`) | Judged for download-and-run and reverse-shell patterns |
+| User configuration | `known_hosts` | Report: entry count per home |
+| User configuration | ssh user config | No |
+| System configuration | passwd, group, `sshd_config` | Report (sshd settings: the key ones only) |
+| System configuration | sudoers | Judged for `NOPASSWD`; a note says so when the file is not readable without root |
 | System configuration | shadow | Judged for empty passwords; not copied |
 | System configuration | Kernel modules | Report (`lsmod`) |
-| System configuration | `ld.so.preload`, PAM, sysctl, fstab, packages sources, kernel module restrictions | No |
+| System configuration | `ld.so.preload` | Judged (High) when it names a library |
+| System configuration | PAM, sysctl, fstab, packages sources, kernel module restrictions | No |
 | System configuration | Critical-file integrity | SHA-256 of passwd, shadow, group, sudoers, crontab, `sshd_config` |
 | System logs | auth, secure, syslog, messages, wtmp, btmp, cron | Copy |
 | System logs | systemd journal | Report: bounded extracts |
-| System logs | utmp, lastlog, audit logs, kernel log | utmp and lastlog: not collected; audit and kernel logs: No |
+| System logs | lastlog | Report |
+| System logs | utmp, audit logs, kernel log | No (wtmp is copied) |
 | Network | hosts, resolver, sockets, routes, neighbours | Report, hosts overrides Judged |
-| Network | firewall configuration (ufw, iptables), forwarding and redirect settings | No |
+| Network | firewall rules (nft, iptables, ufw) | Report, as far as the account may read them |
+| Network | forwarding and redirect settings | No |
 | Applications | Web server, database and container logs and configuration | Container and cloud context only |
 | Other | SUID and SGID files | Judged |
 
@@ -87,8 +95,8 @@ after a reboot" well, and leaves "what happened over the past weeks" to the file
 copies or exports. The gaps that are worth closing, because they cost little and need no
 privilege, are few:
 
-1. Linux: `ld.so.preload`, `at` jobs, `known_hosts`, user shell configuration, firewall rules, and the `utmp` and `lastlog` records.
-2. Windows: PowerShell profiles, group-policy startup scripts, the BITS job list (`Get-BitsTransfer` for the current user), and the firewall log path.
-3. Judging what is already listed: autostart and task targets under a user-writable folder (see [VALIDATION.md](VALIDATION.md)).
+1. Done in the next release: Linux `ld.so.preload`, `at` jobs, `known_hosts` counts, shell startup files, firewall rules and `lastlog`; Windows PowerShell profiles, group-policy scripts, BITS jobs and the firewall logging settings.
+2. Judging what is already listed: autostart and task targets under a user-writable folder, Defender exclusions on such folders (readable only as Administrator), RDP enabled without network-level authentication, cron and systemd units that start from a temporary directory, `NOPASSWD` in sudoers, and process command lines that look like a reverse shell.
+3. Still open: Linux ssh user config and `utmp`, PAM and sysctl, the BITS queue database, shim databases.
 
-None of these is implemented. Each needs its own false-positive check and the same change in both editions.
+Each addition had its own false-positive check on a real host (see [VALIDATION.md](VALIDATION.md)). AppData and ProgramData are left out of the autostart rule on purpose: OneDrive, Teams, updaters and game launchers start from there.

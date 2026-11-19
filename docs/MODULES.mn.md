@@ -14,6 +14,12 @@
 
 IOC feed нь модуль биш. Бүх модуль дууссаны дараа нэг удаа, finding болон энэ run-ийн цуглуулсан текст дээр хэрэглэгддэг тул модуль бүр feed-ийн талаар юу ч мэдэх шаардлагагүй. Таарах хоёр эх үүсвэр бий. **Finding-тэй:** finding-ийн текстэд indicator (IP, domain, файлын нэр) байх, эсвэл finding-ийн нэрлэсэн, одоо ч байгаа файлын SHA-256 нь feed-ийн hash-тай тэнцэх. Тэр finding өөрийн identity-гээ хадгалсан хэвээр High, confidence 0.95, `iocMatch: true` болж, indicator нь `iocIndicator`-д орно, allowlist үүнийг цаашид нуухгүй. **Evidence-тэй:** энэ run-ийн `.txt`, `.csv`, `.log` файлуудын (`summary.txt`-ээс бусад) аль нэг газарт indicator байх, жишээ нь process жагсаалтын command line эсвэл `binary_hashes.txt`-ийн мөр; энэ нь indicator-ыг нэрлэсэн шинэ finding үүсгэнэ. Hash нь зөвхөн run-ийн hash хийсэн (ажиллаж буй болон service-ийн binary) эсвэл finding-ийн нэрлэсэн файлтай таарна, диск дээрх бүх файлтай биш. Feed-ийн текстийг хэзээ ч ажиллуулдаггүй, итгэдэггүй: үгийн хилээр тулгана (`127.0.0.1` нь `127.0.0.10`-тай таарахгүй), гаралтын файлд орохын өмнө цэвэрлэнэ. Уншиж болохгүй feed зам эхэнд мэдэгдэж, run exit code 2-оор дуусна.
 
+## Finding үүсгэдэг persistence ба тохиргооны шалгалтууд
+
+Windows: autostart бичлэг (Run key, Startup folder, scheduled task) нь `Users\Public`, `Windows\Temp`, хэрэглэгчийн Temp эсвэл Downloads хавтас, Recycle Bin-аас програм эхлүүлбэл шалгахаар тэмдэглэгдэнэ (T1547.001, T1053.005); AppData ба ProgramData-г оруулаагүй, учир нь жирийн програмууд эндээс эхэлдэг. `firewall` модуль Defender-ийн бодит цагийн хамгаалалт болон exclusion-ийг тайлагнана (exclusion унших нь Administrator эрх шаардана). `rdp` модуль сүлжээний түвшний нэвтрэлтгүй (NLA) идэвхтэй RDP-г тэмдэглэнэ (T1021.001). `persistence` модуль дууссаны дараа програм ажиллуулдаг BITS job (T1197) болон татаж авах/декод хийх хэв маягтай PowerShell profile-ийг тэмдэглэнэ (T1546.013).
+
+Linux: `process` модуль reverse shell эсвэл pipe-to-shell төст командын мөрийг; `persistence` модуль түр хавтсаас эхэлдэг cron бичлэг ба systemd unit, хоосон биш `/etc/ld.so.preload` (High, T1574.006), shell startup файлын сэжигтэй мөрийг; `indicators` модуль sudoers дахь `NOPASSWD`-ийг тэмдэглэнэ (root-гүйгээр уншигдахгүй бол тэмдэглэл үлдээнэ).
+
 ## MITRE ATT&CK тэмдэглэгээ
 
 Collector бүр нь халдагчийн аль техникийг **илрүүлэх / шинжлэхэд** туслахаар нь ATT&CK-тай холбогдоно. Дэлгэрэнгүйг [`docs/MITRE_ATTACK.md`](MITRE_ATTACK.md)-аас үз.

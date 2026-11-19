@@ -1600,10 +1600,52 @@ function Collect-Users {
     } catch { Add-Err "Users failed: $_" }
 }
 
+function Get-RiskyAutostartFolder {
+    # Names the folder an autostart command points into when that folder is one a
+    # standard user can write to AND is not where ordinary software keeps its
+    # updaters; returns '' otherwise. Deliberately NOT AppData: OneDrive, Teams and
+    # most updaters autostart from there, and a rule that fired on all of them would
+    # be the 144-findings-of-which-142-were-noise module this project already shipped
+    # once. ProgramData is out too: a real workstation raised a lead for an ordinary game
+    # launcher that autostarts from there, and remote-access tools have their own check.
+    param([string]$Command)
+    if (-not $Command) { return '' }
+    $c = $Command
+    try { $c = [Environment]::ExpandEnvironmentVariables($Command) } catch {}
+    if     ($c -match '(?i)\\Users\\Public\\')                                 { return 'Users\Public' }
+    elseif ($c -match '(?i)\\Windows\\Temp\\')                                  { return 'Windows\Temp' }
+    elseif ($c -match '(?i)\\AppData\\Local\\Temp\\')                           { return 'a user Temp folder' }
+    elseif ($c -match '(?i)\\Users\\[^\\]+\\Downloads\\')                      { return 'a Downloads folder' }
+    elseif ($c -match '(?i)\\\$Recycle\.Bin\\')                                 { return 'the Recycle Bin' }
+    return ''
+}
+
+function Add-AutostartFindings {
+    # Entries: objects with Name, Command, Location, Kind (run-key | startup-folder |
+    # scheduled-task) and What ('Autostart entry' | 'Scheduled task'). Capped so a
+    # host with a whole folder of such entries is one readable lead, not fifty.
+    param([object[]]$Entries)
+    $n = 0
+    foreach ($e in @($Entries)) {
+        $where = Get-RiskyAutostartFolder ([string]$e.Command)
+        if (-not $where) { continue }
+        $n++
+        if ($n -gt 10) { continue }
+        $tech = if ($e.Kind -eq 'scheduled-task') { 'T1053.005' } else { 'T1547.001' }
+        $cmd = [string]$e.Command; if ($cmd.Length -gt 300) { $cmd = $cmd.Substring(0, 300) + '...' }
+        Add-Finding -Severity 'Review' -Category 'persistence' -ArtifactClass $e.Kind -Technique $tech `
+            -Message ("{0} '{1}' starts a program from {2}" -f $e.What, $e.Name, $where) `
+            -Detail ("{0} -> {1} . Software that autostarts from here is not installed the way ordinary software is; check who put it there." -f $e.Location, $cmd)
+    }
+    if ($n -gt 10) { Add-Report ("({0} more autostart entries point into those folders; only the first 10 are raised as findings.)" -f ($n - 10)) }
+    if ($n -gt 0) { Add-Report ("{0} autostart entr{1} point into a user-writable folder (Users\Public, Temp, Downloads, Recycle Bin)." -f $n, $(if ($n -eq 1) { 'y' } else { 'ies' })) }
+}
+
 function Collect-Persistence {
     Add-Section '08 Persistence (startup, Run keys, scheduled tasks)'
     try {
-        Get-CimInstance Win32_StartupCommand | Select-Object Name, Command, Location, User | Format-Table -AutoSize | Out-String -Width 4096 | Out-FileNoBom $script:ReportFile -Append
+        $startupCmds = @(Get-CimInstance Win32_StartupCommand)
+        $startupCmds | Select-Object Name, Command, Location, User | Format-Table -AutoSize | Out-String -Width 4096 | Out-FileNoBom $script:ReportFile -Append
         # Run and RunOnce are the same ASEP in two flavours and an attacker
         # picks whichever is unwatched, so the list covers both under each hive
         # and under the 32-bit Wow6432Node view. HKCU RunOnce and the 32-bit
@@ -1634,7 +1676,8 @@ function Collect-Persistence {
         # non-Microsoft task sent the analyst back to the host. The non-exec
         # action types (ComHandler, and the deprecated mail/message ones) have
         # no Execute and are named by what they are instead of coming out blank.
-        Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Microsoft\*' } |
+        $autoTasks = @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Microsoft\*' })
+        $autoTasks |
             Select-Object TaskName, TaskPath, State, @{ Name = 'Action'; Expression = {
                 (@(foreach ($a in @($_.Actions)) {
                     if     ($a.Execute) { ("{0} {1}" -f $a.Execute, $a.Arguments).Trim() }
@@ -1642,6 +1685,18 @@ function Collect-Persistence {
                     else                { '(non-exec action)' }
                 }) -join ' ; ')
             } } | Format-Table -AutoSize | Out-String -Width 4096 | Out-FileNoBom $script:ReportFile -Append
+        # What the autostart entries POINT AT is judged here: the lists above only say what exists.
+        $autoEntries = New-Object System.Collections.Generic.List[object]
+        foreach ($s in $startupCmds) {
+            $k = if ("$($s.Location)" -match '(?i)startup') { 'startup-folder' } else { 'run-key' }
+            $autoEntries.Add([pscustomobject]@{ Name = $s.Name; Command = $s.Command; Location = $s.Location; Kind = $k; What = 'Autostart entry' })
+        }
+        foreach ($tk in $autoTasks) {
+            foreach ($a in @($tk.Actions)) {
+                if ($a.Execute) { $autoEntries.Add([pscustomobject]@{ Name = $tk.TaskName; Command = ("{0} {1}" -f $a.Execute, $a.Arguments).Trim(); Location = $tk.TaskPath; Kind = 'scheduled-task'; What = 'Scheduled task' }) }
+            }
+        }
+        Add-AutostartFindings -Entries $autoEntries.ToArray()
         # -- Additional autostart/execution points (ASEPs) --
         Add-Report "`n-- Additional ASEPs (IFEO / AppInit / AppCert / Winlogon / LSA / Print) --"
         $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'
@@ -1797,6 +1852,57 @@ function Collect-PersistenceExtra {
                     -Detail ("{0} -> {1} . Every application that resolves this scheme loads that DLL, and it sits where a non-Administrator can replace it." -f $clsid, $dll)
             }
         }
+
+        # -- BITS transfer jobs of the collecting user --
+        # A job that runs a command when it finishes is a persistence and download trick that
+        # needs no file of its own. Other users' jobs need Administrator; this says so.
+        Add-Report "`n-- BITS transfer jobs (collecting user only; -AllUsers needs Administrator) --"
+        $bits = @(); try { $bits = @(Get-BitsTransfer -ErrorAction Stop) } catch {}
+        if ($bits.Count -eq 0) { Add-Report '(none)' }
+        foreach ($b in $bits) {
+            # NotifyCmdLine is a two-element array (program, parameters); an empty one is still a
+            # non-null collection, which made every Chrome and Edge updater job a false lead.
+            $notify = @($b.NotifyCmdLine | Where-Object { $_ })
+            Add-Report ("[{0}] {1} state={2} notify='{3}'" -f $b.JobId, $b.DisplayName, $b.JobState, ($notify -join ' '))
+            if ($notify.Count -gt 0) {
+                Add-Finding -Severity 'Review' -Category 'persistence' -ArtifactClass 'unknown' -Technique 'T1197' `
+                    -Message ("BITS job '{0}' runs a program when it finishes" -f $b.DisplayName) `
+                    -Detail ("{0} . A background transfer that starts a program is not how ordinary software uses BITS." -f ($notify -join ' '))
+            }
+        }
+
+        # -- PowerShell profiles: run at the start of every PowerShell session --
+        Add-Report "`n-- PowerShell profile scripts --"
+        $profiles = @(
+            (Join-Path $PSHOME 'profile.ps1'), (Join-Path $PSHOME 'Microsoft.PowerShell_profile.ps1'),
+            (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\profile.ps1'),
+            (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Microsoft.PowerShell_profile.ps1'),
+            (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\profile.ps1'),
+            (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Microsoft.PowerShell_profile.ps1'))
+        $psSeen = 0
+        foreach ($pf in $profiles) {
+            if (-not (Test-PathSafe $pf)) { continue }
+            $psSeen++
+            $fi = Get-Item -LiteralPath $pf -ErrorAction SilentlyContinue
+            Add-Report ("{0}  ({1} bytes, modified {2})" -f $pf, $fi.Length, (Get-IsoUtc $fi.LastWriteTimeUtc))
+            $body = ''
+            try { if ($fi.Length -le 65536) { $body = [IO.File]::ReadAllText($pf) } } catch {}
+            if ($body -match '(?i)DownloadString|DownloadFile|Invoke-WebRequest|Invoke-RestMethod|\biwr\b|FromBase64String|-EncodedCommand|\bIEX\b|Invoke-Expression|Start-BitsTransfer') {
+                Add-Finding -Severity 'Review' -Category 'persistence' -ArtifactClass 'unknown' -Technique 'T1546.013' `
+                    -Message ("PowerShell profile downloads or decodes code: {0}" -f $pf) `
+                    -Detail 'The profile runs at the start of every PowerShell session and contains a download, decode or Invoke-Expression call. Read it and find out when it was written.'
+            }
+        }
+        if ($psSeen -eq 0) { Add-Report '(no profile scripts)' }
+
+        # -- Group Policy logon/startup scripts: listed, not judged (normal on a domain) --
+        Add-Report "`n-- Group Policy scripts --"
+        $gpSeen = 0
+        foreach ($gp in 'Machine\Scripts\Startup','Machine\Scripts\Shutdown','User\Scripts\Logon','User\Scripts\Logoff') {
+            $d = Join-WinPath $script:SysRoot ("System32\GroupPolicy\{0}" -f $gp)
+            if (Test-PathSafe $d) { foreach ($f in @(Get-ChildItem -LiteralPath $d -File -ErrorAction SilentlyContinue)) { $gpSeen++; Add-Report ("{0}\{1}  ({2} bytes)" -f $gp, $f.Name, $f.Length) } }
+        }
+        if ($gpSeen -eq 0) { Add-Report '(none)' }
     } catch { Add-Err "PersistenceExtra failed: $_" }
 }
 
@@ -1814,6 +1920,47 @@ function Collect-Shares {
         Get-SmbShare -ErrorAction SilentlyContinue | Select-Object Name, Path, Description | Format-Table -AutoSize | Out-String | Out-FileNoBom $script:ReportFile -Append
         (net share 2>&1) | Out-FileNoBom $script:ReportFile -Append
     } catch { Add-Err "Shares failed: $_" }
+}
+
+function Collect-DefenderState {
+    # Turning real-time protection off and excluding a folder are two of the most common
+    # first moves of an intruder, and both are plain reads. The exclusions need
+    # Administrator to be shown; as a standard user the service answers with a placeholder,
+    # and that is said in the report instead of being read as "no exclusions".
+    Add-Report "`n-- Microsoft Defender (real-time protection and exclusions) --"
+    try {
+        $svc = Get-Service -Name WinDefend -ErrorAction SilentlyContinue
+        if (-not $svc) { Add-Report 'The Windows Defender service is not present.'; return }
+        if ($svc.Status -ne 'Running') { Add-Report ("The WinDefend service is {0}; another antivirus product may be the active one." -f $svc.Status); return }
+        $st = $null; $mp = $null
+        try { $st = Get-MpComputerStatus -ErrorAction Stop } catch {}
+        try { $mp = Get-MpPreference -ErrorAction Stop } catch {}
+        if ($st) {
+            Add-Report ("AMRunningMode={0}  AntivirusEnabled={1}  RealTimeProtectionEnabled={2}  TamperProtected={3}" -f $st.AMRunningMode, $st.AntivirusEnabled, $st.RealTimeProtectionEnabled, $st.IsTamperProtected)
+            $passive = ($st.AMRunningMode -and "$($st.AMRunningMode)" -ne 'Normal')
+            if ($st.AntivirusEnabled -eq $true -and $st.RealTimeProtectionEnabled -eq $false -and -not $passive) {
+                Add-Finding -Severity 'Review' -Category 'firewall' -ArtifactClass 'unknown' -Technique 'T1562.001' `
+                    -Message 'Microsoft Defender real-time protection is switched off' `
+                    -Detail 'Defender is the active antivirus but does not scan files as they are used. Find out who turned it off and when (Microsoft-Windows-Windows Defender/Operational, event 5001).'
+            }
+        } else { Add-Note 'Defender status could not be read, so real-time protection was NOT checked.' }
+        if ($mp) {
+            $paths = @($mp.ExclusionPath | Where-Object { $_ }); $exts = @($mp.ExclusionExtension | Where-Object { $_ }); $procs = @($mp.ExclusionProcess | Where-Object { $_ })
+            if (@($paths + $exts + $procs | Where-Object { "$_" -match 'Must be an administrator' }).Count -gt 0) {
+                Add-Report 'Exclusions: NOT readable without Administrator.'
+                Add-Note 'Defender exclusions were NOT read: Administrator is needed to see them, so an exclusion on a user-writable folder would not show here.'
+            } else {
+                Add-Report ("Exclusions: {0} path(s), {1} extension(s), {2} process(es)." -f $paths.Count, $exts.Count, $procs.Count)
+                foreach ($x in ($paths + $exts + $procs)) { Add-Report ("    {0}" -f $x) }
+                $hit = @($paths | Where-Object { Get-RiskyAutostartFolder ([string]$_ + '\') })
+                foreach ($x in ($hit | Select-Object -First 10)) {
+                    Add-Finding -Severity 'Review' -Category 'firewall' -ArtifactClass 'unknown' -Technique 'T1562.001' `
+                        -Message ("Microsoft Defender excludes a user-writable folder: {0}" -f $x) `
+                        -Detail 'Files in an excluded folder are not scanned. Find out who added the exclusion and what is in the folder.'
+                }
+            }
+        }
+    } catch { Add-Err "Defender state failed: $_" }
 }
 
 function Collect-Firewall {
@@ -1835,7 +1982,14 @@ function Collect-Firewall {
             (netsh advfirewall firewall show rule name=all 2>&1) | Out-FileNoBom (Join-Path $script:OutDir 'firewall_rules.txt')
             Add-Report 'Firewall profiles and rules collected via netsh (localised text - NetSecurity was unavailable).'
         }
+        # Whether the firewall keeps a log at all decides if there will be anything to read later.
+        try {
+            $fwl = @(Get-NetFirewallProfile -ErrorAction Stop | Select-Object Name, LogAllowed, LogBlocked, LogFileName)
+            Add-Report "`n-- Firewall logging --"
+            ($fwl | Format-Table -AutoSize | Out-String -Width 400) | Out-FileNoBom $script:ReportFile -Append
+        } catch {}
     } catch { Add-Err "Firewall failed: $_" }
+    Collect-DefenderState
 }
 
 function Collect-Drivers {
@@ -2005,6 +2159,22 @@ function Collect-RDP {
         # RDP client MRU (outbound destinations)
         $mru = 'HKCU:\Software\Microsoft\Terminal Server Client\Default'
         if (Test-PathSafe $mru) { Add-Report '-- Outbound RDP MRU (HKCU Terminal Server Client) --'; (Get-ItemProperty $mru -ErrorAction SilentlyContinue) | Out-String | Out-FileNoBom $script:ReportFile -Append }
+        # Is inbound Remote Desktop switched on, and does it ask for Network Level Authentication?
+        # Enabled on its own is ordinary on a server, so that is a report line; enabled WITHOUT
+        # NLA lets anyone who can reach the port see the logon screen, which is the lead.
+        try {
+            $tsk = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
+            $deny = (Get-ItemProperty -LiteralPath $tsk -Name fDenyTSConnections -ErrorAction SilentlyContinue).fDenyTSConnections
+            $nla  = (Get-ItemProperty -LiteralPath "$tsk\WinStations\RDP-Tcp" -Name UserAuthentication -ErrorAction SilentlyContinue).UserAuthentication
+            if ($null -ne $deny) {
+                Add-Report ("-- Inbound Remote Desktop: {0}; Network Level Authentication: {1} --" -f $(if ($deny -eq 0) { 'ENABLED' } else { 'disabled' }), $(if ($null -eq $nla) { 'unknown' } elseif ($nla -eq 1) { 'required' } else { 'NOT required' }))
+                if ($deny -eq 0 -and $nla -eq 0) {
+                    Add-Finding -Severity 'Review' -Category 'lateral' -ArtifactClass 'rdp' -Technique 'T1021.001' `
+                        -Message 'Remote Desktop is enabled and does not require Network Level Authentication' `
+                        -Detail 'Anyone who can reach the port gets the Windows logon screen before proving who they are. Check whether this was changed on purpose.'
+                }
+            }
+        } catch {}
         Add-Report 'RDP event CSVs saved to RDP\.'
     } catch { Add-Err "RDP failed: $_" }
 }

@@ -1054,7 +1054,30 @@ m_process() {
                 add_finding "High" "process" "Process executing from suspicious path (PID $pid)" "$exe | cmd: $cmd" ;;
         esac
     done
-    echo "" >> "$REPORT"; echo "-- Suspicious command-line patterns --" >> "$REPORT"
+    echo "" >> "$REPORT"; echo "-- Command lines that look like a shell or a pipe-to-shell --" >> "$REPORT"
+    # Read from /proc/PID/cmdline with shell matching, not from `ps | grep`: a grep
+    # would match its own command line. The collector's own process tree is skipped
+    # so the patterns in this file can never produce a finding about themselves.
+    local cpid cppid hop skip cl rsdev='/dev/'
+    for cpid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+        [ "$cpid" -eq "$$" ] 2>/dev/null && continue
+        skip=0; cppid="$cpid"; hop=0
+        while [ "$hop" -lt 12 ] && [ -n "$cppid" ] && [ "$cppid" -gt 1 ] 2>/dev/null; do
+            [ "$cppid" -eq "$$" ] && { skip=1; break; }
+            cppid=$(awk '/^PPid:/ {print $2; exit}' "/proc/$cppid/status" 2>/dev/null)
+            hop=$((hop + 1))
+        done
+        [ "$skip" -eq 1 ] && continue
+        cl=$(tr '\0' ' ' < "/proc/$cpid/cmdline" 2>/dev/null) || continue
+        [ -n "$cl" ] || continue
+        if [[ "$cl" == *"${rsdev}tcp/"* || "$cl" == *"${rsdev}udp/"* ]] || [[ "$cl" =~ (^|[[:space:]/])(nc|ncat|netcat)[[:space:]].*-e[[:space:]] ]] \
+           || [[ "$cl" =~ bash[[:space:]]+-i[[:space:]]*\>\& ]] || [[ "$cl" =~ (curl|wget)[^\|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z|da)?sh([[:space:]]|$) ]] \
+           || [[ "$cl" =~ base64[[:space:]]+(-d|--decode).*\|[[:space:]]*(ba|z|da)?sh([[:space:]]|$) ]] || [[ "$cl" =~ mkfifo.*(nc|ncat)[[:space:]] ]]; then
+            echo "[!] PID $cpid command line: $cl" >> "$REPORT"
+            add_finding "Review" "process" "Process command line looks like a reverse shell or pipe-to-shell (PID $cpid)" "cmd: $cl"
+        fi
+    done
+    echo "" >> "$REPORT"; echo "-- Suspicious command-line patterns (ps) --" >> "$REPORT"
     local pat
     for pat in 'nc -e' 'ncat' '/dev/tcp/' 'bash -i' 'python -c' 'perl -e' 'base64 -d' 'xmrig' 'kinsing' 'kdevtmpfsi'; do
         ps auxww 2>/dev/null | grep -iE "$pat" | grep -v 'grep' >> "$REPORT" 2>/dev/null
@@ -1140,6 +1163,41 @@ m_persistence() {
     done
     grep -rhiE 'curl|wget|/dev/tcp/|base64|nc |ncat|python -c|bash -i' /etc/crontab /etc/cron.d /var/spool/cron 2>/dev/null | while read -r line; do
         add_finding "Review" "persistence" "Suspicious cron command" "$line"
+    done
+    # Cron entries and systemd units that start something from a folder anyone can write to.
+    local cl tdir ufile
+    grep -rhE '(^|[[:space:]=])(/tmp/|/dev/shm/|/var/tmp/)' /etc/crontab /etc/cron.d /var/spool/cron 2>/dev/null | grep -vE '^[[:space:]]*#' | head -n 20 | while read -r cl; do
+        add_finding "Review" "persistence" "Cron entry runs a program from a temporary directory" "$cl"
+    done
+    for tdir in /etc/systemd/system /usr/lib/systemd/system /lib/systemd/system /root/.config/systemd/user /home/*/.config/systemd/user; do
+        [ -d "$tdir" ] || continue
+        grep -rHE '^(ExecStart|ExecStartPre|ExecStartPost)=[-@+!]*[^#]*(/tmp/|/dev/shm/|/var/tmp/)' "$tdir" 2>/dev/null | head -n 20 | while read -r ufile; do
+            add_finding "Review" "persistence" "systemd unit starts a program from a temporary directory" "$ufile"
+        done
+    done
+    echo "-- at jobs --" >> "$REPORT"
+    have atq && atq >> "$REPORT" 2>/dev/null
+    ls -la /var/spool/at /var/spool/cron/atjobs 2>/dev/null >> "$REPORT"
+    echo "-- ld.so.preload --" >> "$REPORT"
+    if [ -r /etc/ld.so.preload ]; then
+        cat /etc/ld.so.preload >> "$REPORT" 2>/dev/null
+        local lp; lp=$(grep -vE '^[[:space:]]*(#|$)' /etc/ld.so.preload 2>/dev/null | tr '\n' ' ')
+        [ -n "$lp" ] && add_finding "High" "persistence" "/etc/ld.so.preload loads a library into every program" "$lp| a preload entry is a classic rootkit hook (T1574.006); confirm the library belongs to a package"
+    else
+        report "(/etc/ld.so.preload does not exist or is not readable)"
+    fi
+    echo "-- shell startup files (patterns) --" >> "$REPORT"
+    local sf
+    for sf in /etc/bash.bashrc /etc/profile /etc/profile.d/* /root/.bashrc /root/.profile /root/.bash_profile /root/.zshrc /home/*/.bashrc /home/*/.profile /home/*/.bash_profile /home/*/.zshrc; do
+        [ -f "$sf" ] && [ -r "$sf" ] || continue
+        grep -HniE '(curl|wget)[^|#]*\|[[:space:]]*(ba)?sh|base64[[:space:]]+(-d|--decode)|/dev/tcp/|(nc|ncat)[[:space:]].*-e[[:space:]]' "$sf" 2>/dev/null | head -n 5 | while read -r cl; do
+            echo "[!] $cl" >> "$REPORT"
+            add_finding "Review" "persistence" "Suspicious command in a shell startup file" "$cl"
+        done
+    done
+    echo "-- known_hosts (count per home) --" >> "$REPORT"
+    for sf in /root/.ssh/known_hosts /home/*/.ssh/known_hosts; do
+        [ -r "$sf" ] && echo "$sf: $(grep -c . "$sf" 2>/dev/null) entries" >> "$REPORT"
     done
     echo "-- systemd timers --" >> "$REPORT"
     have systemctl && systemctl list-timers --all --no-pager --no-legend >> "$REPORT" 2>/dev/null
@@ -1228,10 +1286,29 @@ m_kernelmods() {
 m_indicators() {
     section "13 Suspicious indicators"
     echo "-- world-writable files in system dirs --" >> "$REPORT"
-    find /etc /bin /sbin /usr/bin /usr/sbin -xdev -type f -perm -0002 2>/dev/null | while read -r f; do
+    find /etc /bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin /usr/local/lib -xdev -type f -perm -0002 2>/dev/null | while read -r f; do
         echo "[!] world-writable: $f" >> "$REPORT"
         add_finding "Review" "indicators" "World-writable system file: $f" "System binaries/config should not be world-writable"
     done
+    echo "-- sudoers NOPASSWD --" >> "$REPORT"
+    local sdf sdn=0 sdl
+    for sdf in /etc/sudoers /etc/sudoers.d/*; do
+        [ -f "$sdf" ] || continue
+        if [ -r "$sdf" ]; then
+            sdn=$((sdn + 1))
+            grep -E 'NOPASSWD' "$sdf" 2>/dev/null | grep -vE '^[[:space:]]*#' | while read -r sdl; do
+                echo "[$sdf] $sdl" >> "$REPORT"
+                add_finding "Review" "users" "sudoers grants NOPASSWD in ${sdf##*/}" "$sdl"
+            done
+        fi
+    done
+    [ "$sdn" -eq 0 ] && add_note "sudoers was NOT readable (needs root): NOPASSWD rules were not checked"
+    echo "-- firewall rules --" >> "$REPORT"
+    if have nft; then nft list ruleset 2>&1 | head -n 200 >> "$REPORT"; fi
+    if have iptables; then iptables -S >> "$REPORT" 2>&1; fi
+    if have ufw; then ufw status >> "$REPORT" 2>&1; fi
+    echo "-- last logins (lastlog) --" >> "$REPORT"
+    have lastlog && lastlog 2>/dev/null | grep -v 'Never logged in' >> "$REPORT"
     echo "-- executables in /tmp /dev/shm /var/tmp --" >> "$REPORT"
     local tc=0 d tl tfirst="" shown
     for d in /tmp /dev/shm /var/tmp; do
