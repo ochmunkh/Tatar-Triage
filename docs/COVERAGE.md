@@ -83,7 +83,7 @@ Administrator, a shadow copy or a raw volume read is left for an acquisition too
 | System logs | lastlog | Report |
 | System logs | utmp, audit logs, kernel log | No (wtmp is copied) |
 | Network | hosts, resolver, sockets, routes, neighbours | Report, hosts overrides Judged |
-| Network | firewall rules (nft, iptables, ufw) | Report, as far as the account may read them |
+| Network | firewall configuration files (ufw, nftables, iptables-persistent, firewalld) | Report, as far as the account may read them; the live ruleset is not queried, because the collector runs no firewall-control program |
 | Network | forwarding and redirect settings | No |
 | Applications | Web server, database and container logs and configuration | Container and cloud context only |
 | Other | SUID and SGID files | Judged |
@@ -95,7 +95,7 @@ after a reboot" well, and leaves "what happened over the past weeks" to the file
 copies or exports. The gaps that are worth closing, because they cost little and need no
 privilege, are few:
 
-1. Done in the next release: Linux `ld.so.preload`, `at` jobs, `known_hosts` counts, shell startup files, firewall rules and `lastlog`; Windows PowerShell profiles, group-policy scripts, BITS jobs and the firewall logging settings.
+1. Done in the next release: Linux `ld.so.preload`, `at` jobs, `known_hosts` counts, shell startup files, firewall configuration files and `lastlog`; Windows PowerShell profiles, group-policy scripts, BITS jobs and the firewall logging settings.
 2. Judging what is already listed: autostart and task targets under a user-writable folder, Defender exclusions on such folders (readable only as Administrator), RDP enabled without network-level authentication, cron and systemd units that start from a temporary directory, `NOPASSWD` in sudoers, and process command lines that look like a reverse shell.
 3. Still open: Linux ssh user config and `utmp`, PAM and sysctl, the BITS queue database, shim databases.
 

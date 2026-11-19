@@ -1308,11 +1308,17 @@ m_indicators() {
     done
     [ "$sdn" -eq 0 ] && add_note "sudoers was NOT readable (needs root): NOPASSWD rules were not checked"
     echo "-- firewall rules --" >> "$REPORT"
-    # Every external command below is bounded: lastlog walks a sparse file that is
-    # enormous on hosts with very large user ids, and the firewall tools can wait on a lock.
-    if have nft; then bounded 20 nft list ruleset 2>&1 | head -n 200 >> "$REPORT"; fi
-    if have iptables; then bounded 20 iptables -S 2>&1 | head -n 200 >> "$REPORT"; fi
-    if have ufw; then bounded 20 ufw status 2>&1 | head -n 100 >> "$REPORT"; fi
+    # The firewall CONFIGURATION is read from its files. The live ruleset is not asked
+    # for: running iptables or nft is a firewall-control program, which this collector
+    # does not execute (tests/test-security.sh S8 holds it to that). Most of these files
+    # need root, and the report says so when none could be read.
+    local fwf fwn=0
+    for fwf in /etc/ufw/user.rules /etc/ufw/user6.rules /etc/nftables.conf /etc/iptables/rules.v4 /etc/iptables/rules.v6 /etc/sysconfig/iptables /etc/firewalld/firewalld.conf; do
+        [ -r "$fwf" ] || continue
+        fwn=$((fwn + 1)); echo "[$fwf]" >> "$REPORT"; head -n 200 "$fwf" >> "$REPORT" 2>/dev/null
+    done
+    [ "$fwn" -eq 0 ] && report "(no firewall configuration file was readable; the live ruleset is not queried)"
+    # lastlog is bounded: it walks a sparse file that is enormous on hosts with very large user ids.
     echo "-- last logins (lastlog) --" >> "$REPORT"
     have lastlog && bounded 20 lastlog 2>/dev/null | grep -v 'Never logged in' | head -n 200 >> "$REPORT"
     echo "-- executables in /tmp /dev/shm /var/tmp --" >> "$REPORT"
