@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+## [1.12.2] — 2026-11-19
+
 ### Changed
 - **`chain_of_custody.txt` records the time zone and the state of the clock** (both editions): a `Time zone` line (name and UTC offset) and a `Clock` line saying the host clock was used and was not compared with an external time source, because the tool is offline. ISO/IEC 27037 asks the examiner to document any difference between the device clock and a reliable time source; the file now makes it plain that this comparison is left to the examiner. `tests/test-security.sh` (S9) and `tests/Test-Security.ps1` (W7) check both lines.
 
