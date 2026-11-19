@@ -118,6 +118,8 @@ function Get-StandinFinding { param([string]$Label, [string[]]$Extra = @())
     @($doc.findings) | Where-Object { $_.category -eq 'persistence' -and ((([string]$_.detail) + ([string]$_.message)) -like "*$rn*") } | Select-Object -First 1
 }
 try {
+    # a fresh CI profile has no Run key at all; create it (an empty key is harmless)
+    if (-not (Test-Path $rk)) { New-Item -Path $rk -Force | Out-Null }
     New-ItemProperty -Path $rk -Name $rn -Value ('"{0}" -n 1 127.0.0.1' -f $stand) -PropertyType String | Out-Null
     $sha = (Get-FileHash -Path $stand -Algorithm SHA256).Hash.ToLower()
     $hf = Put 'standin-hash' (J @{ hashes = @($sha) })
