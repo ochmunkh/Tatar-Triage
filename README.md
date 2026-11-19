@@ -106,6 +106,8 @@ Most documents have a Mongolian twin (`.mn.md`); coverage, after-collection, com
 
 For **authorized** use only: systems you own or have explicit written permission to examine. You are responsible for complying with applicable law and policy.
 
+The evidence folder holds sensitive information about the examined host (accounts, command lines, network connections, file names). Where a collection is part of a cyber security risk assessment or an information security audit in Mongolia, the Law on Cyber Security (articles 8.5 and 9.6) makes the resulting reports confidential. Treat the evidence folder the same way: keep it encrypted, pass it only to those entitled to it, and do not leave a copy on the examined host.
+
 ## Contact
 
 **Author:** Enkhbat.O, Security Analyst ·

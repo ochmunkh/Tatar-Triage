@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+### Documentation
+- **README and `docs/ARCHITECTURE` (both languages) say the evidence folder is confidential**: it holds sensitive information about the examined host, and where a collection is part of a risk assessment or audit under the Law on Cyber Security of Mongolia (articles 8.5 and 9.6) it should be handled like those reports.
+- **`docs/SECURITY-TESTING.md` maps the OWASP Top 10:2025 (A01-A10), CIS Controls v8.1 (by number and title) and the Law on Cyber Security** to what the tool does and does not do. Items that do not apply to a command-line collector (authentication, web access control) are marked as such.
+
 ## [1.12.2] — 2026-11-19
 
 ### Changed

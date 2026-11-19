@@ -53,6 +53,26 @@ The heading names the current major.minor. `check_release_integrity.py` fails th
 | ASVS V5.1 input validation (no ASVS item names byte-order marks) | Strict UTF-8, no byte-order mark, Unicode round-trips | S13 / W11 |
 | ASVS V12.1.1, A04 Insecure design | Budgets for time and memory; hostile feeds cannot hang or crash a run | S3, N1, N2 / W3, N1, N2 |
 
+### OWASP Top 10:2025
+
+The table above uses the 2021 numbering (A03 is Injection there). The 2025 list renumbers
+the categories, so it is mapped here under its own numbers. The collectors are
+command-line tools with no accounts, sessions or network service; where an item is
+about web applications the answer says so instead of claiming a test.
+
+| Item | What it means for a collector | Where it is held |
+|---|---|---|
+| A01 Broken Access Control | Evidence is private to the examiner; the collector refuses to write through a symlink or junction (the link-following weaknesses in this item) and leaves no temporary file behind | S6, S7, S10, S11 / W5, W6, W9 |
+| A02 Security Misconfiguration | Runs unprivileged; no package, privilege or network program is started; EDR-sensitive actions are off unless asked; hosts are changed only in disposable labs | S8, S12 / W8, W10, AV-05 |
+| A03 Software Supply Chain Failures | No third-party dependencies; actions pinned to commit SHAs; Dependabot; least-privilege token; `SHA256SUMS.txt` and build-provenance attestation on each release. No software bill of materials is generated | RI-06, RI-09, release workflow |
+| A04 Cryptographic Failures | Hashes are SHA-256 only (MD5 and SHA-1 are not used or compared); nothing is sent, so there is no transport to protect. The tool does not encrypt the evidence folder; the examiner must (see README, Legal) | `docs/AV-SAFETY.md`, `docs/ARCHITECTURE.md` |
+| A05 Injection | Arguments, output paths, feed files and host-supplied text are data, never code; terminal escapes and bidi controls are neutralised before they reach a report | S1-S5 / W1-W4 |
+| A06 Insecure Design | Read-only by design; numbered claims AV-01 to AV-09 each have a check that fails the build; time and memory budgets | AV-SAFETY gate, S3, N1, N2 / W3 |
+| A07 Authentication Failures | Not applicable: no login, session or stored credential. No password material is read (AV-02). No secret scanning is run on the repository | AV-02 |
+| A08 Software or Data Integrity Failures | Tampering with evidence or the manifest is detected and the script that ran is recorded by hash; there is no auto-update; release assets are hashed and attested. Release tags are not signed | S9 / W7, release workflow |
+| A09 Security Logging & Alerting Failures | The collector is not a monitor and raises no alerts. It records `tatar.log` and the chain of custody, and keeps host-supplied text from injecting into them. The evidence it gathers is sensitive by purpose | S1-S5 / W1-W4, README (Legal) |
+| A10 Mishandling of Exceptional Conditions | A module that fails (or lacks privilege) is reported and the run goes on; an unreadable feed is never skipped silently and forces exit code 2; hostile input cannot hang or crash a run | S3, S12, N1, N2 / W3, W10, hostile-feed tests |
+
 ### NIST
 
 | Reference | Requirement | Tests |
@@ -155,7 +175,7 @@ item titles, the section titles of SP 800-86, and the OpenSSF Scorecard check na
 The comparison corrected five rows of the OWASP and NIST tables above (ASVS V12.4, V4.2, V8 and
 V13 did not fit what they were cited for; SP 800-86 section 3.3 is analysis, and the
 order of volatility and chain of custody are in 3.1.2). Compared: ISO/IEC 27037:2016 (7.1.2.1 clock and volatile data, clauses 5.3.2-5.3.5 and 6.1).
-Not compared: the OWASP Top 10 2021 item names and the SLSA specification.
+The OWASP Top 10:2025 item names and background were compared with the text on owasp.org, and the CIS Controls v8.1 safeguard numbers and titles with the PDF. Not compared: the OWASP Top 10 2021 item names and the SLSA specification.
 
 | Source | Control | What in this repository answers it |
 |---|---|---|
@@ -172,6 +192,15 @@ Not compared: the OWASP Top 10 2021 item names and the SLSA specification.
 | | RV.1 and RV.2 vulnerabilities | `SECURITY.md`, the defect table below |
 | OWASP Top 10 CI/CD | CICD-SEC-3 dependency chain, SEC-4 poisoned pipeline execution, SEC-5 pipeline access control, SEC-9 artifact integrity | Pinned actions and Dependabot, RI-06, least-privilege token, `SHA256SUMS.txt` and attestation |
 | OpenSSF Scorecard | Pinned-Dependencies, Token-Permissions, Dangerous-Workflow, Dependency-Update-Tool, Security-Policy, License | RI-06, RI-09. The Scorecard itself has not been run |
+| CIS Controls v8.1 (cited by number and title only) | 1.1 asset inventory, 2.1 software inventory | The collectors record installed software, processes and network state as evidence; the repository does not keep an inventory |
+| | 8.4 standardize time synchronization | `chain_of_custody.txt` records the time zone and says the host clock was not verified; the tool neither synchronises nor checks the clock |
+| | 8.2 collect audit logs, 8.8 command-line audit logs | Event logs are collected as evidence (exported only with `-ExportEvtx`); the tool does not configure logging |
+| | 10.1 anti-malware | The tool is built to run beside anti-malware without tripping it (AV-01 to AV-09); it is not one |
+| | 17 incident response management | The tool supplies evidence for incident handling; roles, reporting and exercises belong to the organisation |
+| Law on Cyber Security of Mongolia | 8.5 and 9.6: assessment and audit reports are confidential | Offline, read-only, nothing is sent anywhere; README and `docs/ARCHITECTURE.md` tell the examiner to treat the evidence folder as confidential |
+| | 17.1.3 and 19.2.9: operation logs kept for the period the common rules set | Not provided. The tool collects logs as evidence; keeping them is the organisation's duty |
+| | 17.1.2 and 19.2.14: tell the national centre about an attack | Out of scope for the tool; a process duty |
+| | 9.3: no audit of an organisation the auditor served with IT services in the last two years | Out of scope for the tool; applies to the examiner's engagement |
 
 ### Not covered
 
