@@ -97,6 +97,7 @@ privilege, are few:
 
 1. Done in the next release: Linux `ld.so.preload`, `at` jobs, `known_hosts` counts, shell startup files, firewall configuration files and `lastlog`; Windows PowerShell profiles, group-policy scripts, BITS jobs and the firewall logging settings.
 2. Judging what is already listed: autostart and task targets under a user-writable folder, Defender exclusions on such folders (readable only as Administrator), RDP enabled without network-level authentication, cron and systemd units that start from a temporary directory, `NOPASSWD` in sudoers, and process command lines that look like a reverse shell.
-3. Still open: Linux ssh user config and `utmp`, PAM and sysctl, the BITS queue database, shim databases.
+3. On a domain controller the tool runs as it does anywhere else and says so in the report: the account and group lists describe the domain, and Active Directory itself (objects, replication, the directory database) is not examined. That is a deliberate limit, not a gap: reading the directory needs rights a triage collector does not ask for.
+4. Still open: Linux ssh user config and `utmp`, PAM and sysctl, the BITS queue database, shim databases.
 
 Each addition had its own false-positive check on a real host (see [VALIDATION.md](VALIDATION.md)). AppData and ProgramData are left out of the autostart rule on purpose: OneDrive, Teams, updaters and game launchers start from there.

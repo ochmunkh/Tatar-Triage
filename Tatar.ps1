@@ -1525,6 +1525,15 @@ function Collect-SysInfo {
         (whoami /all 2>&1) | Out-FileNoBom $script:ReportFile -Append
         Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber, OSArchitecture, CSName, LastBootUpTime, InstallDate | Format-List | Out-String | Out-FileNoBom $script:ReportFile -Append
         Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer, Model, TotalPhysicalMemory, Domain, PartOfDomain | Format-List | Out-String | Out-FileNoBom $script:ReportFile -Append
+        # DomainRole 4 and 5 are backup and primary domain controllers. Say so in the report and
+        # as a limitation: on a controller the "local" account and group lists describe the domain,
+        # and the directory itself (objects, replication, the NTDS database) is not examined here.
+        try {
+            $dr = [int](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).DomainRole
+            $drName = @('standalone workstation','member workstation','standalone server','member server','backup domain controller','primary domain controller')[$dr]
+            "DomainRole: $dr ($drName)" | Out-FileNoBom $script:ReportFile -Append
+            if ($dr -ge 4) { Add-Note "This host is a domain controller: the account and group lists describe the domain, and Active Directory itself (objects, replication, the directory database) is NOT examined by this tool." }
+        } catch { Add-Note "Domain role was NOT read: $_" }
         "TimeZone: $((Get-TimeZone).Id)" | Out-FileNoBom $script:ReportFile -Append
         Get-HotFix -ErrorAction SilentlyContinue | Select-Object HotFixID, InstalledOn | Sort-Object InstalledOn -Descending | Out-String | Out-FileNoBom $script:ReportFile -Append
     } catch { Add-Err "SysInfo failed: $_" }
