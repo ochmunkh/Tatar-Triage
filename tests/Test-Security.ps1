@@ -282,6 +282,8 @@ if ($d) {
     Check 'W7 : an edited manifest no longer matches its own digest' ((Test-Path -LiteralPath $side) -and ([IO.File]::ReadAllText($side).Trim() -ne "$mh2  manifest_sha256.txt"))
     $sh = (Get-FileHash -LiteralPath $Collector -Algorithm SHA256).Hash.ToLower()
     Check 'W7 : chain_of_custody.txt records the hash of the script that ran' ([IO.File]::ReadAllText((Join-Path $d 'chain_of_custody.txt')).ToLower().Contains($sh))
+    $coc = [IO.File]::ReadAllText((Join-Path $d 'chain_of_custody.txt'))
+    Check 'W7 : chain_of_custody.txt records the time zone and says the host clock was not verified' ($coc -match 'Time zone\s+: .+ \(UTC[+-]\d\d:\d\d\)' -and $coc -match 'Clock\s+: host clock; not compared')
 } else { Skip-Test 'W7 : integrity' 'no evidence folder' }
 
 # ---------------------------------------------------------------------------

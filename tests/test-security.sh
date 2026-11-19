@@ -310,6 +310,7 @@ if [ -n "$D" ] && command -v sha256sum >/dev/null 2>&1; then
     ( cd "$D" && sha256sum -c manifest_sha256.txt.sha256 >/dev/null 2>&1 ); check "S9 : the manifest's own digest verifies the untouched manifest" "$([ $? = 0 ] && echo 1 || echo 0)"
     want=$(sha256sum "$COLLECTOR" | awk '{print $1}')
     check "S9 : chain_of_custody.txt records the hash of the script that ran" "$(grep -q "$want" "$D/chain_of_custody.txt" && echo 1 || echo 0)"
+    check "S9 : chain_of_custody.txt records the time zone and says the host clock was not verified" "$(grep -Eq '^Time zone +: \S+ \(UTC[+-][0-9]{2}:[0-9]{2}\)' "$D/chain_of_custody.txt" && grep -Eq '^Clock +: host clock; not compared' "$D/chain_of_custody.txt" && echo 1 || echo 0)"
 else skip "S9 : integrity" "no evidence dir or no sha256sum"; fi
 
 # ---------------------------------------------------------------------------

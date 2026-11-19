@@ -3791,6 +3791,8 @@ Examiner     : $Examiner
 Host         : $hostn
 Started      : $(Get-IsoUtc $start)
 Finished     : $(Get-IsoUtc $end)
+Time zone    : $((Get-TimeZone).Id) (UTC$($start.ToString('zzz')))
+Clock        : host clock; not compared with an external time source (the tool is offline)
 Duration     : $([math]::Round(($end-$start).TotalMinutes,2)) min
 Script       : $PSCommandPath
 Script SHA256: $selfHash

@@ -154,8 +154,8 @@ CI/CD risk names (owasp.org), the SSDF practice names (SP 800-218 v1.1), the ISO
 item titles, the section titles of SP 800-86, and the OpenSSF Scorecard check names.
 The comparison corrected five rows of the OWASP and NIST tables above (ASVS V12.4, V4.2, V8 and
 V13 did not fit what they were cited for; SP 800-86 section 3.3 is analysis, and the
-order of volatility and chain of custody are in 3.1.2). Not compared: ISO/IEC 27037,
-the OWASP Top 10 2021 item names and the SLSA specification.
+order of volatility and chain of custody are in 3.1.2). Compared: ISO/IEC 27037:2016 (7.1.2.1 clock and volatile data, clauses 5.3.2-5.3.5 and 6.1).
+Not compared: the OWASP Top 10 2021 item names and the SLSA specification.
 
 | Source | Control | What in this repository answers it |
 |---|---|---|
@@ -166,7 +166,7 @@ the OWASP Top 10 2021 item names and the SLSA specification.
 | | 8.32 change management | CHANGELOG, RI-01, protected `main` |
 | | 8.33 test information | Fixtures hold no real host data; evidence folders are git-ignored; RI-08 |
 | | 8.8 technical vulnerabilities, 8.9 configuration | Dependabot for pinned actions, `SECURITY.md`, `.gitattributes` line-ending rules |
-| ISO/IEC 27037:2012 | Identification, collection, acquisition and preservation of digital evidence; auditability, repeatability, reproducibility | Read-only collection (S8, W8), hashes and a recorded chain of custody (S9, W7), deterministic output (S14, W12). The tool records these; it does not make the examiner's process conformant |
+| ISO/IEC 27037:2012 | Identification, collection, acquisition and preservation of digital evidence; auditability, repeatability, reproducibility | Read-only collection (S8, W8), hashes and a recorded chain of custody including the time zone and a note that the host clock was not verified against an outside source (S9, W7), deterministic output (S14, W12). The tool records these; it does not make the examiner's process conformant |
 | NIST SP 800-218 (SSDF) | PO.1 requirements, PO.3 toolchain, PS.1 protect code, PS.2 release integrity, PS.3 archive releases | AV-SAFETY claims, CI, pinned actions, `SHA256SUMS.txt` and build-provenance attestation on each release, GitHub releases |
 | | PW.7 code analysis, PW.8 testing, PW.9 secure defaults | Linters, the test suites, EDR-sensitive actions off unless asked (AV-05) |
 | | RV.1 and RV.2 vulnerabilities | `SECURITY.md`, the defect table below |

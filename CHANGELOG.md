@@ -6,10 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+### Changed
+- **`chain_of_custody.txt` records the time zone and the state of the clock** (both editions): a `Time zone` line (name and UTC offset) and a `Clock` line saying the host clock was used and was not compared with an external time source, because the tool is offline. ISO/IEC 27037 asks the examiner to document any difference between the device clock and a reliable time source; the file now makes it plain that this comparison is left to the examiner. `tests/test-security.sh` (S9) and `tests/Test-Security.ps1` (W7) check both lines.
+
 ### Tests and documentation
 - **A release and repository integrity gate** (`.github/scripts/check_release_integrity.py`, run in CI) fails the build when the CHANGELOG section for the newest release differs from the collectors' version, has no date or is empty; when `release.yml` copies a file that is not there; when a sample log or a document disagrees with the code (module count, field names); when recorded test results are from another release line; when a workflow has an unpinned action, no token permissions, `pull_request_target` or an interpolated outsider-controlled value; and when local-only material is tracked. `tests/test-release-integrity.py` breaks 15 things one at a time in a copy of the tree and requires the gate to catch each.
 - **`ci.yml` declares `permissions: contents: read`.** The first run of the gate found it was missing; the jobs only read the repository.
-- **`docs/SECURITY-TESTING.md`** records the test results at the current release line (they were still the 1.8.0 numbers) and gains a section that maps the repository and release controls to ISO/IEC 27001:2022 Annex A, ISO/IEC 27037, NIST SP 800-218, OWASP Top 10 CI/CD and OpenSSF Scorecard, with what is not covered. The mapping is the author's own. It was compared with the OWASP, NIST SP 800-218 and SP 800-86, ASVS 4.0.3, ISO/IEC 27001:2022 and Scorecard sources, which corrected five rows of the older OWASP and NIST tables; ISO/IEC 27037, the OWASP Top 10 2021 names and SLSA were not compared.
+- **`docs/SECURITY-TESTING.md`** records the test results at the current release line (they were still the 1.8.0 numbers) and gains a section that maps the repository and release controls to ISO/IEC 27001:2022 Annex A, ISO/IEC 27037, NIST SP 800-218, OWASP Top 10 CI/CD and OpenSSF Scorecard, with what is not covered. The mapping is the author's own. It was compared with the OWASP, NIST SP 800-218 and SP 800-86, ASVS 4.0.3, ISO/IEC 27001:2022 and Scorecard sources, which corrected five rows of the older OWASP and NIST tables; ISO/IEC 27037 was then compared with its text (hence the change above); the OWASP Top 10 2021 names and SLSA were not.
 ## [1.12.1] — 2026-11-19
 
 Two findings now read better for the analyst, and the output examples match the shipped tool.
