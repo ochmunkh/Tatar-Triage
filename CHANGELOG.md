@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+## [1.12.3] — 2026-11-20
+
 ### Fixed
 - **Windows Home lost the logon events (Windows).** `quser.exe` is not part of Windows Home. The sessions module called it unguarded, so the missing command ended the module early: `net session` and the 4624/4625 queries were skipped, an error was counted and the run exited with code 2. The call is now made only when `quser.exe` exists; otherwise the report says so, the gap is listed under "not collected", and the rest of the module runs. Found on a Windows 11 Home run; a static test covers it.
 
