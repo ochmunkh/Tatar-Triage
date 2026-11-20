@@ -52,7 +52,7 @@ python3 .github/scripts/check_release_integrity.py .
 sha256sum -c SHA256SUMS.txt
 ```
 
-The first two read the repository and report whether the claims above still hold. The third checks a downloaded release against its published digests. A run can be previewed without writing anything with `-DryRun` or `--dry-run`.
+The first two run in a copy of the repository. The third runs in the folder of a downloaded release, where `SHA256SUMS.txt` (a release asset, not part of the repository) sits beside the files, and checks them against the published digests. A run can be previewed without writing anything with `-DryRun` or `--dry-run`.
 
 ## Reporting a problem
 
