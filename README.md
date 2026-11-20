@@ -97,6 +97,7 @@ Run on the analyst's machine, standard library only, offline ([details](docs/TOO
 | [What the evidence is](docs/EVIDENCE.md) | `artifactClass`, platform differences, known-answer checks |
 | [Architecture](docs/ARCHITECTURE.md) | Data flow, findings model, allowlist and IOC engines |
 | [Handling and limits](docs/OPERATIONS.md) | Operational notes, AV, known limitations |
+| [Walkthrough](docs/WALKTHROUGH.md) · [Playbooks](docs/PLAYBOOKS.md) · [Reporting](docs/REPORTING.md) | A first investigation, what to do with each finding, how to carry findings into a report |
 | [Linux edition](linux/README.md) | The Bash collector on its own |
 | [Changelog](CHANGELOG.md) | Every release |
 | [Security testing](docs/SECURITY-TESTING.md) · [Validation](docs/VALIDATION.md) | How it is tested, lab results |

@@ -91,3 +91,22 @@ in return is real and worth naming: **no execution-evidence module**
 (`prefetch` / `useractivity` have no counterpart), **no download-provenance**
 (`motw`, which is why `COR-01` is Windows-only), and **no RMM detection**
 (`rmm`). Those are the three gaps to be aware of, not the module count.
+
+## Storing and handing over the evidence folder
+
+The folder holds sensitive information about the examined host. Treat it as confidential from the moment it is written (see the Legal section of the [README](../README.md)).
+
+1. Copy the folder first and work on the copy. Keep the original untouched.
+2. Check the manifest before you start and after you finish. Check the manifest itself against its digest. `tatar.log` is not in the manifest on purpose.
+3. Record the time yourself. `chain_of_custody.txt` gives the time zone and says the host clock was not compared with an outside time source, because the tool is offline. Note the difference between the host clock and a reliable clock when you collect.
+4. Encrypt the folder or the archive at rest and in transit. The tool hashes and compresses (`-Compress`) but does not encrypt. Keep the key apart from the data.
+5. Write to an external drive and do not leave a copy on the examined host.
+6. Hand over the folder and its digest by separate channels. The receiver checks the digest first, and you keep a note of who received it and when.
+7. Read the "not collected" part of `tatar.log` before you say a host is clean.
+
+```bash
+sha256sum -c manifest_sha256.txt
+sha256sum -c manifest_sha256.txt.sha256
+```
+
+On Windows, where `sha256sum` may not exist, compare the digests with `Get-FileHash` or run the same commands in WSL or Git Bash.

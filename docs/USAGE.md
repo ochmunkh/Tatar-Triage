@@ -79,3 +79,11 @@ sudo ./tatar-linux.sh --all --dry-run   # check the plan, write nothing
 | `0` | Collection completed successfully |
 | `1` | Fatal / usage error (nothing selected, a value-taking flag with no value, output dir cannot be created, no valid modules) |
 | `2` | Collection completed, but one or more steps logged errors — check `tatar.log`. An unreadable `-Allowlist` / `-IOCFile` path lands here, as does an unknown option or an unknown module name. |
+
+## Questions people ask
+
+### Can I run it on a disk image or a memory dump?
+
+No. Tatar Triage collects from a running Windows or Linux host: it asks the live system about processes, connections, accounts, the registry and the event log, so it needs an operating system to ask. A disk image (E01, dd, VHD) or a memory dump is a file, not a running host. Use imaging and analysis tools for those, such as Autopsy or The Sleuth Kit for disk images and Volatility for memory ([AFTER-COLLECTION.md](AFTER-COLLECTION.md), [COMPARISON.md](COMPARISON.md)).
+
+If you must run it against what an image holds, boot a copy of the image in a virtual machine you can discard and run it there. The result then describes the booted copy, not the original image, and starting the copy changes the copy.

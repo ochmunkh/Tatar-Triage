@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 - **RI-10 in the release-integrity gate**: every script in `tools/` may import only the Python standard library, as `docs/TOOLS.md` promises. The gate reads the syntax tree and runs nothing; its proof test now breaks 16 things.
 
 ### Documentation
+- **Three new guides, each in English and Mongolian**: `docs/WALKTHROUGH.md` (a first investigation in about thirty minutes with two harmless stand-ins: baseline, scan, read, compare), `docs/PLAYBOOKS.md` (a short routine for every finding category, built on the `recommendation` text) and `docs/REPORTING.md` (what to cite from a run, where each kind of finding usually belongs, how to state the limits). No script is added.
+- **`docs/USAGE`** answers "Can I run it on a disk image or a memory dump?" (no: it collects from a running host) and **`docs/EVIDENCE`** gains a checklist for storing and handing over the evidence folder (copy first, verify the manifest, note the clock, encrypt, do not leave a copy on the host).
 - **`docs/SECURITY-TESTING.md`** maps ISO/IEC 27001:2022 Annex A 5.24, 5.26, 5.28, 5.31 and 8.15 and says a certificate belongs to an organisation's management system, never to a tool.
 - **README (both languages)** says the `Bypass` execution policy is set for that PowerShell window only; **`docs/ARCHITECTURE` (both languages)** says the allowlist and IOC feeds are read as data and never run.
 - **README and `docs/ARCHITECTURE` (both languages) say the evidence folder is confidential**: it holds sensitive information about the examined host, and where a collection is part of a risk assessment or audit under the Law on Cyber Security of Mongolia (articles 8.5 and 9.6) it should be handled like those reports.
