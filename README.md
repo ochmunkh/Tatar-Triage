@@ -25,6 +25,8 @@ When an endpoint shows signs of compromise you need to preserve evidence *quickl
 
 > Built for first responders and analysts who need triage logs **fast**, on-scene, with no dependencies.
 
+> **Nothing leaves the machine.** Tatar Triage makes no network calls, sends no telemetry and needs no account (AV-01). It runs as a standard user, changes nothing on the examined host and installs nothing (AV-07, AV-08); apart from short-lived scratch files that it removes, it writes only the evidence folder you point it at. What an EDR may still notice and how each claim is tested: [security model](docs/SECURITY-MODEL.md).
+
 ## Quick start
 
 **Windows** (PowerShell 5.1+, Administrator recommended):
@@ -97,6 +99,7 @@ Run on the analyst's machine, standard library only, offline ([details](docs/TOO
 | [What the evidence is](docs/EVIDENCE.md) | `artifactClass`, platform differences, known-answer checks |
 | [Architecture](docs/ARCHITECTURE.md) | Data flow, findings model, allowlist and IOC engines |
 | [Handling and limits](docs/OPERATIONS.md) | Operational notes, AV, known limitations |
+| [Security model](docs/SECURITY-MODEL.md) | What it promises and does not, trust boundaries, how to check it yourself |
 | [Walkthrough](docs/WALKTHROUGH.md) · [Playbooks](docs/PLAYBOOKS.md) · [Reporting](docs/REPORTING.md) | A first investigation, what to do with each finding, how to carry findings into a report |
 | [Linux edition](linux/README.md) | The Bash collector on its own |
 | [Changelog](CHANGELOG.md) | Every release |
