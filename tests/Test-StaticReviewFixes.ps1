@@ -131,6 +131,16 @@ if (-not $m.Success) {
     }
 }
 
+# Collect-Sessions: quser.exe is absent on Windows Home. An unguarded call threw
+# CommandNotFound and the catch skipped net session and the 4624/4625 queries.
+Write-Host ''
+Write-Host 'quser is guarded so Windows Home keeps the logon events'
+$m = [regex]::Match($src, '(?s)function Collect-Sessions \{.*?\n\}')
+if ($m.Success -and $m.Value -match "Get-Command 'quser\.exe'" -and $m.Value -notmatch '(?m)^\s{8}\(quser 2>&1\)') {
+    $pass++; Write-Host '  PASS  quser is called only when it exists' -ForegroundColor Green
+} else {
+    $fail++; Write-Host '  FAIL  quser is called unguarded in Collect-Sessions' -ForegroundColor Red
+}
 Write-Host ''
 Write-Host ("Static-review fixes: {0} passed, {1} failed" -f $pass, $fail)
 if ($fail -gt 0) { exit 1 }

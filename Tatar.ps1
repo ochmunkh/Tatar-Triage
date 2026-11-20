@@ -1472,7 +1472,15 @@ function Collect-Process {
 function Collect-Sessions {
     Add-Section '04 Logon sessions & recent logons (4624/4625)'
     try {
-        (quser 2>&1) | Out-FileNoBom $script:ReportFile -Append
+        # quser.exe ships with the Remote Desktop Services tools, which Windows
+        # Home does not have. Calling it there threw CommandNotFound into the
+        # catch below and skipped net session and the 4624/4625 queries too.
+        if (Get-Command 'quser.exe' -CommandType Application -ErrorAction SilentlyContinue) {
+            (quser 2>&1) | Out-FileNoBom $script:ReportFile -Append
+        } else {
+            Add-Report 'quser.exe is not present on this Windows edition; interactive sessions were not listed.'
+            Add-Note 'interactive sessions were NOT listed: quser.exe is not present on this Windows edition (Home has none)'
+        }
         (net session 2>&1) | Out-FileNoBom $script:ReportFile -Append
         # The cap was written three times - -MaxEvents, the report heading and
         # the saturation test - so it could be changed in one place and leave
