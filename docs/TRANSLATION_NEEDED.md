@@ -5,7 +5,8 @@ nothing should be: the Mongolian in this repo is written, and a transliterated
 stand-in would be worse than an honest gap.
 
 Generated 2026-09-30 by classifying every tracked `.md` as entirely English,
-bilingual (carrying a `Монгол хувилбар` half), or mixed.
+bilingual (carrying a `Монгол хувилбар` half), or mixed. Revisited 2026-11-20:
+the pages added since then are listed under *English-only pages added since*.
 
 **Priority is about who reads it, and when.** This is an incident-response tool:
 its documents get read under time pressure, by a responder on someone else's
@@ -47,6 +48,25 @@ history is `CHANGELOG.md` alone (English).
 
 ---
 
+## English-only pages added since
+
+Each page below is English only and has no `Монгол хувилбар` half. Word counts
+are from 2026-11-20. The operator-facing pages added in the same period
+(`WALKTHROUGH`, `PLAYBOOKS`, `REPORTING`, `SECURITY-MODEL`) were written with a
+`.mn.md` twin and are held to an exact mirror. `SECURITY-MODEL.mn.md` is the
+Mongolian way in to the two security pages below.
+
+| Priority | File | Words | Note |
+|---|---|---:|---|
+| Medium | `docs/AFTER-COLLECTION.md` | 508 | What to do once the run ends. Read by the responder. |
+| Medium | `docs/TOOLS.md` | 956 | The analysis tools (`tatar-diff.py`, `tatar-review.py`, the viewer). Read by the analyst. |
+| Low | `docs/AV-SAFETY.md` | 1,667 | The nine AV claims and how each is checked. Summarised in Mongolian in `SECURITY-MODEL.mn.md`. |
+| Low | `docs/SECURITY-TESTING.md` | 3,393 | Security tests and the standards maps. Summarised in Mongolian in `SECURITY-MODEL.mn.md`. |
+| Low | `docs/VALIDATION.md` | 4,264 | Measured runs on real and sandboxed hosts. A record, read by reviewers. |
+| Low | `docs/COVERAGE.md` | 1,369 | What each edition collects, side by side. |
+| Low | `docs/COMPARISON.md` | 598 | How the tool compares with other collectors. |
+| Low | `docs/DESIGN-artifact-engine.md` | 520 | A design note for contributors. |
+
 ## Deliberately *not* a gap
 
 - **`README.md`**, **`linux/README.md`** and **`CONTRIBUTING.md`** carry
@@ -68,6 +88,8 @@ responder on a Linux host as the only user of this toolkit with nothing in
 their language. That is closed, and closed as an exact mirror rather than as a
 second backlog.
 
-Next: **`docs/MITRE_ATTACK.md`** — the document an analyst opens *after* a
-finding fires, to decide what it means. Both READMEs now point at it in
-Mongolian from a Mongolian sentence, and it answers in English.
+~~Next: `docs/MITRE_ATTACK.md`.~~ **Done, 2026-10-01** (see the High table).
+
+Next: **`docs/AFTER-COLLECTION.md`** and **`docs/TOOLS.md`** — what a responder
+does with the evidence folder once the run ends. Every other operator-facing
+page now has a Mongolian twin.

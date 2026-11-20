@@ -52,6 +52,12 @@ def main(argv):
     seal = "--seal" in argv
     args = [a for a in argv[1:] if not a.startswith("--")]
     path = Path(args[0]) if args else VIEWER
+    if path.is_dir():
+        path = path / "tools" / "viewer.html"
+    if not path.is_file():
+        print("usage: check_viewer.py [--seal] [path to viewer.html or to the repository]", file=sys.stderr)
+        print("not found: %s" % path, file=sys.stderr)
+        return 2
     raw = path.read_bytes()
     try: text = raw.decode("ascii")
     except UnicodeDecodeError as e:
