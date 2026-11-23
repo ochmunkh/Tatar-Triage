@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+### Fixed
+- **A large IOC feed made a run take minutes (both editions).** Every indicator was searched for separately: on Windows one regular expression per indicator over every evidence file, on Linux a few processes per indicator. A feed of 10,000 hashes added 413 s to a Windows run and 37 s to a Linux run, so a feed of known malware from a public source was not practical. Both editions now read the feed into lookup sets once, cut each text into the runs of characters an indicator can be made of, and look the runs up; each candidate is still confirmed by the same boundary rule (`Get-IocPattern`, `ioc_match`), so what matches is unchanged. Measured on the same hosts: 10,000 hashes now take 3.6 s on Windows and 0.8 s on Linux, and a feed of 1.2 million indicators 35 s and 13.8 s. On Linux an indicator listed twice now raises one finding, as on Windows, and an indicator too long for a command line no longer stops the evidence scan. Details in `docs/VALIDATION.md`.
+
+### Tests
+- The IOC boundary case table is also run through the new matcher, alone and among 3,000 decoys, in both editions; it now has 32 cases. The hostile-feed tests add a feed of 60,000 (Windows) and 120,000 (Linux) indicators under the existing time limit, which the per-indicator search could not meet.
+
+### Documentation
+- **`docs/IOC-FEEDS.md` (English and Mongolian):** how to recognise known malware offline. What a feed catches and what it cannot, measured feed sizes, how to prepare a feed from public sources with a short standard-library snippet, and why an online lookup is a separate step agreed with the client.
+
 ## [1.12.3] — 2026-11-20
 
 ### Fixed

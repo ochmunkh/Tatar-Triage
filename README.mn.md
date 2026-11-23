@@ -101,6 +101,7 @@ sudo ./linux/tatar-linux.sh --all --output /mnt/usb/evidence --caseid IR-2026-01
 | [Нотлох баримт юу болох нь](docs/EVIDENCE.mn.md) | `artifactClass`, платформын ялгаа, known-answer шалгалт |
 | [Архитектур](docs/ARCHITECTURE.mn.md) | Өгөгдлийн урсгал, finding загвар, allowlist ба IOC |
 | [Хэрэглээ ба хязгаарлалт](docs/OPERATIONS.mn.md) | Анхаарах зүйл, AV, мэдэгдэж буй хязгаарлалт |
+| [Мэдэгдсэн malware-ийн feed](docs/IOC-FEEDS.mn.md) | Мэдэгдсэн malware-ийг офлайнаар таних: feed юуг барьдаг, хэр том байж болох, хэрхэн бэлдэх |
 | [Аюулгүй байдлын загвар](docs/SECURITY-MODEL.mn.md) | Юуг амладаг, амладаггүй, итгэлийн хил, өөрөө хэрхэн шалгах |
 | [Алхам алхмаар](docs/WALKTHROUGH.mn.md) · [Playbook](docs/PLAYBOOKS.mn.md) · [Тайлан](docs/REPORTING.mn.md) | Анхны шинжилгээ, finding бүртэй юу хийх, finding-ийг тайланд хэрхэн оруулах |
 | [Linux хувилбар](linux/README.md) | Bash цуглуулагч тусдаа |

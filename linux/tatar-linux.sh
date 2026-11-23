@@ -824,6 +824,121 @@ ioc_match() {  # ioc_match TEXT TOKEN -> exit 0 on a boundary-aligned hit
     END { exit(found ? 0 : 1) }'
 }
 
+# One-pass IOC matching for a whole feed. Calling ioc_match for every indicator
+# against every finding, and grep for every indicator against the evidence,
+# started a process per indicator: a feed of ten thousand took about half a
+# minute and a feed of a hundred thousand would take several. ioc_scan reads
+# the feed once into lookup tables and the input once. An indicator can only
+# match a run of the characters it is made of, so each run of the text is
+# looked up; a candidate is then confirmed by bmatch, which is ioc_match's rule
+# copied line for line (tests/test-ioc-boundary.sh holds the two together). An
+# indicator with a character no run can hold is tried on every line, as before.
+#
+#   ioc_scan lines   FEED HITS  < text  -> "entry<TAB>first line" for every feed
+#       entry found, in feed order, once per distinct entry, skipping entries
+#       listed in HITS (exact); lines containing "IOC match" are ignored
+#   ioc_scan records FEED       < F2    -> one line per record: the first feed
+#       entry, in feed order, found in fields 4 and 5 (message and detail), or
+#       an empty line
+ioc_scan() {
+    awk -v mode="$1" -v feed="$2" -v hits="${3:-}" -F "$FSEP" '
+    function isdig(c) { return (c >= "0" && c <= "9") }
+    function isw(c)   { return ((c >= "0" && c <= "9") || (c >= "a" && c <= "z") || c == "_") }
+    function ishex(c) { return (isdig(c) || (c >= "a" && c <= "f")) }
+    function bmatch(text, t,    n, ipv4, ipv6, start, p, before, after, ok) {
+        n = length(t)
+        ipv4 = (t ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/)
+        ipv6 = (!ipv4 && t ~ /^[0-9a-f:]+$/ && index(t, ":") > 0)
+        start = 1
+        while ((p = index(substr(text, start), t)) > 0) {
+            p = p + start - 1
+            before = (p > 1) ? substr(text, p - 1, 1) : ""
+            after  = substr(text, p + n, 1)
+            ok = 1
+            if (ipv4) {
+                if (before != "" && (isdig(before) || before == ".")) ok = 0
+                if (after  != "" && (isdig(after)  || after  == ".")) ok = 0
+            } else if (ipv6) {
+                if (before != "" && (ishex(before) || before == "." || before == ":")) ok = 0
+                if (after  != "" && (ishex(after)  || after  == "." || after  == ":")) ok = 0
+            } else {
+                if (before != "" && (isw(before) || before == "." || before == "-")) ok = 0
+                if (after  != "" && (isw(after)  || after  == "-")) ok = 0
+                if (after == "." && isw(substr(text, p + n + 1, 1))) ok = 0
+            }
+            if (ok) return 1
+            start = p + 1
+        }
+        return 0
+    }
+    function consider(k) {
+        if (k in seen) return
+        seen[k] = 1
+        if (bmatch(text, k)) found[++nf] = k
+    }
+    # Fill found[1..nf] with the entries present in text (lowercased).
+    function scan(    s, r, i, j, n) {
+        nf = 0; split("", seen)
+        if (nw) {
+            s = text
+            while (match(s, /[0-9a-z_.-]+/)) {
+                r = substr(s, RSTART, RLENGTH)
+                if (r in W) consider(r)
+                n = length(r)
+                for (i = 2; i <= n; i++) if (substr(r, i, 1) == "." && (substr(r, 1, i - 1) in W)) consider(substr(r, 1, i - 1))
+                s = substr(s, RSTART + RLENGTH)
+            }
+        }
+        if (n4) {
+            s = text
+            while (match(s, /[0-9.]+/)) { r = substr(s, RSTART, RLENGTH); if (r in V4) consider(r); s = substr(s, RSTART + RLENGTH) }
+        }
+        if (n6) {
+            s = text
+            while (match(s, /[0-9a-f.:]+/)) { r = substr(s, RSTART, RLENGTH); if (r in V6) consider(r); s = substr(s, RSTART + RLENGTH) }
+        }
+        for (j = 1; j <= ns; j++) if (index(text, SL[j]) > 0) consider(SL[j])
+    }
+    BEGIN {
+        while ((getline v < feed) > 0) {
+            all[++na] = v
+            if (v == "") continue
+            k = tolower(v)
+            if (k in rank) continue
+            rank[k] = na
+            if (k ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/)            { V4[k] = 1; n4++ }
+            else if (k ~ /^[0-9a-f:]+$/ && index(k, ":") > 0)      { V6[k] = 1; n6++ }
+            else if (k ~ /^[0-9a-z_.-]+$/)                          { W[k] = 1; nw++ }
+            else                                                    { SL[++ns] = k }
+        }
+        close(feed)
+        if (hits != "") { while ((getline v < hits) > 0) H[v] = 1; close(hits) }
+    }
+    mode == "records" {
+        text = tolower($4 " " $5); scan()
+        best = 0
+        for (i = 1; i <= nf; i++) if (best == 0 || rank[found[i]] < best) best = rank[found[i]]
+        print (best ? all[best] : "")
+        next
+    }
+    mode == "lines" {
+        text = tolower($0)
+        if (index(text, "ioc match")) next
+        scan()
+        for (i = 1; i <= nf; i++) if (!(found[i] in first)) first[found[i]] = $0
+    }
+    END {
+        if (mode != "lines") exit
+        for (i = 1; i <= na; i++) {
+            v = all[i]
+            if (v == "" || (v in H) || (v in done)) continue
+            done[v] = 1
+            k = tolower(v)
+            if (k in first) print v "\t" first[k]
+        }
+    }'
+}
+
 # An IOC's ATT&CK technique depends on WHAT matched. Tagging a filename or a
 # hash hit as T1071 (application layer protocol) was simply wrong, and a wrong
 # mapping is worse than no mapping at all.
@@ -1620,26 +1735,21 @@ EOF
         IOC_STR="$( { printf '%s\n' "$IOC_IPS"; printf '%s\n' "$IOC_DOMS"; printf '%s\n' "$IOC_FILES"; } | grep -E '.' )"
 
         # Pass A: annotate/override existing findings
-        local F2b IOC_HIT; F2b="$(mktmp)"; IOC_HIT="$(mktmp)"
+        local F2b IOC_HIT IOC_FEED IOC_PRE; F2b="$(mktmp)"; IOC_HIT="$(mktmp)"; IOC_FEED="$(mktmp)"; IOC_PRE="$(mktmp)"
         local xid xs xc xm xd xt xconf xsup xreason xioc xmod xts xpaths xcr xind
-        local hit path h ind
+        local hit path h
+        # string IOCs (ip/domain/filename) in message or detail: one pass over
+        # every finding, one line out per finding, read back beside it below
+        printf '%s\n' "$IOC_STR" > "$IOC_FEED"
+        if [ -n "$IOC_STR" ] && [ -s "$F2" ]; then ioc_scan records "$IOC_FEED" < "$F2" > "$IOC_PRE"; else : > "$IOC_PRE"; fi
         while IFS="$FSEP" read -r xid xs xc xm xd xt xconf xsup xreason xioc xmod xts xpaths xcr xind xacls; do
-            hit=""
-            # string IOCs (ip/domain/filename) in message or detail
-            if [ -n "$IOC_STR" ]; then
-                while IFS= read -r ind; do
-                    [ -n "$ind" ] || continue
-                    if ioc_match "$xm $xd" "$ind"; then hit="$ind"; break; fi
-                done <<EOF
-$IOC_STR
-EOF
-            fi
+            IFS= read -r hit <&3 || hit=""
             # hash IOC: sha256 of the referenced binary
             if [ -z "$hit" ] && [ -n "$IOC_HASHES" ]; then
                 path="$(al_path_of "$xm" "$xd")"
                 if [ -n "$path" ] && [ -r "$path" ]; then
                     h="$(sha256sum "$path" 2>/dev/null | awk '{print $1}')"
-                    if [ -n "$h" ] && printf '%s\n' "$IOC_HASHES" | grep -qix "$h"; then hit="$h"; fi
+                    if [ -n "$h" ] && printf '%s\n' "$IOC_HASHES" | grep -qixF -- "$h"; then hit="$h"; fi
                 fi
             fi
             if [ -n "$hit" ]; then
@@ -1657,34 +1767,35 @@ EOF
             printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
                 "$xid" "$xs" "$xc" "$xm" "$xd" "$xt" "$xconf" "$xsup" "$xreason" "$xioc" \
                 "$xmod" "$xts" "$xpaths" "$xcr" "$xind" "${xacls:-unknown}" >> "$F2b"
-        done < "$F2"
+        done < "$F2" 3< "$IOC_PRE"
         mv "$F2b" "$F2"
 
         # Pass B: raise NEW findings for IOCs seen anywhere in the collected report
-        # The scan shells out to find/xargs/grep. If that toolchain cannot run at
+        # The scan shells out to find/xargs/awk. If that toolchain cannot run at
         # all (a broken PATH entry, a missing or unresolvable grep - plausible on
         # the compromised host this tool is pointed at), a discarded stderr would
         # make the scan report ZERO hits, which is indistinguishable from "no
         # indicators present". T5 exists to stop exactly that class of silent
         # skip for unreadable feeds; the same rule has to hold here. Stderr from
         # the scan is therefore captured, and any of it forces the error exit.
-        local val ln bmsg bdet bpaths SCAN_ERR SCAN_BAD
-        SCAN_ERR="$(mktmp)"; SCAN_BAD="$(mktmp)"; : > "$SCAN_BAD"
+        local val ln bmsg bdet bpaths SCAN_ERR SCAN_BAD SCAN_OUT
+        SCAN_ERR="$(mktmp)"; SCAN_BAD="$(mktmp)"; SCAN_OUT="$(mktmp)"; : > "$SCAN_BAD"
         # Scope parity with the Windows edition: scan every text artifact in the
         # output folder, not just the consolidated report (summary.txt excluded -
         # it is written later and would echo our own findings back).
         if [ -d "$OUTDIR" ]; then
-            { printf '%s\n' "$IOC_STR"; printf '%s\n' "$IOC_HASHES"; } | while IFS= read -r val; do
+            # Every artifact is read once, in the order find lists them ("awk 1"
+            # rather than cat, so a file without a final newline cannot run its
+            # last line into the next file's first); ioc_scan
+            # reports, per feed entry, the first line that holds it on a
+            # boundary, skipping entries already tied to a finding in Pass A.
+            { printf '%s\n' "$IOC_STR"; printf '%s\n' "$IOC_HASHES"; } > "$IOC_FEED"
+            find "$OUTDIR" -type f \( -name '*.txt' -o -name '*.csv' -o -name '*.log' \) \
+                    ! -name 'summary.txt' -print0 2>/dev/null \
+                | xargs -0 -r awk 1 2>>"$SCAN_ERR" \
+                | ioc_scan lines "$IOC_FEED" "$IOC_HIT" > "$SCAN_OUT" 2>>"$SCAN_ERR"
+            while IFS="$(printf '\t')" read -r val ln; do
                 [ -n "$val" ] || continue
-                # skip IOCs already tied to a specific finding in Pass A
-                grep -qxF -- "$val" "$IOC_HIT" 2>/dev/null && continue
-                # grep pre-filters, ioc_match confirms the hit sits on a boundary
-                ln="$(find "$OUTDIR" -type f \( -name '*.txt' -o -name '*.csv' -o -name '*.log' \) \
-                        ! -name 'summary.txt' -print0 2>/dev/null \
-                      | xargs -0 -r grep -ihF -- "$val" 2>>"$SCAN_ERR" | grep -viE 'IOC match' \
-                      | while IFS= read -r cand; do
-                            if ioc_match "$cand" "$val"; then printf '%s' "$cand"; break; fi
-                        done)"
                 if [ -n "$ln" ]; then
                     next_find_seq
                     bmsg="IOC observed in collected evidence: $val"
@@ -1696,12 +1807,12 @@ EOF
                         "$(ioc_technique "$val")" "0.95" "false" "" "true" \
                         "ioc" "$(iso)" "$bpaths" "$(conf_reason 0.95)" "$val" "ioc-match" >> "$F2"
                 fi
-            done
+            done < "$SCAN_OUT"
         fi
         if [ -s "$SCAN_ERR" ]; then
             add_err "IOC evidence scan could not run, so its result is NOT trustworthy: $(head -n1 "$SCAN_ERR" | cut -c1-160)"
         fi
-        rm -f "$IOC_HIT" "$SCAN_ERR" "$SCAN_BAD" 2>/dev/null
+        rm -f "$IOC_HIT" "$IOC_FEED" "$IOC_PRE" "$SCAN_ERR" "$SCAN_OUT" "$SCAN_BAD" 2>/dev/null
     fi
 
     # ---- evidence correlation (links findings; never merges or creates them) --

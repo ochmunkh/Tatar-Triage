@@ -46,6 +46,13 @@ $feeds['meta']    = Put 'meta'    (J @{ domains = @('$(New-Item PWNED)', '`New-I
 $feeds['types']   = Put 'types'   ('{"domains":[1,null,{"a":1},["x"],true,3.14,"' + $hn + '"],"ips":"1.2.3.4","hashes":{"x":"y"},"filenames":null}')
 $bigList = @(('A' * 50000)) + @(1..3000 | ForEach-Object { "d$_.example" }) + @($hn)
 $feeds['big']     = Put 'big'     (J @{ domains = $bigList })
+# A feed the size of a month of a public malware feed. Matching each indicator
+# separately took minutes at this size; the one-pass matcher takes seconds, and
+# "finished within 120 s" below fails the run if that is ever lost again.
+$hugeH = foreach ($k in 1..50000) { '{0:x64}' -f ($k * 2654435761) }
+$hugeI = foreach ($k in 0..4999)  { '198.18.{0}.{1}' -f [int][Math]::Floor($k / 250), ($k % 250) }
+$hugeD = @(foreach ($k in 0..4999)  { "d$k.example.invalid" }) + @($hn)
+$feeds['huge']    = Put 'huge'    (J @{ hashes = $hugeH; ips = $hugeI; domains = $hugeD })
 $feeds['bom']     = Put 'bom'     (J @{ domains = @($hn) }) $true
 $broken = [ordered]@{}
 $broken['badjson'] = Put 'badjson' '{not json'

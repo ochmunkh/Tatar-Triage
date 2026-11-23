@@ -40,10 +40,16 @@ put("empty",   None, b"")
 put("list",    None, b"[]")
 put("noind",   {"domains": [], "hashes": [], "ips": [], "filenames": []})
 put("big",     {"domains": ["A" * 200000] + ["d%d.example" % i for i in range(5000)] + [hn]})
+# A feed the size of a month of a public malware feed. Matching each indicator
+# separately took minutes at this size; the one-pass matcher takes seconds, and
+# "finished within 60 s" below fails the run if that is ever lost again.
+put("huge",    {"hashes": ["%064x" % (i * 2654435761) for i in range(1, 100001)],
+                "ips": ["198.18.%d.%d" % (i // 250, i % 250) for i in range(10000)],
+                "domains": ["d%d.example.invalid" % i for i in range(10000)] + [hn]})
 PY
 
 BAD_TEXT='syntax error|command not found|unbound variable|Traceback|line [0-9]+: .*(error|unexpected)'
-for feed in inject control meta types big bom; do
+for feed in inject control meta types big huge bom; do
     out="$W/out-$feed"; start=$(date +%s)
     timeout 120 bash "$COLLECTOR" --modules sysinfo,network --silent --iocfile "$W/$feed.json" --output "$out" >"$W/$feed.log" 2>&1
     rc=$?; secs=$(( $(date +%s) - start ))

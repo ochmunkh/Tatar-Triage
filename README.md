@@ -99,6 +99,7 @@ Run on the analyst's machine, standard library only, offline ([details](docs/TOO
 | [What the evidence is](docs/EVIDENCE.md) | `artifactClass`, platform differences, known-answer checks |
 | [Architecture](docs/ARCHITECTURE.md) | Data flow, findings model, allowlist and IOC engines |
 | [Handling and limits](docs/OPERATIONS.md) | Operational notes, AV, known limitations |
+| [Feeds of known malware](docs/IOC-FEEDS.md) | Recognise known malware offline: what a feed catches, how large it can be, how to prepare one |
 | [Security model](docs/SECURITY-MODEL.md) | What it promises and does not, trust boundaries, how to check it yourself |
 | [Walkthrough](docs/WALKTHROUGH.md) · [Playbooks](docs/PLAYBOOKS.md) · [Reporting](docs/REPORTING.md) | A first investigation, what to do with each finding, how to carry findings into a report |
 | [Linux edition](linux/README.md) | The Bash collector on its own |

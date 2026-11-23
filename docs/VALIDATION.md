@@ -295,3 +295,34 @@ unreleased changes); the tests now check them.
 
 The stand-ins are not malware and the round does not test detection of any family. It tests that
 the matching and the handling of a hostile file work as described.
+
+## IOC feed scale round (1.12.4)
+
+A feed of known malware is only useful if it can be large, so the cost of a feed was measured on
+its own: random indicators that match nothing, the same host, the same profile, one run per size.
+Windows: a Windows 11 workstation, PowerShell 5.1, not elevated, `-All`, 23 evidence text files of
+about 1.5 MB; the time is from "Writing summary" to the end of IOC matching in `tatar.log`. Linux: a
+Linux virtual machine, `--quick`, not root; the time is the whole run.
+
+| Feed | Windows 1.12.3 | Windows 1.12.4 | Linux 1.12.3 | Linux 1.12.4 |
+|---|---|---|---|---|
+| 1 hash | 0.7 s | 1.5 s | 1.0 s | 0.7 s |
+| 1,000 hashes | 38 s | not measured | 4.2 s | not measured |
+| 10,000 hashes | 413 s | 3.6 s | 37 s | 0.8 s |
+| 100,000 hashes, 10,000 IPs, 10,000 domains | not measured | 6.7 s | not measured | 1.9 s |
+| 1,000,000 hashes, 100,000 IPs, 100,000 domains | not measured | 35 s | not measured | 13.8 s |
+
+1.12.3 searched for each indicator separately: on Windows one regular expression per indicator over
+every evidence file, on Linux a few processes per indicator. 1.12.4 reads the feed into sets once,
+cuts each text into the runs of characters an indicator can be made of, and looks the runs up; every
+candidate is still confirmed by the same boundary rule, so what matches did not change. On Windows
+each evidence file is now read whole once, about a second on this host, which is why a feed of one
+hash costs a little more than before.
+
+Two things changed besides the time. On Linux the 200,000-character indicator of the hostile-feed
+test no longer stops the evidence scan, because the feed is read from a file instead of passed as an
+argument. On Linux an indicator listed twice raises one finding instead of two, as on Windows.
+
+The case table both editions share (`tests/fixtures/ioc-boundary-cases.tsv`) is run through the new
+matcher as well, alone and among 3,000 decoys, and a feed of 60,000 to 120,000 indicators was added to
+the hostile-feed tests with the time limit they already had.

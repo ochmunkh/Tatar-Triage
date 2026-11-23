@@ -488,17 +488,21 @@ else
     check "T9 : the probe binary could be staged in /tmp" 0 "could not copy ${BAIT_SRC:-sleep} to $BAIT"
 fi
 
-# T10 - the IOC evidence scan shells out to find/xargs/grep. If that toolchain
+# T10 - the IOC evidence scan shells out to find/xargs/awk. If that toolchain
 #       cannot run (a broken PATH entry on the suspect host), stderr used to be
 #       discarded and the scan reported ZERO hits - indistinguishable from "no
 #       indicators present". Same silent-skip failure mode T5 guards for feeds.
+#       The probe breaks awk, which xargs starts for every artifact: execvp in
+#       xargs stops at the broken PATH entry, while bash skips it, so the rest
+#       of the run is unaffected. Until 1.12.4 the scan ran grep and the probe
+#       broke grep.
 printf '\nT10  a broken scan toolchain is reported, not silently read as "no IOCs"\n'
 T10BIN="/tmp/tatar-test-t10-bin-$$"
 rm -rf "$T10BIN"; mkdir -p "$T10BIN"
-# a self-referential symlink: grep resolves to itself -> ELOOP, exactly the
+# a self-referential symlink: awk resolves to itself -> ELOOP, exactly the
 # shape a stale/hostile PATH entry takes in the wild.
-ln -s grep "$T10BIN/grep" 2>/dev/null
-if [ -L "$T10BIN/grep" ]; then
+ln -s awk "$T10BIN/awk" 2>/dev/null
+if [ -L "$T10BIN/awk" ]; then
     T10D="/tmp/tatar-test-t10-$$"; rm -rf "$T10D"
     PATH="$T10BIN:$PATH" bash "$COLLECTOR" --modules "$MODULES" --silent --output "$T10D" \
         --ioc "$FIXTURES/ioc-positive.json" --caseid TATAR-IOC-PROBE-4711 >/dev/null 2>&1
@@ -511,7 +515,7 @@ if [ -L "$T10BIN/grep" ]; then
     else check "T10 : the log says the IOC scan result is not trustworthy" 0 "got ${N10:-0}"; fi
     rm -rf "$T10D" 2>/dev/null
 else
-    check "T10 : the broken-PATH probe could be staged" 0 "could not create $T10BIN/grep"
+    check "T10 : the broken-PATH probe could be staged" 0 "could not create $T10BIN/awk"
 fi
 rm -rf "$T10BIN" 2>/dev/null
 

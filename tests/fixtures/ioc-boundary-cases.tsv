@@ -24,3 +24,12 @@ mimikatz	dropped mimikatz.exe in temp	nomatch	KNOWN: a bare name does not match 
 127.0.0.1	mapped ::ffff:127.0.0.1 socket	match	IPv4 embedded in an IPv4-mapped IPv6 address is still that address
 fe80::1	neighbour fe80::11 dev eth0	nomatch	IPv6 must not match a longer address on the right
 fe80::1	neighbour afe80::1 dev eth0	nomatch	IPv6 must not match when a hex digit precedes it
+evil.example.com	connect (evil.example.com) refused	match	punctuation around a domain
+evil.example.com	resolved evil.example.com. then	match	a full stop after the domain is not part of it
+evil.example.com	resolved .evil.example.com	nomatch	a dot before the domain makes it part of a longer name
+Evil.Example.com	resolved evil.EXAMPLE.com	match	case-insensitive on both sides
+275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f	sha256=275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f,size=68	match	a hash inside key=value text
+275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f	sha256=275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0fab	nomatch	a hash must not match inside a longer hex string
+275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f	SHA256 275A021BBFB6489E54D471899F7DB9D1663FC695EC2FE2A2C4538AABF651FD0F	match	a hash written in upper case
+my tool.exe	ran C:\x\my tool.exe now	match	a filename with a space
+evil.example.com	a.b evil.example.com.x.y	nomatch	the name continues after a dot

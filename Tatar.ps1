@@ -2641,6 +2641,101 @@ function Get-IocPattern {
     return "(?<![\w.-])$e(?![\w-])(?!\.[A-Za-z0-9])"         # domain / filename
 }
 
+function New-IocIndex {
+    # Lookup tables for a whole feed. Each indicator used to be searched with its
+    # own regex across every evidence file, about 40 ms per indicator, so a feed
+    # of ten thousand added seven minutes to a run. The tables hold the three
+    # shapes Get-IocPattern knows: an indicator of one of them can only match a
+    # run of the same characters in the text, so the runs of a text are looked
+    # up in a set instead of every indicator being tried. Find-IocInText still
+    # confirms each candidate with Get-IocPattern, so the boundary rule is the
+    # same one. An indicator with a character none of the shapes can hold goes
+    # on the Slow list and is matched the old way; a feed of plain IPs, domains,
+    # file names and hashes has none.
+    param([object[]]$Indicators)
+    $cmp = [StringComparer]::OrdinalIgnoreCase
+    $word = New-Object 'System.Collections.Generic.Dictionary[string,string]' $cmp
+    $v4   = New-Object 'System.Collections.Generic.Dictionary[string,string]' $cmp
+    $v6   = New-Object 'System.Collections.Generic.Dictionary[string,string]' $cmp
+    $slow = New-Object 'System.Collections.Generic.List[string]'
+    $rank = New-Object 'System.Collections.Generic.Dictionary[string,int]' $cmp
+    $reV4 = [regex]'^\d{1,3}(\.\d{1,3}){3}$'; $reV6 = [regex]'^[0-9A-Fa-f:]+$'; $reW = [regex]'^[\w.-]+$'
+    for ($i = 0; $i -lt $Indicators.Count; $i++) {
+        $t = [string]$Indicators[$i]
+        if (-not $t -or $rank.ContainsKey($t)) { continue }
+        $rank[$t] = $i
+        if ($reV4.IsMatch($t)) {
+            if ($t -cmatch '^[0-9.]+$') { $v4[$t] = $t } else { $slow.Add($t) }
+        } elseif ($t.Contains(':') -and $reV6.IsMatch($t)) {
+            $v6[$t] = $t
+        } elseif ($reW.IsMatch($t)) {
+            $word[$t] = $t
+        } else {
+            $slow.Add($t)
+        }
+    }
+    [pscustomobject]@{
+        Word = $word; V4 = $v4; V6 = $v6; Slow = $slow; Rank = $rank
+        # Sets with the same comparer, so HashSet.IntersectWith takes its fast path.
+        WordSet = [System.Collections.Generic.HashSet[string]]::new($word.Keys, $cmp)
+        V4Set   = [System.Collections.Generic.HashSet[string]]::new($v4.Keys, $cmp)
+        V6Set   = [System.Collections.Generic.HashSet[string]]::new($v6.Keys, $cmp)
+    }
+}
+
+function Find-IocInText {
+    # The indicators of a New-IocIndex table that occur in $Text on a boundary,
+    # each spelled as the feed first spelled it. Get-IocPattern decides; the
+    # sets only choose which indicators are worth asking it about:
+    #   domain/file name/hash - it is a whole run of [\w.-], or such a run cut
+    #                           just before a '.' that does not start a label
+    #   IPv4                  - it is a whole run of [0-9.]
+    #   IPv6                  - it is a whole run of [0-9A-Fa-f.:]
+    # The runs are cut and compared by .NET in bulk: a loop over every word of a
+    # report, in PowerShell, cost more than the per-indicator search it replaced.
+    # Cutting a large text into runs still costs a second or two, so a short
+    # list (64 or fewer of a shape) is simply asked about one by one.
+    param([string]$Text, $Index)
+    if (-not $Text) { return }
+    $cmp  = [StringComparer]::OrdinalIgnoreCase
+    $cand = New-Object 'System.Collections.Generic.List[string]'
+    $few  = 64
+    if ($Index.Word.Count -and $Index.Word.Count -le $few) { $cand.AddRange($Index.Word.Values) }
+    elseif ($Index.Word.Count) {
+        $hs = [System.Collections.Generic.HashSet[string]]::new([string[]][regex]::Split($Text, '[^\w.-]+'), $cmp)
+        $hs.IntersectWith($Index.WordSet)
+        foreach ($r in $hs) { $cand.Add($Index.Word[$r]) }
+        foreach ($m in [regex]::Matches($Text, '(?<![\w.-])[\w.-]*\.(?![A-Za-z0-9])[\w.-]*')) {
+            $r = $m.Value; $p = $r.IndexOf('.')
+            while ($p -ge 0) {
+                if ($p -gt 0) {
+                    $pre = $r.Substring(0, $p)
+                    if ($Index.Word.ContainsKey($pre)) { $cand.Add($Index.Word[$pre]) }
+                }
+                $p = $r.IndexOf('.', $p + 1)
+            }
+        }
+    }
+    if ($Index.V4.Count -and $Index.V4.Count -le $few) { $cand.AddRange($Index.V4.Values) }
+    elseif ($Index.V4.Count) {
+        $hs = [System.Collections.Generic.HashSet[string]]::new([string[]][regex]::Split($Text, '[^0-9.]+'), $cmp)
+        $hs.IntersectWith($Index.V4Set)
+        foreach ($r in $hs) { $cand.Add($Index.V4[$r]) }
+    }
+    if ($Index.V6.Count -and $Index.V6.Count -le $few) { $cand.AddRange($Index.V6.Values) }
+    elseif ($Index.V6.Count) {
+        $hs = [System.Collections.Generic.HashSet[string]]::new([string[]][regex]::Split($Text, '[^0-9A-Fa-f.:]+'), $cmp)
+        $hs.IntersectWith($Index.V6Set)
+        foreach ($r in $hs) { $cand.Add($Index.V6[$r]) }
+    }
+    foreach ($s in $Index.Slow) { $cand.Add($s) }
+    $done = New-Object 'System.Collections.Generic.HashSet[string]' $cmp
+    foreach ($c in $cand) {
+        if (-not $done.Add($c)) { continue }
+        if ([regex]::IsMatch($Text, (Get-IocPattern $c), 'IgnoreCase')) { $c }
+    }
+}
+
 function Write-Summary {
     param([datetime]$Start, [datetime]$End, [string[]]$ModulesRun, [bool]$IsAdmin)
     $osCap = ''; $osVer = ''
@@ -2739,8 +2834,14 @@ function Write-Summary {
     if ($IOCFile -and (Test-Path $IOCFile)) {
         try {
             $ioc       = Get-Content $IOCFile -Raw | ConvertFrom-Json
-            $iocHashes = @($ioc.hashes    | ForEach-Object { "$_".ToLower() } | Where-Object { $_ })
-            $iocStr    = @(@($ioc.ips) + @($ioc.domains) + @($ioc.filenames) | Where-Object { $_ })
+            # foreach statements, not pipelines: a feed can hold hundreds of thousands of entries
+            $iocHashes = New-Object 'System.Collections.Generic.List[string]'
+            foreach ($x in @($ioc.hashes)) { $v = "$x".ToLower(); if ($v) { $iocHashes.Add($v) } }
+            $iocStr = New-Object 'System.Collections.Generic.List[string]'
+            foreach ($x in (@($ioc.ips) + @($ioc.domains) + @($ioc.filenames))) { if ($x) { $iocStr.Add([string]$x) } }
+            $iocHashSet = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+            foreach ($x in $iocHashes) { [void]$iocHashSet.Add($x) }
+            $ixA = New-IocIndex -Indicators $iocStr.ToArray()
             # A feed that parses but holds nothing to look for (an empty file, a list instead of an object,
             # no indicator in any of the four lists) matched nothing without a word. Same silent no-op as an
             # unreadable path, so it counts towards the exit code too.
@@ -2753,7 +2854,14 @@ function Write-Summary {
             foreach ($f in $sorted) {
                 $blob = "$($f.message) $($f.detail)"
                 $hit  = $null
-                foreach ($s in $iocStr) { if ([regex]::IsMatch($blob, (Get-IocPattern $s), 'IgnoreCase')) { $hit = $s; break } }
+                # The first indicator in feed order that matches, as before.
+                if ($iocStr.Count) {
+                    $best = -1
+                    foreach ($c in @(Find-IocInText -Text $blob -Index $ixA)) {
+                        $r = $ixA.Rank[$c]; if ($best -lt 0 -or $r -lt $best) { $best = $r }
+                    }
+                    if ($best -ge 0) { $hit = $iocStr[$best] }
+                }
                 if (-not $hit -and $iocHashes.Count) {
                     # A finding can name several files ("x.exe launched from y.dll").
                     # Hashing only the first one checked the wrong file, so consider
@@ -2762,7 +2870,7 @@ function Write-Summary {
                     foreach ($cp in $hp) {
                         if (-not (Test-PathSafe $cp)) { continue }
                         $h = (Get-FileHash -LiteralPath $cp -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
-                        if ($h -and ($iocHashes -contains $h.ToLower())) { $hit = $h.ToLower(); break }
+                        if ($h -and $iocHashSet.Contains($h)) { $hit = $h.ToLower(); break }
                     }
                 }
                 if ($hit) {
@@ -2786,17 +2894,35 @@ function Write-Summary {
 
             # Pass B: raise new findings for IOCs seen anywhere in collected artifacts.
             $scan = @(Get-ChildItem -Path $script:OutDir -Recurse -File -Include *.txt,*.csv,*.log -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'summary.txt' })
-            foreach ($val in (@($iocStr) + @($iocHashes))) {
+            # Each file is read once and every indicator looked up in it, instead
+            # of every file being read again for every indicator. The first line
+            # that holds an indicator, in file order, is the one reported - the
+            # same line the per-indicator search found.
+            $iocAll = New-Object 'System.Collections.Generic.List[string]'
+            $iocAll.AddRange($iocStr); $iocAll.AddRange($iocHashes)
+            $ixB = New-IocIndex -Indicators $iocAll.ToArray()
+            $iocFirst = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::OrdinalIgnoreCase)
+            foreach ($file in $scan) {
+                if ($iocFirst.Count -ge $ixB.Rank.Count) { break }
+                try { $body = [IO.File]::ReadAllText($file.FullName) } catch { continue }   # an unreadable file was skipped before too
+                # Skip our own echo: Pass A writes "IOC match: <indicator>" into a
+                # finding and tatar.log can quote an indicator back at us. Matching
+                # those would raise a finding about the tool, not about the host.
+                $body = [regex]::Replace($body, '(?im)^.*IOC match:.*$', '')
+                foreach ($c in @(Find-IocInText -Text $body -Index $ixB)) {
+                    if ($iocFirst.ContainsKey($c)) { continue }
+                    # the first line of the file that holds it on a boundary
+                    $m = [regex]::Match($body, (Get-IocPattern $c), 'IgnoreCase')
+                    $ls = $body.LastIndexOf("`n", [Math]::Max(0, $m.Index - 1)) + 1
+                    if ($m.Index -eq 0) { $ls = 0 }
+                    $le = $body.IndexOf("`n", $m.Index); if ($le -lt 0) { $le = $body.Length }
+                    $iocFirst[$c] = $body.Substring($ls, $le - $ls).Trim()
+                }
+            }
+            foreach ($val in $iocAll) {
                 if (-not $val -or $iocSeen.Contains($val)) { continue }
                 $found = $null
-                foreach ($file in $scan) {
-                    # Skip our own echo: Pass A writes "IOC match: <indicator>" into a
-                    # finding and tatar.log can quote an indicator back at us. Matching
-                    # those would raise a finding about the tool, not about the host.
-                    $m = Select-String -LiteralPath $file.FullName -Pattern (Get-IocPattern $val) -ErrorAction SilentlyContinue |
-                         Where-Object { $_.Line -notmatch 'IOC match:' } | Select-Object -First 1
-                    if ($m) { $found = $m.Line.Trim(); break }
-                }
+                if ($iocFirst.ContainsKey($val)) { $found = $iocFirst[$val] }
                 if ($found) {
                     $iocSeen.Add($val)
                     $script:FindingSeq++
