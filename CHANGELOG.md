@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+### Added
+- **Logging coverage (both editions).** `eventlogs` (Windows) and `logs` (Linux) now end with what the host records at all. Windows: PowerShell script-block, module and transcription logging; whether event 4688 carries the command line; whether the Security log holds any 4688 (measured only when the log can be read, because a filtered query the run may not read answers "no events" too); Sysmon; and the enabled state, maximum size, record count and oldest event of eleven key channels. Linux: auditd, a persistent or in-memory journal, a syslog daemon, an authentication log. Each gap becomes a module limitation, "logging gap on this host: ...", and `stats.LoggingGaps` counts them: an empty event section on a host that records little is not a clean host. Everything is read; nothing is switched on or changed. On a Windows 11 workstation, not elevated, it reported three gaps: script-block logging off, no command line in 4688, and the Task Scheduler log disabled.
+- **`external_ips.txt` (both editions).** The public remote addresses of established TCP connections, with the port and the process, for the analyst to look up afterwards on their own machine; `stats.ExternalAddresses` counts the addresses. Loopback, private, link-local, shared, documentation, benchmarking, multicast and reserved ranges are left out; an IPv4-mapped IPv6 address is judged as its IPv4. The collector looks nothing up. Not written on the netstat (Windows) or netstat/lsof (Linux) fallback path, which is stated.
+
+### Tests
+- `tests/fixtures/public-address-cases.tsv`, 40 cases, run by `tests/test-public-address.sh` and `tests/Test-PublicAddress.ps1` on every CI job.
+
 ## [1.12.4] — 2026-11-23
 
 ### Fixed

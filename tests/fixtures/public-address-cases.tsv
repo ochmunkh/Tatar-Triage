@@ -1,0 +1,43 @@
+# address	expect	note
+# Shared by tests/Test-PublicAddress.ps1 and tests/test-public-address.sh so both
+# editions hold the same rule for external_ips.txt. expect: public | not
+93.184.216.34	public	ordinary routed IPv4
+8.8.8.8	public	a public resolver
+1.1.1.1	public	low first octet, still public
+223.255.255.254	public	last unicast /8 before multicast
+10.1.2.3	not	RFC 1918 10/8
+172.16.0.1	not	RFC 1918 172.16/12, low edge
+172.31.255.254	not	RFC 1918 172.16/12, high edge
+172.15.0.1	public	just below 172.16/12
+172.32.0.1	public	just above 172.16/12
+192.168.1.10	not	RFC 1918 192.168/16
+127.0.0.1	not	loopback
+0.0.0.0	not	unspecified
+169.254.10.20	not	link-local
+100.64.0.1	not	shared address space (carrier NAT), low edge
+100.127.255.254	not	shared address space, high edge
+100.128.0.1	public	just above shared address space
+192.0.2.10	not	documentation TEST-NET-1
+198.51.100.7	not	documentation TEST-NET-2
+203.0.113.7	not	documentation TEST-NET-3
+198.18.0.1	not	benchmarking 198.18/15
+198.19.255.1	not	benchmarking 198.18/15, upper half
+198.20.0.1	public	just above benchmarking
+224.0.0.251	not	multicast
+239.255.255.250	not	multicast
+240.0.0.1	not	reserved
+255.255.255.255	not	broadcast
+256.1.1.1	not	not an address
+1.2.3	not	not a full IPv4 address
+2606:4700::6810:84e5	public	global unicast IPv6
+2a00:1450:4001::200e	public	global unicast IPv6
+2001:db8::1	not	IPv6 documentation range
+::1	not	IPv6 loopback
+::	not	IPv6 unspecified
+fe80::1	not	IPv6 link-local
+fd12:3456::1	not	IPv6 unique local
+ff02::1	not	IPv6 multicast
+::ffff:8.8.8.8	public	IPv4-mapped, judged as the IPv4 inside
+::ffff:192.168.1.1	not	IPv4-mapped private address
+fe80::1%12	not	link-local with a zone index
+example.com	not	a name is not an address

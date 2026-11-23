@@ -561,6 +561,7 @@ allowlist.suggested.json|allowlist draft|what a baseline for this host would loo
 manifest_sha256.txt|integrity manifest|has anything in this folder changed since collection|sha256sum -c manifest_sha256.txt
 chain_of_custody.txt|chain of custody|who collected this, where and when|read directly; attach to the case file
 timeline.csv|timeline|what happened in what order|any CSV viewer
+external_ips.txt|network state|which public addresses this host was connected to|look them up on the analyst machine (a reputation service or threat intelligence); the collector looks nothing up
 binary_hashes.txt|binary hashes|which binaries were running, by SHA-256|an internal hash reputation service (offline: compare to a known-good baseline)
 logs/*|copied system logs|the raw login and system logs as they were on the host|last/lastb for wtmp/btmp; read the text logs directly
 extracted_binaries/*|recovered deleted binary|the on-disk image of a process whose file was unlinked|a sandbox or a static analyser - treat as live malware'
@@ -1097,6 +1098,52 @@ m_sysinfo() {
     return 0
 }
 
+# public_addr_filter: reads "address<TAB>rest" lines, prints the ones whose
+# address a reputation service can say something about - a globally routed IPv4
+# or IPv6 unicast address. Loopback, private, link-local, shared (100.64/10),
+# documentation, benchmarking, multicast and reserved ranges are dropped; an
+# IPv4-mapped IPv6 address is judged as the IPv4 inside it. Test-PublicAddress
+# in Tatar.ps1 applies the same rule; tests/fixtures/public-address-cases.tsv
+# holds both to it.
+public_addr_filter() {
+    awk -F '\t' '
+    function hex(s,    i, c, v) {
+        v = 0; s = tolower(s)
+        if (s == "") return -1
+        for (i = 1; i <= length(s); i++) { c = index("0123456789abcdef", substr(s, i, 1)); if (!c) return -1; v = v * 16 + c - 1 }
+        return v
+    }
+    function v4pub(a,    o, n, i) {
+        n = split(a, o, ".")
+        if (n != 4) return 0
+        for (i = 1; i <= 4; i++) if (o[i] !~ /^[0-9]+$/ || length(o[i]) > 3 || o[i] + 0 > 255) return 0
+        o[1] += 0; o[2] += 0; o[3] += 0
+        if (o[1] == 0 || o[1] == 10 || o[1] == 127 || o[1] >= 224) return 0
+        if (o[1] == 100 && o[2] >= 64 && o[2] <= 127) return 0
+        if (o[1] == 169 && o[2] == 254) return 0
+        if (o[1] == 172 && o[2] >= 16 && o[2] <= 31) return 0
+        if (o[1] == 192 && o[2] == 168) return 0
+        if (o[1] == 192 && o[2] == 0 && (o[3] == 0 || o[3] == 2)) return 0
+        if (o[1] == 198 && (o[2] == 18 || o[2] == 19)) return 0
+        if (o[1] == 198 && o[2] == 51 && o[3] == 100) return 0
+        if (o[1] == 203 && o[2] == 0 && o[3] == 113) return 0
+        return 1
+    }
+    function ispub(a,    g, n, h1) {
+        a = tolower(a); sub(/%.*/, "", a)
+        if (a ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) return v4pub(a)
+        if (index(a, ":") == 0) return 0
+        if (a ~ /^::ffff:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) return v4pub(substr(a, 8))
+        if (a !~ /^[0-9a-f:]+$/ || substr(a, 1, 1) == ":") return 0
+        n = split(a, g, ":")
+        h1 = hex(g[1])
+        if (h1 < 8192 || h1 > 16383) return 0
+        if (h1 == 8193 && n >= 2 && hex(g[2]) == 3512) return 0
+        return 1
+    }
+    ispub($1)'
+}
+
 m_network() {
     section "02 Network (connections, listening, routes, DNS)"
     local rc=0
@@ -1107,9 +1154,32 @@ m_network() {
         add_stat "ListeningTcpPorts" "${lc:-0}"
         local ec; ec=$(ss -tuna 2>/dev/null | grep -c ESTAB)
         add_stat "EstablishedConnections" "${ec:-0}"
+        # Public addresses of established TCP connections, one line per address,
+        # port and process: the list an analyst looks up afterwards, on their own
+        # machine. The collector itself looks nothing up.
+        local xf="$OUTDIR/external_ips.txt" xn
+        {
+            echo "# Public remote addresses of established TCP connections at collection time."
+            echo "# address<TAB>remote port<TAB>process (PID). Look them up on the analyst machine; the collector looks nothing up."
+            ss -tnap state established 2>/dev/null | awk '
+                NR == 1 { next }
+                {
+                    peer = $4; proc = "?"; pid = ""
+                    if (substr(peer, 1, 1) == "[") { i = index(peer, "]"); addr = substr(peer, 2, i - 2); port = substr(peer, i + 2) }
+                    else { i = match(peer, /:[^:]*$/); addr = substr(peer, 1, i - 1); port = substr(peer, i + 1) }
+                    if (match($0, /users:\(\("[^"]*"/)) proc = substr($0, RSTART + 9, RLENGTH - 10)
+                    if (match($0, /pid=[0-9]+/)) pid = substr($0, RSTART + 4, RLENGTH - 4)
+                    printf "%s\t%s\t%s (PID %s)\n", addr, port, proc, (pid == "" ? "?" : pid)
+                }' | public_addr_filter | sort -u
+        } > "$xf"
+        xn=$(grep -v '^#' "$xf" | cut -f1 | sort -u | grep -c .)
+        add_stat "ExternalAddresses" "${xn:-0}"
+        report "Public remote addresses of established connections: ${xn:-0} -> external_ips.txt"
     elif have netstat; then
+        add_note "external_ips.txt was NOT written: it needs ss, and only netstat is present"
         echo "--- netstat -tunap ---" >> "$REPORT"; netstat -tunap >> "$REPORT" 2>/dev/null
     elif have lsof; then
+        add_note "external_ips.txt was NOT written: it needs ss, and only lsof is present"
         echo "--- lsof -i -nP (network connections) ---" >> "$REPORT"; lsof -i -nP >> "$REPORT" 2>/dev/null
     else
         report "No ss/netstat/lsof available - the socket table was NOT collected."
@@ -1534,7 +1604,51 @@ m_logs() {
             add_note "logs: the systemd journal gave nothing for this user (needs root, or membership of systemd-journal or adm)"
         fi
     fi
+    logging_coverage
     return 0
+}
+
+# proc_running NAME... -> exit 0 when a process with one of these names runs.
+# Reads /proc/*/comm: no ps, no pgrep, nothing that differs between distros.
+proc_running() {
+    local c n want
+    for c in /proc/[0-9]*/comm; do
+        [ -r "$c" ] || continue
+        IFS= read -r n < "$c" 2>/dev/null || continue
+        for want in "$@"; do [ "$n" = "$want" ] && return 0; done
+    done
+    return 1
+}
+
+# What this host records at all. An empty log section means nothing until it is
+# known whether the event could have been written: without auditd there is no
+# record of what ran; with a journal kept in memory, everything before the last
+# boot is gone. Everything here is read, nothing is started or changed. A gap is
+# reported as a module limitation, the same list as "not collected", because it
+# is the same kind of statement: an absence that is not evidence of absence.
+logging_coverage() {
+    local gaps=0 g st jr sy al
+    report ""
+    report "-- Logging coverage (read only; nothing is changed) --"
+    if proc_running auditd; then st="running"; else st="not running"; fi
+    report "  auditd                       : $st"
+    [ "$st" = "running" ] || { add_note "logging gap on this host: auditd is not running, so there is no audit record of what ran or what was opened"; gaps=$((gaps+1)); }
+    if [ -d /var/log/journal ]; then jr="persistent (/var/log/journal)"
+    elif [ -d /run/log/journal ]; then jr="in memory only (/run/log/journal)"
+    else jr="none found"; fi
+    report "  systemd journal              : $jr"
+    if proc_running rsyslogd syslog-ng syslogd; then sy="running"; else sy="not running"; fi
+    report "  syslog daemon                : $sy"
+    al=""; for g in /var/log/auth.log /var/log/secure; do [ -e "$g" ] && al="$g"; done
+    report "  authentication log file      : ${al:-none}"
+    case "$jr" in
+        in*) add_note "logging gap on this host: the systemd journal is kept in memory only, so everything before the last boot is gone"; gaps=$((gaps+1)) ;;
+    esac
+    if [ "$sy" != "running" ] && [ "$jr" != "persistent (/var/log/journal)" ]; then
+        add_note "logging gap on this host: no syslog daemon runs and the journal is not persistent, so no system log survives a reboot"; gaps=$((gaps+1))
+    fi
+    add_stat "LoggingGaps" "$gaps"
+    report "Logging gaps: $gaps (listed under moduleLimitations)."
 }
 
 m_timeline() {

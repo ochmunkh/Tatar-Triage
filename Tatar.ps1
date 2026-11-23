@@ -1356,19 +1356,69 @@ function Collect-Memory {
     }
 }
 
+function Test-PublicAddress {
+    # True for an address a reputation service can say something about: a
+    # globally routed IPv4 or IPv6 unicast address. Loopback, private,
+    # link-local, shared (100.64/10), documentation, benchmarking, multicast and
+    # reserved ranges are not. An IPv4-mapped IPv6 address is judged as the IPv4
+    # inside it. The Linux edition applies the same rule (public_addr_filter);
+    # tests/fixtures/public-address-cases.tsv holds both to it.
+    param([string]$Address)
+    $a = ($Address -replace '%.*$', '').Trim()
+    if (-not ($a -match '^\d{1,3}(\.\d{1,3}){3}$' -or $a.Contains(':'))) { return $false }
+    $ip = $null
+    if (-not [System.Net.IPAddress]::TryParse($a, [ref]$ip)) { return $false }
+    if ($ip.AddressFamily -eq 'InterNetworkV6' -and $ip.IsIPv4MappedToIPv6) { $ip = $ip.MapToIPv4() }
+    $b = $ip.GetAddressBytes()
+    if ($ip.AddressFamily -eq 'InterNetwork') {
+        if ($b[0] -eq 0 -or $b[0] -eq 10 -or $b[0] -eq 127 -or $b[0] -ge 224) { return $false }
+        if ($b[0] -eq 100 -and $b[1] -ge 64 -and $b[1] -le 127) { return $false }
+        if ($b[0] -eq 169 -and $b[1] -eq 254) { return $false }
+        if ($b[0] -eq 172 -and $b[1] -ge 16 -and $b[1] -le 31) { return $false }
+        if ($b[0] -eq 192 -and $b[1] -eq 168) { return $false }
+        if ($b[0] -eq 192 -and $b[1] -eq 0 -and ($b[2] -eq 0 -or $b[2] -eq 2)) { return $false }
+        if ($b[0] -eq 198 -and ($b[1] -eq 18 -or $b[1] -eq 19)) { return $false }
+        if ($b[0] -eq 198 -and $b[1] -eq 51 -and $b[2] -eq 100) { return $false }
+        if ($b[0] -eq 203 -and $b[1] -eq 0 -and $b[2] -eq 113) { return $false }
+        return $true
+    }
+    if ($ip.AddressFamily -eq 'InterNetworkV6') {
+        if (($b[0] -band 0xE0) -ne 0x20) { return $false }    # global unicast is 2000::/3 only
+        if ($b[0] -eq 0x20 -and $b[1] -eq 0x01 -and $b[2] -eq 0x0D -and $b[3] -eq 0xB8) { return $false }   # 2001:db8::/32 documentation
+        return $true
+    }
+    $false
+}
+
 function Collect-Network {
     Add-Section '02 Network (connections, ARP, routes, DNS)'
     try {
         $procMap = @{}
         Get-Process -ErrorAction SilentlyContinue | ForEach-Object { $procMap[$_.Id] = $_.ProcessName }
         $listenCount = 0; $estabCount = 0
+        # Public addresses of established connections, one line per address,
+        # port and process: the list an analyst looks up afterwards, on their own
+        # machine. The collector itself looks nothing up.
+        $extRows = New-Object 'System.Collections.Generic.HashSet[string]'
+        $extAddr = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
         try {
             foreach ($c in (Get-NetTCPConnection -ErrorAction Stop)) {
                 if     ($c.State -eq 'Listen')      { $listenCount++ }
                 elseif ($c.State -eq 'Established') { $estabCount++ }
                 $pn = if ($procMap.ContainsKey([int]$c.OwningProcess)) { $procMap[[int]$c.OwningProcess] } else { '' }
                 ("{0}:{1} -> {2}:{3} [{4}] PID:{5} {6}" -f $c.LocalAddress,$c.LocalPort,$c.RemoteAddress,$c.RemotePort,$c.State,$c.OwningProcess,$pn) | Out-FileNoBom $script:ReportFile -Append
+                if ($c.State -eq 'Established' -and (Test-PublicAddress ([string]$c.RemoteAddress))) {
+                    [void]$extAddr.Add([string]$c.RemoteAddress)
+                    [void]$extRows.Add(("{0}`t{1}`t{2} (PID {3})" -f $c.RemoteAddress, $c.RemotePort, $(if ($pn) { $pn } else { '?' }), $c.OwningProcess))
+                }
             }
+            $extFile = Join-Path $script:OutDir 'external_ips.txt'
+            $extText = @('# Public remote addresses of established TCP connections at collection time.',
+                         '# address<TAB>remote port<TAB>process (PID). Look them up on the analyst machine; the collector looks nothing up.') +
+                       @($extRows | Sort-Object)
+            [IO.File]::WriteAllText($extFile, (($extText -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+            $script:Stats['ExternalAddresses'] = $extAddr.Count
+            Add-Report ("Public remote addresses of established connections: {0} -> external_ips.txt" -f $extAddr.Count)
             # The same two counters the Linux edition emits (ss -tlnp / ss -tuna),
             # instead of one Windows-only 'TcpConnections': one dashboard has to
             # be able to plot "listening ports" across platforms.
@@ -1389,6 +1439,7 @@ function Collect-Network {
             # repair; netstat's state column is localised, so it needs a
             # non-English Windows first (N-2 in tests/WINDOWS_STATIC_REVIEW.md).
             Add-Note 'ListeningTcpPorts / EstablishedConnections were NOT measured on the netstat fallback path.'
+            Add-Note 'external_ips.txt was NOT written on the netstat fallback path.'
             cmd /c "netstat -ano" | Out-FileNoBom $script:ReportFile -Append
         }
         arp -a | Out-FileNoBom (Join-Path $script:OutDir 'arp.txt')
@@ -2422,6 +2473,78 @@ function Collect-ShadowCopies {
     } catch { Add-Note "Win32_ShadowCopy query failed: $_" }
 }
 
+function Write-LoggingCoverage {
+    # What this host records at all. An empty event section means nothing until
+    # it is known whether the event could have been written: with script-block
+    # logging off, most PowerShell that ran left no 4104; with process-creation
+    # auditing off there is no 4688 to find. Every value here is read, nothing
+    # is switched on or changed. A gap is reported as a module limitation, the
+    # same list as "not collected", because it is the same kind of statement:
+    # an absence on this host that is not evidence of absence.
+    $gaps = New-Object 'System.Collections.Generic.List[string]'
+    Add-Report ''
+    Add-Report '-- Logging coverage (read only; nothing is changed) --'
+    function Get-PolicyValue { param([string]$Key, [string]$Name)
+        try { (Get-ItemProperty -LiteralPath $Key -Name $Name -ErrorAction Stop).$Name } catch { $null } }
+    $psPol = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell'
+    $sbl = (Get-PolicyValue "$psPol\ScriptBlockLogging" 'EnableScriptBlockLogging') -eq 1
+    $mol = (Get-PolicyValue "$psPol\ModuleLogging"      'EnableModuleLogging') -eq 1
+    $trn = (Get-PolicyValue "$psPol\Transcription"      'EnableTranscripting') -eq 1
+    $cmd = (Get-PolicyValue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit' 'ProcessCreationIncludeCmdLine_Enabled') -eq 1
+    Add-Report ("  PowerShell script-block logging : {0}" -f $(if ($sbl) { 'on' } else { 'off - only blocks PowerShell itself rates as suspicious are logged' }))
+    Add-Report ("  PowerShell module logging       : {0}" -f $(if ($mol) { 'on' } else { 'off' }))
+    Add-Report ("  PowerShell transcription        : {0}" -f $(if ($trn) { 'on' } else { 'off' }))
+    Add-Report ("  Command line in event 4688      : {0}" -f $(if ($cmd) { 'on' } else { 'off - a 4688 names the program but not its arguments' }))
+    if (-not $sbl) { $gaps.Add('PowerShell script-block logging is off, so most PowerShell that ran left no 4104 event') }
+    if (-not $cmd) { $gaps.Add('process-creation events (4688) do not record the command line') }
+    # Process-creation auditing itself is only visible in the Security log. A
+    # filtered query that is not allowed to read the log answers "no events
+    # found", exactly like a log with no 4688 in it, so the log is first read
+    # without a filter: only a log that can be read can say auditing is off.
+    $secReadable = $false
+    if ($isAdmin) { try { $null = Get-WinEvent -LogName 'Security' -MaxEvents 1 -ErrorAction Stop; $secReadable = $true } catch { } }
+    if (-not $secReadable) {
+        Add-Report '  Process-creation auditing (4688): not measured (the Security log needs Administrator)'
+    } else {
+        try {
+            $null = Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4688 } -MaxEvents 1 -ErrorAction Stop
+            Add-Report '  Process-creation auditing (4688): events present'
+        } catch {
+            if (Test-NoMatchingEvents $_) {
+                Add-Report '  Process-creation auditing (4688): no event in the Security log'
+                $gaps.Add('the Security log holds no process-creation event (4688): process auditing looks off')
+            } else {
+                Add-Report ("  Process-creation auditing (4688): not measured ({0})" -f $_.Exception.Message)
+            }
+        }
+    }
+    $channels = @('Security', 'System', 'Application', 'Windows PowerShell', 'Microsoft-Windows-PowerShell/Operational',
+                  'Microsoft-Windows-Sysmon/Operational', 'Microsoft-Windows-TaskScheduler/Operational',
+                  'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational', 'Microsoft-Windows-Windows Defender/Operational',
+                  'Microsoft-Windows-WMI-Activity/Operational', 'Microsoft-Windows-Bits-Client/Operational')
+    Add-Report ''
+    Add-Report ('  {0,-68} {1,-8} {2,8} {3,10}  {4}' -f 'Channel', 'Enabled', 'Max MB', 'Records', 'Oldest event')
+    foreach ($ch in $channels) {
+        $cfg = $null
+        try { $cfg = Get-WinEvent -ListLog $ch -ErrorAction Stop } catch {
+            if ($ch -like '*Sysmon*') { Add-Report ('  {0,-68} {1}' -f $ch, 'not installed') }
+            else { Add-Report ('  {0,-68} {1}' -f $ch, 'not readable or not present') }
+            continue
+        }
+        $oldest = ''
+        try { $oldest = (Get-WinEvent -LogName $ch -MaxEvents 1 -Oldest -ErrorAction Stop).TimeCreated.ToUniversalTime().ToString('yyyy-MM-dd') } catch { $oldest = '-' }
+        Add-Report ('  {0,-68} {1,-8} {2,8} {3,10}  {4}' -f $ch, $cfg.IsEnabled, [int]($cfg.MaximumSizeInBytes / 1MB), $cfg.RecordCount, $oldest)
+        if (-not $cfg.IsEnabled -and $ch -notlike '*Sysmon*') { $gaps.Add(("the {0} log is disabled" -f $ch)) }
+        if ($ch -eq 'Security' -and $oldest -and $oldest -ne '-') {
+            $days = ((Get-Date).ToUniversalTime() - [datetime]::ParseExact($oldest, 'yyyy-MM-dd', $null)).TotalDays
+            if ($days -lt 7) { $gaps.Add(("the Security log reaches back only {0:N0} day(s)" -f $days)) }
+        }
+    }
+    foreach ($g in $gaps) { Add-Note ("logging gap on this host: {0}" -f $g) }
+    $script:Stats['LoggingGaps'] = $gaps.Count
+    Add-Report ("Logging gaps: {0} (listed under moduleLimitations)." -f $gaps.Count)
+}
+
 function Collect-EventLogs {
     Add-Section '25 Key event summary (+ optional EVTX export)'
     try {
@@ -2438,6 +2561,7 @@ function Collect-EventLogs {
             } catch {}
         }
         Add-Report "Key event CSVs saved (IDs: $($map.Keys -join ', '))."
+        Write-LoggingCoverage
         if ($ExportEvtx) {
             foreach ($pair in @(@('Security','Security.evtx'),@('System','System.evtx'),@('Application','Application.evtx'),@('Microsoft-Windows-Sysmon/Operational','Sysmon.evtx'))) {
                 Invoke-Ext -File 'wevtutil.exe' -Arguments @('epl', $pair[0], (Join-Path $ev $pair[1]))
@@ -3647,6 +3771,7 @@ $script:Artifacts = @(
     [pscustomobject]@{ Pattern = 'timeline.csv';            Class = 'timeline';                    Question = 'what happened in what order';                         Next = 'Timeline Explorer, Excel, or any CSV viewer' }
     [pscustomobject]@{ Pattern = 'binary_hashes.txt';       Class = 'binary hashes';               Question = 'which binaries were running, by SHA-256';             Next = 'VirusTotal / an internal hash reputation service (offline: compare to a known-good baseline)' }
     [pscustomobject]@{ Pattern = 'hosts.txt';               Class = 'name resolution';             Question = 'has name resolution been tampered with';              Next = 'read directly - any non-default line is worth a look' }
+    [pscustomobject]@{ Pattern = 'external_ips.txt';        Class = 'network state';               Question = 'which public addresses this host was connected to';   Next = 'look them up on the analyst machine (a reputation service or threat intelligence); the collector looks nothing up' }
     [pscustomobject]@{ Pattern = 'arp.txt';                 Class = 'network state';               Question = 'who this host has been talking to on the LAN';        Next = 'read directly' }
     [pscustomobject]@{ Pattern = 'routes.txt';              Class = 'network state';               Question = 'where traffic from this host goes';                   Next = 'read directly - an unexpected route is a redirect' }
     [pscustomobject]@{ Pattern = 'ipconfig.txt';            Class = 'network state';               Question = 'the host addressing and DNS servers';                 Next = 'read directly' }

@@ -64,7 +64,7 @@
         "ExecInTempDirs",
         "HashedBinaries",
         "TimelineEntries",
-        "RunningContainers", "RmmProductsPresent", "UserAssistEntries", "JumpListFiles", "FilesWithMotw"
+        "RunningContainers", "RmmProductsPresent", "UserAssistEntries", "JumpListFiles", "FilesWithMotw", "ExternalAddresses", "LoggingGaps"
       ],
       "additionalProperties": { "type": ["string", "number"] }
     },

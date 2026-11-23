@@ -51,7 +51,7 @@ The line with the fingerprint is what lets a later report say "the same finding 
 
 - A finding is a lead for review, not a verdict. Write "the collector reported" and "I assessed", not "the host was compromised" unless you have shown it.
 - Say whether the run was privileged. A run without Administrator or root cannot read everything, and the summary says so.
-- Say what was not collected, from `tatar.log`. A clean result does not prove a clean host.
+- Say what was not collected, and the logging gaps, from `tatar.log`. A clean result does not prove a clean host.
 - Say the clock note: `chain_of_custody.txt` records the time zone and states that the host clock was not compared with an outside time source. Write down the difference you measured yourself.
 
 ## Chain of custody

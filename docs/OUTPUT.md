@@ -58,6 +58,7 @@ C:\Forensic\<HOST>_<YYYY-MM-DD_HH-mm-ss>\
 ├─ manifest_sha256.txt.sha256        # SHA-256 of the manifest itself (`sha256sum -c manifest_sha256.txt.sha256`)
 ├─ timeline.csv                      # process / prefetch / recent / installs
 ├─ binary_hashes.txt                 # SHA-256 of running/service binaries (VT/IOC)
+├─ external_ips.txt                  # public addresses of established connections, to look up afterwards
 ├─ recyclebin.csv
 ├─ arp.txt / routes.txt / dns_cache.txt / ipconfig.txt / hosts.txt
 ├─ firewall_rules.txt

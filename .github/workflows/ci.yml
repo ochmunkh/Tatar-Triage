@@ -112,6 +112,11 @@ jobs:
       - name: Hosts entry unit tests
         run: bash tests/test-hosts-entry.sh
 
+      # external_ips.txt: which remote addresses count as public, held to one
+      # case table shared with the Windows edition.
+      - name: Public address unit tests
+        run: bash tests/test-public-address.sh
+
       # What counts as a custom hosts line: stock entries must not be reported,
       # and a line that merely CONTAINS a loopback address must not be hidden.
       - name: Hosts stock-line unit tests
@@ -307,6 +312,10 @@ jobs:
         shell: pwsh
         run: pwsh -File tests/Test-HostsDefault.ps1
 
+      - name: Public address unit tests
+        shell: pwsh
+        run: pwsh -File tests/Test-PublicAddress.ps1
+
       - name: Known-answer verification
         shell: pwsh
         run: pwsh -File tests/Test-KnownAnswer.ps1
@@ -471,6 +480,10 @@ jobs:
       - name: Hosts stock-line unit tests
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-HostsDefault.ps1
+
+      - name: Public address unit tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Test-PublicAddress.ps1
 
       - name: Known-answer verification
         shell: powershell

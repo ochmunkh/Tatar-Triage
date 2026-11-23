@@ -62,4 +62,4 @@ sudo ./tatar-linux.sh --all --iocfile ioc.json
 ## Keep it offline and private
 
 - **The feed is read, never sent anywhere.** The run stays offline whatever the feed holds.
-- **An online lookup is a separate step.** Looking up hashes from the evidence in an online service such as VirusTotal happens on the analyst machine, after the collection. It sends the client's hashes to a third party, so agree it with the client first.
+- **An online lookup is a separate step.** Looking up hashes (`binary_hashes.txt`) or the public addresses the host was connected to (`external_ips.txt`) in an online service such as VirusTotal happens on the analyst machine, after the collection. It sends the client's hashes to a third party, so agree it with the client first.

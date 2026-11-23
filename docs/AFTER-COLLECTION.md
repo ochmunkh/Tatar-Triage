@@ -19,6 +19,7 @@ here, because they change between versions.
 | `timeline.csv` and the findings | one ordered story | `tools/tatar-timeline.py` (`--format timesketch` for Timesketch) |
 | the technique ids in `findings.json` | see coverage on the ATT&CK matrix | `tools/tatar-navigator.py`, then load the layer in ATT&CK Navigator |
 | `binary_hashes.txt` | check hashes against threat intelligence | a lookup service or your own hash list (the file is plain `hash  path`) |
+| `external_ips.txt` | check the public addresses this host was talking to | a reputation service or your own lists (the file is `address<TAB>port<TAB>process (PID)`); agree any online lookup with the client first |
 | `EventLogs\*.evtx` (from `-ExportEvtx`) | read, filter and hunt in the full logs | an EVTX parser, or Sigma rules run by a tool that reads EVTX |
 | `RegistryHives\` (from `-CollectHives`) | registry analysis | a registry viewer or a registry parser |
 | `MFT\` | file-system timeline | an MFT parser |

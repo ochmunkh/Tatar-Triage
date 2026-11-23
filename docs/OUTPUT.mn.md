@@ -56,6 +56,6 @@ Run бүр нотолгооны хажууд цаг тэмдэгтэй гүйц�
 ├─ chain_of_custody.txt              # case/examiner/цаг/скриптийн hash
 ├─ manifest_sha256.txt               # файл бүрийн SHA-256 (`sha256sum -c`-гээр шалгаж болно)
 ├─ manifest_sha256.txt.sha256        # manifest өөрийнх нь SHA-256 (`sha256sum -c manifest_sha256.txt.sha256`)
-├─ timeline.csv · binary_hashes.txt · ...
+├─ timeline.csv · binary_hashes.txt · external_ips.txt · ...
 └─ (optional) TATAR_<HOST>_<stamp>.zip (+ .sha256)
 ```
