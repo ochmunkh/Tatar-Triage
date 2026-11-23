@@ -95,7 +95,7 @@
 $ErrorActionPreference = 'Continue'
 
 # Single source of truth for the tool version (banner, help, summary, JSON, chain of custody).
-$script:ToolVersion = '1.12.4'
+$script:ToolVersion = '1.13.0'
 
 # ---- manual argument parsing (-flag / --flag / /flag, case-insensitive) ----
 $All=$false; $Quick=$false; $List=$false; $Help=$false; $Compress=$false; $DryRun=$false

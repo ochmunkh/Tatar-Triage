@@ -1,7 +1,7 @@
 # TATAR Triage Toolkit — Linux edition
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.12-blue" alt="v1.12">
+  <img src="https://img.shields.io/badge/version-1.13-blue" alt="v1.13">
   <img src="https://img.shields.io/badge/shell-bash%205.1%2B-4EAA25?logo=gnubash&logoColor=white" alt="Bash 5+">
   <img src="https://img.shields.io/badge/targets-Debian%2FUbuntu%20%C2%B7%20RHEL%2FCentOS-orange" alt="targets">
   <img src="https://img.shields.io/badge/modules-18-5eead4" alt="18 modules">
