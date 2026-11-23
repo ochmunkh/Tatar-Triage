@@ -326,3 +326,22 @@ argument. On Linux an indicator listed twice raises one finding instead of two, 
 The case table both editions share (`tests/fixtures/ioc-boundary-cases.tsv`) is run through the new
 matcher as well, alone and among 3,000 decoys, and a feed of 60,000 to 120,000 indicators was added to
 the hostile-feed tests with the time limit they already had.
+
+## Self-detection round (1.13.0)
+
+A collector that reads event logs can read itself. PowerShell writes a script block it rates as
+suspicious to event 4104 even when script-block logging is off, and the Windows collector names
+the tools it looks for. The question was whether that makes a run report the tool.
+
+Windows Sandbox (offline), the repository mapped read-only, `-Modules network,process,eventlogs`
+with a feed of four names that occur in the collector's source (`psexesvc.exe`, `winpmem.exe`,
+`autoruns64.exe`, `mimikatz`), run once with script-block logging as shipped (off) and once after
+switching it on inside the sandbox.
+
+| Script-block logging | Before the fix | After the fix |
+|---|---|---|
+| off (as shipped) | 4 High IOC findings, each quoting the collector's own source | 0 findings; 23 of the collector's own blocks left out |
+| on | 0 findings: the collector's blocks were not among the 50 most recent | 0 findings; 68 of the collector's own blocks left out |
+
+The fix leaves out a 4104 only when its text is part of the running script, so a different script
+saved under the same name is still exported.

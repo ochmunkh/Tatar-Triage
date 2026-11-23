@@ -39,6 +39,10 @@ artifacts on Windows, walks parts of the filesystem, and runs a handful of
 built-in utilities (`arp`, `route`, `ipconfig`, `netstat`, `wevtutil`, `reg
 query`; `ps`, `ss`, `systemctl`, `dpkg`/`rpm`, `find` on Linux). An EDR with
 script-block logging on will see the script, and should — it is not hidden.
+Even with script-block logging off, PowerShell writes the parts of the script it
+rates as suspicious to event 4104 at warning level, because the script names the
+tools it looks for (measured in Windows Sandbox: 23 blocks of 1.13.0 in one run).
+The collector leaves its own blocks out of `evt_4104.csv` and says how many.
 What it will not see is any of the behaviour in the table above, which is what
 actually generates alerts.
 
@@ -118,7 +122,11 @@ build-ийг амжилтгүй болгоно. Баримт бичиг, шал�
 цөөн хэдэн суурин хэрэгсэл ажиллуулдаг (`arp`, `route`, `ipconfig`, `netstat`,
 `wevtutil`, `reg query`; Linux дээр `ps`, `ss`, `systemctl`, `dpkg`/`rpm`,
 `find`). Script-block logging асаалттай EDR энэ скриптийг харна — харах нь ч
-зөв, учир нь хэрэгсэл нуугдахыг оролддоггүй. Харин дээрх хүснэгтэд жагсаасан зан
+зөв, учир нь хэрэгсэл нуугдахыг оролддоггүй. Script-block logging унтраалттай
+байсан ч PowerShell скриптийн сэжигтэй гэж үзсэн хэсгийг warning түвшинд 4104
+event-д бичдэг, учир нь скрипт хайдаг хэрэгслүүдийнхээ нэрийг агуулдаг
+(Windows Sandbox дээр хэмжсэн: 1.13.0-ийн нэг гүйлтэд 23 блок). Collector өөрийн
+блокуудыг `evt_4104.csv`-ээс хасаж, хэдийг хассанаа хэлдэг. Харин дээрх хүснэгтэд жагсаасан зан
 төлөвийг харахгүй, яагаад гэвэл яг тэдгээр нь дохиолол үүсгэдэг.
 
 Дараах гурван үйлдэл нь халдлагатай төстэй харагддаг тул флагийн ард хаалттай

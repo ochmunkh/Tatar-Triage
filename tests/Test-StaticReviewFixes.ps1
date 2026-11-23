@@ -141,6 +141,17 @@ if ($m.Success -and $m.Value -match "Get-Command 'quser\.exe'" -and $m.Value -no
 } else {
     $fail++; Write-Host '  FAIL  quser is called unguarded in Collect-Sessions' -ForegroundColor Red
 }
+# Collect-EventLogs: PowerShell logs the collector's own code to 4104 even with
+# script-block logging off. Exported unfiltered, an IOC feed matched it and the
+# run reported itself. Its own blocks must be left out before the export.
+Write-Host ''
+Write-Host 'the collector leaves its own 4104 script blocks out'
+$m = [regex]::Match($src, '(?s)function Collect-EventLogs \{.*?\n\}')
+if ($m.Success -and $m.Value -match '\$ownCode\.Contains\(' -and $m.Value -match 'ReadAllText\(\$PSCommandPath\)') {
+    $pass++; Write-Host '  PASS  own script blocks are filtered before evt_4104.csv is written' -ForegroundColor Green
+} else {
+    $fail++; Write-Host '  FAIL  Collect-EventLogs exports 4104 without removing the collector''s own code' -ForegroundColor Red
+}
 Write-Host ''
 Write-Host ("Static-review fixes: {0} passed, {1} failed" -f $pass, $fail)
 if ($fail -gt 0) { exit 1 }

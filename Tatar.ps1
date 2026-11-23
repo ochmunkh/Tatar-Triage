@@ -2550,10 +2550,30 @@ function Collect-EventLogs {
     try {
         $ev = New-SubDir 'EventLogs'
         $map = @{ '4688'='Process creation'; '7045'='Service install'; '4720'='User created'; '4672'='Special privileges'; '1102'='Security log cleared'; '4104'='PS scriptblock'; '4698'='Scheduled task created'; '4699'='Scheduled task deleted'; '4719'='Audit policy changed'; '4648'='Logon w/ explicit creds'; '4768'='Kerberos TGT'; '4769'='Kerberos svc ticket'; '4776'='NTLM auth'; '5140'='Net share access'; '4627'='Group membership' }
+        # PowerShell logs a script block it rates as suspicious even with
+        # script-block logging off, and this collector names the tools it looks
+        # for (mimikatz, PsExec...), so its own code lands in event 4104. Read
+        # back, that made the run report itself: a feed naming psexesvc.exe
+        # matched the collector's source in evt_4104.csv. A 4104 whose text is
+        # part of this script is left out and counted. Only text identical to
+        # this file qualifies, so naming another script Tatar.ps1 hides nothing.
+        $ownCode = ''
+        try { if ($PSCommandPath) { $ownCode = ([IO.File]::ReadAllText($PSCommandPath)) -replace "`r", '' } } catch { }
         foreach ($id in $map.Keys) {
             $log = if ($id -eq '4104') { 'Microsoft-Windows-PowerShell/Operational' } else { 'Security' }
             try {
-                $evts = Get-WinEvent -FilterHashtable @{LogName=$log; Id=[int]$id} -MaxEvents 50 -ErrorAction Stop
+                if ($id -eq '4104' -and $ownCode) {
+                    $all  = @(Get-WinEvent -FilterHashtable @{LogName=$log; Id=4104} -MaxEvents 500 -ErrorAction Stop)
+                    $kept = @($all | Where-Object {
+                        $sb = if ($_.Properties.Count -gt 2) { [string]$_.Properties[2].Value } else { '' }
+                        -not ($sb.Trim() -and $ownCode.Contains(($sb -replace "`r", ''))) })
+                    $self = $all.Count - $kept.Count
+                    if ($self -gt 0) { Add-Report ("Event 4104: {0} script block(s) of this collector's own code left out of evt_4104.csv." -f $self) }
+                    if ($kept.Count -eq 0) { continue }
+                    $evts = @($kept | Select-Object -First 50)
+                } else {
+                    $evts = Get-WinEvent -FilterHashtable @{LogName=$log; Id=[int]$id} -MaxEvents 50 -ErrorAction Stop
+                }
                 $evts | Select-Object TimeCreated, Id, Message | ConvertTo-SafeCsv | Out-FileNoBom (Join-Path $ev ("evt_$id.csv"))
                 if ($id -eq '1102' -and @($evts).Count -gt 0) {
                     Add-Finding -Severity 'High' -Category 'eventlogs' -Message ("Security log cleared - event 1102 present ({0} occurrence(s))" -f @($evts).Count) -Detail 'See EventLogs\evt_1102.csv - log clearing is a strong anti-forensics indicator (T1070.001)'
