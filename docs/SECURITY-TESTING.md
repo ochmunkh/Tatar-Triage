@@ -27,13 +27,13 @@ for a local collector are listed, and each is matched to a concrete test.
 
 A test that cannot run is reported as `SKIP`, never as `PASS`.
 
-## Result at v1.13 (CI run of commit e50dd40, the 1.13.0 code)
+## Result at v1.14 (CI run of commit 323fd57, the 1.14.0 code)
 
 | Suite | Result |
 |---|---|
 | `tests/test-security.sh` (Linux) | 66 passed, 0 failed |
 | `tests/Test-Security.ps1` (Windows) | 50 passed, 0 failed, 2 skipped on the CI runner (it runs elevated, so the unprivileged checks skip); with `-Quick` on a standard-user desktop, 53 passed, 1 skipped |
-| Functional suites | Windows contract 233/233, Linux contract 45/45, IOC boundary 32/32, public addresses 40/40 (Linux) and 42/42 (Windows), all unit suites green |
+| Functional suites | Windows contract 233/233, Linux contract 45/45, IOC boundary 32/32, public addresses 40/40 (Linux) and 42/42 (Windows), text indicators 12/12 (Linux) and 26/26 (Windows), all unit suites green |
 
 The heading names the current major.minor. `check_release_integrity.py` fails the build when it does not, so these numbers are re-recorded for every release line.
 ## Requirement to test map

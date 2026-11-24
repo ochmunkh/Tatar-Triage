@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+## [1.14.0] — 2026-11-24
+
 ### Added
 - **Credential dumps by another program (Windows).** Running command lines, the PowerShell history (`ConsoleHost_history.txt`) and, with Administrator, the command lines of up to 2000 process-creation events (4688) are checked for comsvcs.dll MiniDump (by name or ordinal 24) and ProcDump against LSASS. A hit is High, T1003.001. A dump runs for seconds, so the history and 4688 are where it is usually still visible. Nothing is opened or dumped: the patterns are matched against text the run already collected.
 - **URLs written in hex or base64 (both editions).** The encoded start of `http://` and `https://` in a command line, a shell or PowerShell history line, or a script, where an encoded value starts; the same characters inside a longer hex or base64 run (a certificate, a hex dump) are data and do not count. Review, T1027 and T1140.
