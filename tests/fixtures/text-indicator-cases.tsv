@@ -1,0 +1,23 @@
+# text	expect	editions	note
+# Shared by tests/Test-TextIndicator.ps1 and tests/test-text-indicator.sh.
+# expect: credential | hex | base64 | none. editions: both | windows (the Linux
+# edition does not look for Windows credential dumps).
+rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 624 C:\Temp\x.dmp full	credential	windows	comsvcs MiniDump by name
+rundll32 comsvcs.dll #24 640 c:\users\public\a.bin full	credential	windows	comsvcs MiniDump by ordinal
+RUNDLL32.EXE COMSVCS.DLL,MINIDUMP 1 X FULL	credential	windows	upper case
+procdump64.exe -accepteula -ma lsass.exe C:\Temp\l.dmp	credential	windows	ProcDump against LSASS
+procdump -ma 1234 out.dmp	none	windows	ProcDump against a process id, not LSASS by name
+rundll32.exe comsvcs.dll,DllRegisterServer	none	windows	comsvcs without MiniDump
+notepad.exe lsass_notes.txt	none	windows	the word alone is not a dump
+powershell -c "$u=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('aHR0cHM6Ly9leGFtcGxlLnRlc3QvYQ=='))"	base64	both	base64 https://
+wscript x.vbs aHR0cDovL2V4YW1wbGUudGVzdA	base64	both	base64 http://
+cscript y.vbs 68747470733A2F2F6578616D706C652E74657374	hex	both	hex https:// in upper case
+curl $(echo 687474703a2f2f6578616d706c652e74657374 | xxd -r -p)	hex	both	hex http://
+AHR0CHM6LY9LEGFTCGXLLNRLC3Q	none	both	base64 is case-sensitive: upper case is a different text
+echo hello world	none	both	ordinary command
+https://example.test/a	none	both	a plain URL is not an encoded one
+6874747073	none	both	too short to be the start of a URL
+AYYqaHR0cHM6Ly9ybC1jYS1zZXJ2ZXIucmVkaXNsYWJz	none	both	inside a longer base64 run (a certificate): data, not an encoded URL
+0x00deadbeef687474703a2f2f6578616d706c65	none	both	inside a longer hex run (a dump): data
+u = "aHR0cHM6Ly9leGFtcGxlLnRlc3Q="	base64	both	after a quote
+url=687474703a2f2f6578616d706c652e74657374	hex	both	after an equals sign

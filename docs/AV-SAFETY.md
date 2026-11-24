@@ -19,7 +19,7 @@ it fails the build too. Neither half can drift ahead of the other.
 | ID | Claim | How it is enforced |
 |----|-------|--------------------|
 | **AV-01** | No network egress | No HTTP/DNS/mail client, no `/dev/tcp`, no download cmdlet anywhere in the execution path. The collector never contacts anything — no update check, no telemetry, no reputation lookup. |
-| **AV-02** | No credential material is read | No LSASS access of any kind, and no credential-dumping API. On Linux `/etc/shadow` is read only to list accounts whose password field is **empty**; the check is pinned to an `awk` program that prints the username and never the hash. |
+| **AV-02** | No credential material is read | No LSASS access of any kind, and no credential-dumping API. The Windows edition names comsvcs, ProcDump and LSASS in one table, `$script:CredDumpRules`, to recognise a dump by another program in collected command lines; the check allows that table only while it is pure pattern data used by `Get-TextIndicator`. On Linux `/etc/shadow` is read only to list accounts whose password field is **empty**; the check is pinned to an `awk` program that prints the username and never the hash. |
 | **AV-03** | No AMSI, ETW or AV tampering | The AMSI internals, `Set-MpPreference`, `setenforce` and friends must not appear in the source *at all* — not even inside a string, which is where a bypass would hide them. |
 | **AV-04** | No dynamic or obfuscated execution | No `Invoke-Expression`, no `[scriptblock]::Create`, no `FromBase64String`, no `-EncodedCommand`, no `eval`, no `base64 -d`. Everything the tool runs is readable in the file you are reading. |
 | **AV-05** | EDR-sensitive operations are off by default | `-CollectHives`, `-ExportEvtx`, `-MemoryDump` and `--dump-deleted` all default to off, and each module is checked to still honour its flag before doing anything. A default flipped to on fails the build. |
@@ -43,6 +43,9 @@ Even with script-block logging off, PowerShell writes the parts of the script it
 rates as suspicious to event 4104 at warning level, because the script names the
 tools it looks for (measured in Windows Sandbox: 23 blocks of 1.13.0 in one run).
 The collector leaves its own blocks out of `evt_4104.csv` and says how many.
+Office documents in Downloads, Desktop, Documents, Temp and the startup folders are read as bytes, up to
+20 MB each, to see whether they carry a macro; an antivirus may scan each file
+as it is opened for reading, and nothing in it is run.
 What it will not see is any of the behaviour in the table above, which is what
 actually generates alerts.
 
@@ -102,7 +105,7 @@ build-ийг амжилтгүй болгоно. Баримт бичиг, шал�
 | ID | Мэдэгдэл | Хэрхэн баталгаажсан |
 |----|----------|---------------------|
 | **AV-01** | Сүлжээнд гардаггүй | Гүйцэтгэлийн замд HTTP/DNS/mail клиент, `/dev/tcp`, татаж авах cmdlet огт байхгүй. Шинэчлэлт шалгахгүй, телеметр илгээхгүй, нэр хүндийн лавлагаа хийхгүй. |
-| **AV-02** | Нууц үгийн материал уншдаггүй | LSASS-д ямар ч хандалт байхгүй. Linux дээр `/etc/shadow`-г зөвхөн **хоосон нууц үгтэй** бүртгэлийг жагсаахад уншина; шалгалт нь зөвхөн хэрэглэгчийн нэрийг хэвлэдэг `awk` програмд тогтоогдсон — hash хэзээ ч уншигдахгүй. |
+| **AV-02** | Нууц үгийн материал уншдаггүй | LSASS-д ямар ч хандалт байхгүй. Windows хувилбар цуглуулсан command line-аас өөр програмын dump-ийг танихын тулд comsvcs, ProcDump, LSASS-ийг нэг хүснэгтэд (`$script:CredDumpRules`) нэрлэдэг; шалгалт тэр хүснэгтийг зөвхөн `Get-TextIndicator` ашигладаг цэвэр pattern өгөгдөл байх үед л зөвшөөрнө. Linux дээр `/etc/shadow`-г зөвхөн **хоосон нууц үгтэй** бүртгэлийг жагсаахад уншина; шалгалт нь зөвхөн хэрэглэгчийн нэрийг хэвлэдэг `awk` програмд тогтоогдсон — hash хэзээ ч уншигдахгүй. |
 | **AV-03** | AMSI, ETW, AV-д халддаггүй | AMSI-ийн дотоод нэрс, `Set-MpPreference`, `setenforce` зэрэг нь эх кодод **огт** байж болохгүй — тэмдэгт мөр дотор ч гэсэн. Яг тэнд bypass нуугддаг. |
 | **AV-04** | Динамик буюу далдалсан гүйцэтгэл байхгүй | `Invoke-Expression`, `[scriptblock]::Create`, `FromBase64String`, `-EncodedCommand`, `eval`, `base64 -d` аль нь ч байхгүй. Хэрэгслийн ажиллуулдаг бүхэн таны уншиж буй файлд ил бичигдсэн. |
 | **AV-05** | EDR-д мэдрэг үйлдлүүд анхдагчаар унтраалттай | `-CollectHives`, `-ExportEvtx`, `-MemoryDump`, `--dump-deleted` бүгд анхдагчаар унтраалттай бөгөөд модуль бүр үйлдэл хийхээсээ өмнө өөрийн флагаа шалгасаар байгааг нотолно. Анхдагчийг асаавал build унана. |
@@ -126,7 +129,10 @@ build-ийг амжилтгүй болгоно. Баримт бичиг, шал�
 байсан ч PowerShell скриптийн сэжигтэй гэж үзсэн хэсгийг warning түвшинд 4104
 event-д бичдэг, учир нь скрипт хайдаг хэрэгслүүдийнхээ нэрийг агуулдаг
 (Windows Sandbox дээр хэмжсэн: 1.13.0-ийн нэг гүйлтэд 23 блок). Collector өөрийн
-блокуудыг `evt_4104.csv`-ээс хасаж, хэдийг хассанаа хэлдэг. Харин дээрх хүснэгтэд жагсаасан зан
+блокуудыг `evt_4104.csv`-ээс хасаж, хэдийг хассанаа хэлдэг.
+Downloads, Desktop, Documents, Temp, startup хавтас дахь Office баримтыг macro агуулсан эсэхийг харахын
+тулд байтаар нь (тус бүр 20 MB хүртэл) уншдаг; уншихаар нээх бүрт антивирус
+файлыг шалгаж магадгүй, доторх юу ч ажиллахгүй. Харин дээрх хүснэгтэд жагсаасан зан
 төлөвийг харахгүй, яагаад гэвэл яг тэдгээр нь дохиолол үүсгэдэг.
 
 Дараах гурван үйлдэл нь халдлагатай төстэй харагддаг тул флагийн ард хаалттай

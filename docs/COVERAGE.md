@@ -42,6 +42,7 @@ Administrator, a shadow copy or a raw volume read is left for an acquisition too
 | Interactive activity | Recent files | Copy |
 | Interactive activity | Recycle Bin | Report (`recyclebin.csv`) |
 | Interactive activity | UserAssist, MUICache, RunMRU, mark-of-the-web | Report, and Judged for the executables that came from the internet (current user only) |
+| Interactive activity | Office documents with a VBA macro (Downloads, Desktop, Documents, Temp, startup folders) | Judged from the bytes (`vbaProject.bin`, `_VBA_PROJECT`); never opened |
 | Interactive activity | Windows Timeline (activities cache), Search index, RDP bitmap cache, Office autosave | No |
 | External media | USB device history (USBSTOR) | Report |
 | External media | `setupapi` logs | No |
@@ -53,7 +54,7 @@ Administrator, a shadow copy or a raw volume read is left for an acquisition too
 | System configuration | Registry hives (SAM, SECURITY, SYSTEM, SOFTWARE, NTUSER) | Copy, only with `-CollectHives` (credential material; may alert an EDR); transaction logs and backups not collected |
 | System logs | Event logs | Report: selected event IDs in every run, and Judged for log clearing, failed logons and similar; full `.evtx` only with `-ExportEvtx` |
 | System logs | User Access Logging | No |
-| History | PowerShell history | Report |
+| History | PowerShell history | Report, and Judged for a credential dump or a URL written in hex or base64 |
 | Browser | History, extensions | Report: metadata only, no decryption |
 | Memory | (not a triage group) | Optional, `-MemoryDump`, with a `winpmem` you supply |
 

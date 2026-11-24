@@ -60,7 +60,8 @@ technique without raising a finding for it.
 ### Defense Evasion
 | Module | Evidence | Technique |
 |---|---|---|
-| `obfscan` | Base64 / `-enc` / IEX / DownloadString in scripts | T1027 Obfuscated Files or Information · T1140 Deobfuscate/Decode |
+| `obfscan` | Base64 / `-enc` / IEX / DownloadString in scripts; in `.vbs .vbe .js .jse .wsf .hta` also WinHttp / MSXML2.XMLHTTP / ADODB.Stream downloads and a URL written in hex or base64 | T1027 Obfuscated Files or Information · T1140 Deobfuscate/Decode |
+| `process` | URL written in hex or base64 in a running command line, the PowerShell history or event 4688 | T1027 Obfuscated Files or Information · T1140 Deobfuscate/Decode |
 | `eventlogs` | Event ID 1102 (Security log cleared) | T1070.001 Clear Windows Event Logs |
 | `network` | `hosts` file tampering (`hosts.txt`, non-default entries flagged) | T1565.001 Stored Data Manipulation |
 | `process` | `mshta` / `regsvr32` / `rundll32` proxy execution | T1218.005 Mshta · T1218.010 Regsvr32 · T1218.011 Rundll32 |
@@ -71,6 +72,7 @@ technique without raising a finding for it.
 |---|---|---|
 | `hives` | SAM / SECURITY hive save | T1003.002 Security Account Manager |
 | `hives` | LSA secrets material | T1003.001 LSASS Memory (offline) |
+| `process` | Credential dump by another program in a running command line, the PowerShell history or event 4688 (comsvcs.dll MiniDump, ProcDump against LSASS) | T1003.001 LSASS Memory |
 | `browser` | Login Data / credential store metadata | T1555.003 Credentials from Web Browsers |
 | `browser` | Cookies / session artifacts | T1539 Steal Web Session Cookie |
 | `sessions` | 4625 failed-logon volume | T1110 Brute Force |
@@ -84,6 +86,7 @@ technique without raising a finding for it.
 | `lateral` | Other remote-service artifacts | T1021 Remote Services |
 | `rmm` | Remote monitoring & management agents present, and their connection history | T1219 Remote Access Software |
 | `motw` | Executable or container carrying a Zone.Identifier from the internet, with the URL | T1189 Drive-by Compromise · T1566.001 Spearphishing Attachment |
+| `motw` | Office document that carries a VBA macro, found from its bytes (never opened) | T1204.002 User Execution: Malicious File · T1566.001 Spearphishing Attachment |
 | `useractivity` | Jump List items opened over a UNC path | T1021.002 SMB / Windows Admin Shares |
 
 ### Collection / C2 / Impact / Access
@@ -232,7 +235,8 @@ finding үүсгэхгүйгээр техникийн *нотолгоог* л б
 #### Defense Evasion
 | Модуль | Нотолгоо | Техник |
 |---|---|---|
-| `obfscan` | Скрипт доторх Base64 / `-enc` / IEX / DownloadString | T1027 Obfuscated Files or Information · T1140 Deobfuscate/Decode |
+| `obfscan` | Скрипт доторх Base64 / `-enc` / IEX / DownloadString; `.vbs .vbe .js .jse .wsf .hta`-д мөн WinHttp / MSXML2.XMLHTTP / ADODB.Stream татах үйлдэл ба hex эсвэл base64-ээр бичсэн URL | T1027 Obfuscated Files or Information · T1140 Deobfuscate/Decode |
+| `process` | Ажиллаж буй command line, PowerShell history эсвэл 4688 event дэх hex эсвэл base64-ээр бичсэн URL | T1027 Obfuscated Files or Information · T1140 Deobfuscate/Decode |
 | `eventlogs` | Event ID 1102 (Security лог цэвэрлэгдсэн) | T1070.001 Clear Windows Event Logs |
 | `network` | `hosts` файлын өөрчлөлт (`hosts.txt`, стандарт бус бичлэг тэмдэглэгдэнэ) | T1565.001 Stored Data Manipulation |
 | `process` | `mshta` / `regsvr32` / `rundll32`-оор дамжуулан ажиллуулах | T1218.005 Mshta · T1218.010 Regsvr32 · T1218.011 Rundll32 |
@@ -243,6 +247,7 @@ finding үүсгэхгүйгээр техникийн *нотолгоог* л б
 |---|---|---|
 | `hives` | SAM / SECURITY hive-ийн хуулбар | T1003.002 Security Account Manager |
 | `hives` | LSA secret-ийн материал | T1003.001 LSASS Memory (offline) |
+| `process` | Ажиллаж буй command line, PowerShell history эсвэл 4688 event дэх өөр програмын credential dump (comsvcs.dll MiniDump, LSASS-ийн эсрэг ProcDump) | T1003.001 LSASS Memory |
 | `browser` | Login Data / нууц үгийн сангийн metadata | T1555.003 Credentials from Web Browsers |
 | `browser` | Cookie / session-ийн артефакт | T1539 Steal Web Session Cookie |
 | `sessions` | 4625 амжилтгүй нэвтрэлтийн хэмжээ | T1110 Brute Force |
@@ -256,6 +261,7 @@ finding үүсгэхгүйгээр техникийн *нотолгоог* л б
 | `lateral` | Бусад алсын үйлчилгээний артефакт | T1021 Remote Services |
 | `rmm` | Remote monitoring & management агент оршин байгаа эсэх, холболтын түүх | T1219 Remote Access Software |
 | `motw` | Интернетээс ирснийг заасан Zone.Identifier-тэй executable/контейнер, URL-тай нь | T1189 Drive-by Compromise · T1566.001 Spearphishing Attachment |
+| `motw` | VBA macro агуулсан Office баримт, байтаар нь танисан (хэзээ ч нээгдэхгүй) | T1204.002 User Execution: Malicious File · T1566.001 Spearphishing Attachment |
 | `useractivity` | Jump List-д UNC замаар нээсэн зүйл | T1021.002 SMB / Windows Admin Shares |
 
 #### Collection / C2 / Impact / Access

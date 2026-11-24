@@ -210,8 +210,48 @@ def claim_av01(errors, ps, sh, ps_s, sh_s, raw_ps, raw_sh, root):
     forbid(errors, "AV-01", "network call", sh, r"/dev/tcp/", SH)
 
 
+CRED_TABLE_START = "$script:CredDumpRules = @("
+# One line of the table: a hashtable of two keys, All (string patterns) and
+# Label (a string). Nothing else - no call, no variable, no subexpression.
+CRED_TABLE_LINE = re.compile(
+    r"^\s*@\{\s*All\s*=\s*@\((?:\s*'[^'$`]*'\s*,?)+\);\s*Label\s*=\s*'[^'$`]*'\s*\},?\s*$")
+
+
+def exempt_cred_table(errors, ps_s):
+    """Blank the one table of credential-dump DETECTION patterns.
+
+    From 1.14.0 the collector recognises a credential dump by another program
+    in the command lines it collects, so it has to name comsvcs, ProcDump and
+    LSASS - in one table, $script:CredDumpRules, and nowhere else. The table
+    is exempt only while it is pure data: each line one hashtable literal of
+    patterns and a label, and the name used in exactly two places, the
+    definition and Get-TextIndicator, which only applies -match to collected
+    text. Anything else in it, or a third use, fails AV-02.
+    """
+    start = ps_s.find(CRED_TABLE_START)
+    if start < 0:
+        return ps_s
+    body_start = ps_s.index("\n", start) + 1
+    end = ps_s.find("\n)", body_start - 1)
+    if end < 0:
+        errors.append("AV-02: credential-dump rule table -- Tatar.ps1 has no closing ')' for $script:CredDumpRules")
+        return ps_s
+    for line in ps_s[body_start:end + 1].splitlines():
+        if line.strip() and not CRED_TABLE_LINE.match(line):
+            errors.append("AV-02: credential-dump rule table -- Tatar.ps1 holds more than pattern data: %s" % line.strip()[:80])
+    uses = len(re.findall(r"\$script:CredDumpRules\b", ps_s))
+    if uses != 2:
+        errors.append("AV-02: credential-dump rule table -- $script:CredDumpRules is used %d time(s), expected 2 (definition and Get-TextIndicator)" % uses)
+    gti = ps_s.find("function Get-TextIndicator")
+    if gti < 0 or "$script:CredDumpRules" not in ps_s[gti:ps_s.find("\n}", gti)]:
+        errors.append("AV-02: credential-dump rule table -- Get-TextIndicator does not read $script:CredDumpRules")
+    blanked = "".join(c if c == "\n" else " " for c in ps_s[start:end + 2])
+    return ps_s[:start] + blanked + ps_s[end + 2:]
+
+
 def claim_av02(errors, ps, sh, ps_s, sh_s, raw_ps, raw_sh, root):
     """No credential material is read: no LSASS access, no password hashes."""
+    ps_s = exempt_cred_table(errors, ps_s)
     forbid(errors, "AV-02", "credential access", ps_s,
            r"\b(lsass|MiniDumpWriteDump|comsvcs|sekurlsa|procdump|"
            r"LsaOpenPolicy|CredEnumerate|Get-Credential)\b", PS)

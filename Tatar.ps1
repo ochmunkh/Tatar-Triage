@@ -278,7 +278,9 @@ function Get-Technique {
     param([string]$Category, [string]$Message)
     switch ($Category) {
         'process'    {
-            if ($Message -match 'powershell') { return @('T1059.001') }
+            if     ($Message -match 'credential dump')            { return @('T1003.001') }
+            elseif ($Message -match 'URL written in (hex|base64)') { return @('T1027','T1140') }
+            elseif ($Message -match 'powershell') { return @('T1059.001') }
             elseif ($Message -match 'parent') { return @('T1059','T1055') }
             elseif ($Message -match 'cmd')    { return @('T1059.003') }
             elseif ($Message -match 'wscript|cscript') { return @('T1059.005','T1059.007') }
@@ -289,7 +291,7 @@ function Get-Technique {
             else { return @('T1059') }
         }
         'rmm'        { return @('T1219') }
-        'motw'       { return @('T1189','T1566.001') }
+        'motw'       { if ($Message -match 'macro') { return @('T1204.002','T1566.001') } else { return @('T1189','T1566.001') } }
         'useractivity' {
             # The evidence source does not decide the technique; what the
             # evidence SHOWS does. A cached download is ingress, a typed
@@ -1470,6 +1472,57 @@ function Collect-Network {
     } catch { Add-Err "Network failed: $_" }
 }
 
+# What a credential dump by ANOTHER program looks like on a command line. These
+# rules are only matched against text the run collected (command lines, the
+# PowerShell history, event 4688); nothing here opens a process. AV-02 forbids
+# these words anywhere else in the collector, and check_av_safety.py exempts
+# this one table and nothing else.
+$script:CredDumpRules = @(
+    @{ All = @('comsvcs', 'minidump|\u0023\+?0*24\b'); Label = 'LSASS memory dump through comsvcs.dll MiniDump' },
+    @{ All = @('\bprocdump(64)?(\.exe)?\b', '\blsass\b'); Label = 'LSASS memory dump through ProcDump' }
+)
+
+function Get-TextIndicator {
+    # The strongest indicator in one piece of collected text, or nothing: a
+    # credential dump (High, labelled "credential dump"), or a URL written in
+    # hex or base64 (Review). Only the encoded start of "http://" and
+    # "https://" counts, which no format or tool name changes, and only where
+    # an encoded value starts: inside a longer hex or base64 run (a
+    # certificate, a hex dump) the same characters are data. Shared cases:
+    # tests/fixtures/text-indicator-cases.tsv.
+    param([string]$Text)
+    if (-not $Text) { return }
+    foreach ($r in $script:CredDumpRules) {
+        $ok = $true
+        foreach ($p in $r.All) { if ($Text -notmatch "(?i)$p") { $ok = $false; break } }
+        if ($ok) { return [pscustomobject]@{ Kind = 'credential dump'; Label = $r.Label; Severity = 'High' } }
+    }
+    if ($Text -match '(?i)(?<![0-9a-f])(68747470733a2f2f|687474703a2f2f)') { return [pscustomobject]@{ Kind = 'URL written in hex'; Label = 'URL written in hex'; Severity = 'Review' } }
+    if ($Text -cmatch '(?<![A-Za-z0-9+/])(aHR0cHM6Ly|aHR0cDovL)') { return [pscustomobject]@{ Kind = 'URL written in base64'; Label = 'URL written in base64'; Severity = 'Review' } }
+}
+
+function Format-TextIndicatorMessage {
+    # One wording for every place a text indicator is found, so Get-Technique
+    # maps it the same way: "credential dump" and "URL written in hex|base64".
+    param($Indicator, [string]$Where)
+    if ($Indicator.Kind -eq 'credential dump') { return ("Credential dump command line: {0} in {1}" -f $Indicator.Label, $Where) }
+    return ("Command line carries a {0} in {1}" -f $Indicator.Label, $Where)
+}
+
+function Get-OfficeMacroMarker {
+    # Whether an Office file carries a VBA project, from its bytes alone: an
+    # OOXML file (.docm, .xlsm...) is a zip, and a zip stores the entry name
+    # vbaProject.bin uncompressed; a legacy OLE file (.doc, .xls...) names the
+    # stream _VBA_PROJECT in UTF-16. The file is read, never opened by Office
+    # and never parsed, so nothing in it runs. Returns the marker or ''.
+    param([byte[]]$Bytes)
+    if (-not $Bytes -or $Bytes.Length -lt 16) { return '' }
+    $s = [Text.Encoding]::GetEncoding(28591).GetString($Bytes)
+    if ($s.IndexOf('vbaProject.bin', [StringComparison]::OrdinalIgnoreCase) -ge 0) { return 'vbaProject.bin' }
+    if ($s.IndexOf("_`0V`0B`0A`0_`0P`0R`0O`0J`0E`0C`0T`0", [StringComparison]::Ordinal) -ge 0) { return '_VBA_PROJECT' }
+    ''
+}
+
 function Collect-Process {
     Add-Section '03 Processes (+ suspicious LOLBAS patterns)'
     try {
@@ -1482,6 +1535,13 @@ function Collect-Process {
         Add-Report "`n-- Suspicious process indicators --"
         foreach ($p in $procs) {
             if ($p.CommandLine) {
+                $ti = Get-TextIndicator ([string]$p.CommandLine)
+                if ($ti) {
+                    ("[!] PID {0} (parent {1}) {2}: {3}`n    Cmd : {4}" -f $p.ProcessId,$p.ParentProcessId,$p.Name,$ti.Label,$p.CommandLine) | Out-FileNoBom $script:ReportFile -Append
+                    $cl = [string]$p.CommandLine; if ($cl.Length -gt 200) { $cl = $cl.Substring(0,200) + '...' }
+                    Add-Finding -Severity $ti.Severity -Category 'process' -Message (Format-TextIndicatorMessage $ti ("{0} (PID {1})" -f $p.Name, $p.ProcessId)) -Detail $cl
+                    continue
+                }
                 foreach ($s in $sus) {
                     # A bare powershell.exe / cmd.exe is not a lead; what it was told to run is.
                     $subject = [string]$p.CommandLine
@@ -2139,7 +2199,23 @@ function Collect-PSHistory {
     Add-Section '16 PowerShell console history'
     try {
         $hp = "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
-        if (Test-PathSafe $hp) { Add-Report "[$hp]"; Get-Content $hp -ErrorAction SilentlyContinue | Out-FileNoBom $script:ReportFile -Append }
+        if (Test-PathSafe $hp) {
+            Add-Report "[$hp]"
+            $hl = @(Get-Content $hp -ErrorAction SilentlyContinue)
+            $hl | Out-FileNoBom $script:ReportFile -Append
+            # A typed command is a command line that ran: the same text
+            # indicators apply. One finding per indicator kind, naming the line.
+            $hseen = @{}
+            for ($i = 0; $i -lt $hl.Count; $i++) {
+                $ti = Get-TextIndicator ([string]$hl[$i])
+                if (-not $ti -or $hseen.ContainsKey($ti.Label)) { continue }
+                $hseen[$ti.Label] = $true
+                $cl = [string]$hl[$i]; if ($cl.Length -gt 200) { $cl = $cl.Substring(0,200) + '...' }
+                Add-Finding -Severity $ti.Severity -Category 'process' -ArtifactClass 'process-commandline' `
+                    -Message (Format-TextIndicatorMessage $ti ("PowerShell history, line {0}" -f ($i + 1))) `
+                    -Detail ("{0} | {1}" -f $hp, $cl)
+            }
+        }
         else { Add-Report 'No PSReadLine history found.' }
     } catch { Add-Err "PSHistory failed: $_" }
 }
@@ -2153,6 +2229,13 @@ function Get-ObfPatternLabel {
         '-w\s+hidden'    { return 'hidden window flag (-w hidden)' }
         'eval\('         { return 'eval(' }
         'WScript\.Shell' { return 'WScript.Shell' }
+        'WinHttp\.WinHttpRequest' { return 'WinHttp.WinHttpRequest (download)' }
+        'MSXML2\.(Server)?XMLHTTP' { return 'MSXML2.XMLHTTP (download)' }
+        'ADODB\.Stream'  { return 'ADODB.Stream (writes a downloaded file)' }
+        '(?<![0-9A-Fa-f])68747470733a2f2f'   { return 'URL written in hex (https://)' }
+        '(?<![0-9A-Fa-f])687474703a2f2f'     { return 'URL written in hex (http://)' }
+        '(?<![A-Za-z0-9+/])aHR0cHM6Ly'      { return 'URL written in base64 (https://)' }
+        '(?<![A-Za-z0-9+/])aHR0cDovL'       { return 'URL written in base64 (http://)' }
         default          { return $Pattern }
     }
 }
@@ -2164,14 +2247,18 @@ function Collect-ObfScan {
         # Regex, not -SimpleMatch: the encoded-command pattern has to be a regex
         # (see $script:EncArgPattern), and the literals below carry no regex
         # metacharacters except the two that are escaped here.
-        $patterns = @('IEX','Invoke-Expression','FromBase64String','ConvertFrom-Base64',$script:EncArgPattern,'DownloadString','DownloadFile','fromCharCode','eval\(','WScript\.Shell','-w\s+hidden')
+        $patterns = @('IEX','Invoke-Expression','FromBase64String','ConvertFrom-Base64',$script:EncArgPattern,'DownloadString','DownloadFile','fromCharCode','eval\(','WScript\.Shell','-w\s+hidden',
+                      # how a dropped VBScript/JScript stage downloads and writes its next file
+                      'WinHttp\.WinHttpRequest','MSXML2\.(Server)?XMLHTTP','ADODB\.Stream',
+                      # the encoded start of http:// and https://, in hex and in base64
+                      '(?<![0-9A-Fa-f])68747470733a2f2f','(?<![0-9A-Fa-f])687474703a2f2f','(?<![A-Za-z0-9+/])aHR0cHM6Ly','(?<![A-Za-z0-9+/])aHR0cDovL')
         $cutoff = (Get-Date).AddDays(-30)
         # The collector's own tests and tools match its own detection patterns by design.
         # They stay in the report but raise no finding; the count is a Stat.
         $selfRoot = ''; try { if ($PSCommandPath) { $selfRoot = Split-Path -Parent $PSCommandPath } } catch {}
         foreach ($base in $paths) {
             if (-not (Test-PathSafe $base)) { continue }
-            $files = Get-FilesByExtension -Path $base -Extension '.ps1','.psm1','.js','.vbs','.bat','.hta' -Since $cutoff | Where-Object { $_.FullName -ne $PSCommandPath } | Sort-Object LastWriteTime -Descending | Select-Object -First 100
+            $files = Get-FilesByExtension -Path $base -Extension '.ps1','.psm1','.js','.jse','.vbs','.vbe','.wsf','.bat','.hta' -Since $cutoff | Where-Object { $_.FullName -ne $PSCommandPath } | Sort-Object LastWriteTime -Descending | Select-Object -First 100
             foreach ($f in $files) {
                 $m = Select-String -Path $f.FullName -Pattern $patterns -List -ErrorAction SilentlyContinue
                 if ($m) {
@@ -2581,6 +2668,33 @@ function Collect-EventLogs {
             } catch {}
         }
         Add-Report "Key event CSVs saved (IDs: $($map.Keys -join ', '))."
+        # Process-creation events carry the command lines of programs that have
+        # already exited - a credential dump runs for seconds, so this is where
+        # it is usually still visible. The command line is a field of the event
+        # (index 8), read without rendering the message, which keeps 2000
+        # events fast. Needs the Security log, so Administrator.
+        if ($isAdmin) {
+            try {
+                $c4688 = @(Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4688 } -MaxEvents 2000 -ErrorAction Stop)
+                $eseen = @{}; $ehits = 0
+                foreach ($e in $c4688) {
+                    if ($e.Properties.Count -lt 9) { continue }
+                    $ecmd = [string]$e.Properties[8].Value
+                    $ti = Get-TextIndicator $ecmd
+                    if (-not $ti) { continue }
+                    $key = $ti.Label + '|' + $ecmd
+                    if ($eseen.ContainsKey($key) -or $ehits -ge 10) { continue }
+                    $eseen[$key] = $true; $ehits++
+                    $ecl = $ecmd; if ($ecl.Length -gt 200) { $ecl = $ecl.Substring(0,200) + '...' }
+                    Add-Finding -Severity $ti.Severity -Category 'process' -ArtifactClass 'event-log' `
+                        -Message (Format-TextIndicatorMessage $ti ("event 4688 at {0:yyyy-MM-dd HH:mm} UTC, {1}" -f $e.TimeCreated.ToUniversalTime(), (Split-Path -Leaf ([string]$e.Properties[5].Value)))) `
+                        -Detail $ecl
+                }
+                Add-Report ("Event 4688: {0} process-creation event(s) checked for credential dumps and encoded URLs, {1} finding(s)." -f $c4688.Count, $ehits)
+            } catch {
+                if (-not (Test-NoMatchingEvents $_)) { Add-Report ("Event 4688 command lines were not checked: {0}" -f $_.Exception.Message) }
+            }
+        }
         Write-LoggingCoverage
         if ($ExportEvtx) {
             foreach ($pair in @(@('Security','Security.evtx'),@('System','System.evtx'),@('Application','Application.evtx'),@('Microsoft-Windows-Sysmon/Operational','Sysmon.evtx'))) {
@@ -3685,7 +3799,7 @@ function Collect-MOTW {
         # Bounded on purpose: this is a triage collector, not a filesystem
         # crawler. Newest first, so a truncated walk keeps the useful end.
         $maxPerRoot = 400
-        $seen = 0; $withMotw = 0; $truncated = $false
+        $seen = 0; $withMotw = 0; $truncated = $false; $macroChecked = 0; $macroFound = 0
         $interesting = New-Object System.Collections.Generic.List[string]
 
         foreach ($r in $roots) {
@@ -3698,6 +3812,21 @@ function Collect-MOTW {
             if ($files.Count -gt $maxPerRoot) { $truncated = $true; $files = @($files | Select-Object -First $maxPerRoot) }
             foreach ($f in $files) {
                 $seen++
+                # An Office document that carries a macro, downloaded or not:
+                # the delivery step of most macro phishing. Up to 20 MB, read
+                # as bytes only (Get-OfficeMacroMarker).
+                if ($f.Extension -match '(?i)^\.(doc|docm|docx|dot|dotm|xls|xlsm|xlsb|xlsx|xlt|xltm|xla|xlam|ppt|pptm|pptx|pot|potm|ppsm|pps)$' -and $f.Length -le 20MB -and $macroChecked -lt 200) {
+                    $macroChecked++
+                    $mk = ''
+                    try { $mk = Get-OfficeMacroMarker ([IO.File]::ReadAllBytes($f.FullName)) } catch { }
+                    if ($mk) {
+                        $mz = ''
+                        try { $mzr = Get-Content -LiteralPath $f.FullName -Stream 'Zone.Identifier' -ErrorAction SilentlyContinue -Raw; $mz = ([regex]::Match([string]$mzr, '(?im)^\s*ZoneId\s*=\s*(\d+)')).Groups[1].Value } catch { }
+                        $macroFound++
+                        Add-Finding -Category 'motw' -Message ("Office document with a macro: {0}" -f $f.FullName) `
+                            -Detail ("Contains a VBA project ({0}){1}. Macros are how most document phishing runs code; open it only in an analysis environment, and check whether Office spawned a shell (process findings) after {2:yyyy-MM-dd}." -f $mk, $(if ($mz -in @('3','4')) { "; Mark-of-the-Web ZoneId=$mz, downloaded from outside" } elseif ($mz) { "; ZoneId=$mz" } else { '' }), $f.LastWriteTime)
+                    }
+                }
                 $zoneRaw = $null
                 try { $zoneRaw = Get-Content -LiteralPath $f.FullName -Stream 'Zone.Identifier' -ErrorAction SilentlyContinue -Raw } catch {}
                 if (-not $zoneRaw) { continue }
@@ -3715,7 +3844,7 @@ function Collect-MOTW {
                 # EXECUTABLE one is the first half of almost every phishing
                 # chain, so that is what earns a finding - with the URL, which
                 # is the part an analyst cannot reconstruct later.
-                if ($f.Extension -match '(?i)^\.(exe|dll|scr|com|pif|bat|cmd|ps1|vbs|js|jse|hta|msi|lnk|iso|img|vhd|vhdx)$' -and
+                if ($f.Extension -match '(?i)^\.(exe|dll|scr|com|pif|bat|cmd|ps1|vbs|vbe|js|jse|wsf|hta|msi|lnk|iso|img|vhd|vhdx|one)$' -and
                     $zoneId -in @('3','4')) {
                     if ($interesting.Count -lt 25) { $interesting.Add([string]$f.FullName) }
                     Add-Finding -Category 'motw' `
@@ -3730,6 +3859,7 @@ function Collect-MOTW {
         if ($truncated) { Add-Note ("motw: a download location held more than {0} files; the newest {0} were checked" -f $maxPerRoot) }
         Add-Report ''
         Add-Report ("    {0} file(s) checked, {1} carry a Zone.Identifier" -f $seen, $withMotw)
+        Add-Report ("    {0} Office document(s) checked for a macro, {1} carry one" -f $macroChecked, $macroFound)
         $script:Stats['FilesWithMotw'] = $withMotw
     } catch { Add-Err "MOTW failed: $_" }
 }

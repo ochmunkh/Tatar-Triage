@@ -345,3 +345,49 @@ switching it on inside the sandbox.
 
 The fix leaves out a 4104 only when its text is part of the running script, so a different script
 saved under the same name is still exported.
+
+## Detection pack round (after 1.13.0)
+
+Four detections drawn from a public adversary simulation of a phishing-led intrusion: a document
+macro, a dropped script that downloads its next stage, a URL hidden in hex or base64, and a
+credential dump with comsvcs.dll or ProcDump. The question was whether each is caught, and whether
+the principles hold: no administrator needed, nothing an antivirus objects to, the tool does not
+report itself, and the run stays fast.
+
+**Stand-ins, Windows Sandbox (offline).** Nothing malicious and nothing that ran except one sleeping
+PowerShell: an `.docm` whose bytes name `vbaProject.bin`, with a Zone.Identifier of zone 3; a `.doc`
+whose bytes carry the UTF-16 `_VBA_PROJECT` stream name; a `.docx` without either; a `.vbs` that
+names `WinHttp.WinHttpRequest` and `ADODB.Stream`; a `.wsf` holding a base64 `https://`; two lines in
+the PowerShell history, a comsvcs.dll MiniDump command and a hex `https://`; and the sleeping
+PowerShell, whose command line holds a base64 `https://`. Run with script-block logging off and on,
+next to a feed of four names from the collector's own source.
+
+| Stand-in | Finding |
+|---|---|
+| `.docm` with `vbaProject.bin` | Review, `motw`, Office document with a macro |
+| `.doc` with `_VBA_PROJECT` | Review, `motw`, Office document with a macro |
+| `.docx` without a VBA project | none |
+| `.vbs` naming WinHttp and ADODB.Stream | Review, `obfscan` |
+| `.wsf` with a base64 URL | Review, `obfscan` |
+| history: comsvcs.dll MiniDump | High, `process`, T1003.001 |
+| history: hex URL | Review, `process` |
+| running command line: base64 URL | Review, `process` |
+| the collector's own code (feed of four names) | none, with logging off and on |
+
+Microsoft Defender in the sandbox reported nothing during either run.
+
+**An ordinary workstation (Windows 11, not elevated, `-All`).** The first version counted every
+occurrence of the encoded markers and raised two false findings: a base64 `http://` in a Visual
+Studio installer script (68 copies, grouped) and one inside a certificate in a Node.js package. An
+encoded URL that someone wrote starts where the encoded value starts, while these sat inside longer
+base64 runs, so the rule now requires the marker to start a run. After that change neither appears;
+114 Office documents were checked and none carried a macro. The one remaining new finding was a
+stand-in script of this round, stored in a folder the release does not contain.
+
+| Module | 1.13.0 | With the detection pack |
+|---|---|---|
+| `obfscan` (same folders, two rounds) | 18.5 s, 17.8 s | 19.0 s, 17.8 s |
+| `motw` (two rounds) | 5.1 s, 2.8 s | 3.5 s, 3.6 s |
+
+The 4688 check needs Administrator and process-creation auditing with the command line, which this
+workstation does not have, so it was exercised by the unit tests only.

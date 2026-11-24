@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+### Added
+- **Credential dumps by another program (Windows).** Running command lines, the PowerShell history (`ConsoleHost_history.txt`) and, with Administrator, the command lines of up to 2000 process-creation events (4688) are checked for comsvcs.dll MiniDump (by name or ordinal 24) and ProcDump against LSASS. A hit is High, T1003.001. A dump runs for seconds, so the history and 4688 are where it is usually still visible. Nothing is opened or dumped: the patterns are matched against text the run already collected.
+- **URLs written in hex or base64 (both editions).** The encoded start of `http://` and `https://` in a command line, a shell or PowerShell history line, or a script, where an encoded value starts; the same characters inside a longer hex or base64 run (a certificate, a hex dump) are data and do not count. Review, T1027 and T1140.
+- **Office documents that carry a macro (Windows).** `motw` reads Office documents (`.doc .docm .docx .xls .xlsm .xlsb .ppt .pptm` and the template and add-in forms, up to 20 MB) in the folders it already checks, as bytes, and reports one that carries a VBA project (`vbaProject.bin` in an OOXML zip, the UTF-16 `_VBA_PROJECT` stream name in an OLE file), with its Mark-of-the-Web zone when present. The file is never opened by Office and never parsed. Review, T1204.002 and T1566.001. `.one .vbe .wsf` join the downloaded-executable list.
+- **Dropped script stages (Windows).** `obfscan` also reads `.vbe .jse .wsf`, and looks for `WinHttp.WinHttpRequest`, `MSXML2.XMLHTTP` and `ADODB.Stream`, the way a dropped script downloads and writes its next file.
+
+### Changed
+- **AV-02 allows one table of detection patterns.** To recognise a dump by another program the Windows edition has to name comsvcs, ProcDump and LSASS. They live in one table, `$script:CredDumpRules`; `check_av_safety.py` exempts it only while every line is a pattern-and-label literal and it is used in exactly two places (its definition and `Get-TextIndicator`). A call, a variable or a third use inside or around it fails AV-02, which three mutations confirmed. The words still fail the check anywhere else.
+
+### Tests
+- `tests/fixtures/text-indicator-cases.tsv` (19 cases), run by `tests/Test-TextIndicator.ps1` (with the credential-dump cases and five synthetic macro-marker cases; no document with a macro is stored in the repository) and `tests/test-text-indicator.sh` on every CI job.
+
 ### Documentation
 - **`docs/IOC-FEEDS.md` (English and Mongolian): a watchlist of dual-use services.** Telegram's Bot API, Discord's file CDN and paste sites as optional feed entries where the context makes them suspicious, with what a hit means: exact names only (a parent domain does not match its subdomains), the Windows DNS cache as the likely place of a hit, and every feed hit raised as High, so it is a lead to check.
 

@@ -1211,6 +1211,21 @@ m_network() {
     return $rc
 }
 
+# encoded_url_label TEXT -> prints "URL written in base64" or "URL written in
+# hex" and exits 0 when TEXT carries the encoded start of http:// or https://,
+# which no format or tool name changes, where an encoded value starts (inside a
+# longer hex or base64 run - a certificate, a hex dump - it is data). Pure
+# shell, no process per call.
+# Get-TextIndicator in Tatar.ps1 applies the same rule;
+# tests/fixtures/text-indicator-cases.tsv holds both to it.
+encoded_url_label() {
+    local b64re='(^|[^A-Za-z0-9+/])aHR0c(HM6Ly|DovL)' hexre='(^|[^0-9a-f])68747470(73)?3a2f2f'
+    if [[ "$1" =~ $b64re ]]; then printf '%s' 'URL written in base64'; return 0; fi
+    local lc="${1,,}"
+    if [[ "$lc" =~ $hexre ]]; then printf '%s' 'URL written in hex'; return 0; fi
+    return 1
+}
+
 m_process() {
     section "03 Processes (+ suspicious execution locations)"
     ps auxww >> "$REPORT" 2>/dev/null
@@ -1252,7 +1267,7 @@ m_process() {
     # Read from /proc/PID/cmdline with shell matching, not from `ps | grep`: a grep
     # would match its own command line. The collector's own process tree is skipped
     # so the patterns in this file can never produce a finding about themselves.
-    local cpid cppid hop skip cl rsdev='/dev/'
+    local cpid cppid hop skip cl eul rsdev='/dev/'
     for cpid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
         [ "$cpid" -eq "$$" ] 2>/dev/null && continue
         skip=0; cppid="$cpid"; hop=0
@@ -1269,6 +1284,9 @@ m_process() {
            || [[ "$cl" =~ base64[[:space:]]+(-d|--decode).*\|[[:space:]]*(ba|z|da)?sh([[:space:]]|$) ]] || [[ "$cl" =~ mkfifo.*(nc|ncat)[[:space:]] ]]; then
             echo "[!] PID $cpid command line: $cl" >> "$REPORT"
             add_finding "Review" "process" "Process command line looks like a reverse shell or pipe-to-shell (PID $cpid)" "cmd: $cl" "T1059.004"
+        elif eul="$(encoded_url_label "$cl")"; then
+            echo "[!] PID $cpid command line ($eul): $cl" >> "$REPORT"
+            add_finding "Review" "process" "Command line carries a $eul (PID $cpid)" "cmd: $cl" "T1027 T1140"
         fi
     done
     echo "" >> "$REPORT"; echo "-- Suspicious command-line patterns (ps) --" >> "$REPORT"
@@ -1469,6 +1487,10 @@ m_bashhistory() {
                 echo "[$hf]" >> "$REPORT"; cat "$hf" >> "$REPORT" 2>/dev/null; echo "" >> "$REPORT"
                 grep -hiE 'wget|curl|nc |ncat|/dev/tcp/|base64|chmod \+x|chattr|history -c|useradd|passwd ' "$hf" 2>/dev/null | while read -r line; do
                     add_finding "Review" "bashhistory" "Notable history command in ${hf##*/}" "$line"
+                done
+                # A URL written in hex or base64 needs no download word to be a lead.
+                grep -hE '(^|[^A-Za-z0-9+/])aHR0c(HM6Ly|DovL)|(^|[^0-9A-Fa-f])68747470(73)?3[aA]2[fF]2[fF]' "$hf" 2>/dev/null | head -n 5 | while read -r line; do
+                    add_finding "Review" "bashhistory" "History line carries a $(encoded_url_label "$line") in ${hf##*/}" "$line" "T1027 T1140"
                 done
             fi
         done
