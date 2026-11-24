@@ -59,6 +59,15 @@ Then run the tool with it:
 sudo ./tatar-linux.sh --all --iocfile ioc.json
 ```
 
+## A watchlist of dual-use services
+
+Some services are used by ordinary people every day and by intrusions as command-and-control or to host the next stage, because their traffic does not stand out: the Telegram Bot API, Discord's file CDN, paste sites. They do not belong in the collector's own rules, because on a host whose user chats on Telegram a hit means nothing. They can go in your feed when the context makes them suspicious, for example a server or a workstation that has no reason to use them.
+
+- **Names to consider:** `api.telegram.org` (bots, not the Telegram app's own traffic), `cdn.discordapp.com`, `pastebin.com`, `paste.ee`. Add what your own cases and your CERT report.
+- **Exact names only.** A domain in the feed matches that name, not its subdomains: `example.com` does not match `a.example.com`. Tunnel services that give every user a new subdomain cannot be listed by their parent domain; list the names seen in a case.
+- **Where the name is found.** On Windows the DNS cache (`dns_cache.txt`) holds the names the host resolved recently, so a hit is likely there. On Linux the resolver cache is not collected, so a name is found only where it appears in other collected text.
+- **A hit is a lead.** Every feed hit is raised as High with confidence 0.95, also for these names. Before you report it, check which program resolved the name and whether the user has a reason to use the service.
+
 ## Keep it offline and private
 
 - **The feed is read, never sent anywhere.** The run stays offline whatever the feed holds.

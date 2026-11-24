@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versions use
 
 ## [Unreleased]
 
+### Documentation
+- **`docs/IOC-FEEDS.md` (English and Mongolian): a watchlist of dual-use services.** Telegram's Bot API, Discord's file CDN and paste sites as optional feed entries where the context makes them suspicious, with what a hit means: exact names only (a parent domain does not match its subdomains), the Windows DNS cache as the likely place of a hit, and every feed hit raised as High, so it is a lead to check.
+
 ## [1.13.0] — 2026-11-23
 
 ### Fixed
